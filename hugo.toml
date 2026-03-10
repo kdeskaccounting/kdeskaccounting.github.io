@@ -1,0 +1,49 @@
+baseURL = "https://kdeskaccounting.github.io/"
+languageCode = "en-us"
+title = "KDesk Accounting"
+theme = "PaperMod"
+paginate = 10
+
+[params]
+  env = "production"
+  description = "Practical tools and guides for ASC 606, ASC 842, commission accounting, and revenue recognition. Built by a CPA for controllers, accounting managers, and finance teams."
+  author = "KDesk Accounting"
+  ShowReadingTime = true
+  ShowShareButtons = true
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = true
+  ShowCodeCopyButtons = true
+  defaultTheme = "light"
+  ShowToc = true
+
+  [params.homeInfoParams]
+    Title = "KDesk Accounting"
+    Content = "Practical guides, templates, and tools for ASC 606, ASC 842, and commission accounting. Built by a CPA for finance teams that need audit-ready solutions — not six-figure software contracts."
+
+  [[params.socialIcons]]
+    name = "gumroad"
+    url = "https://kdeskaccounting.gumroad.com"
+
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+
+[markup]
+  [markup.highlight]
+    noClasses = false
+
+[menu]
+  [[menu.main]]
+    identifier = "templates"
+    name = "Templates"
+    url = "https://kdeskaccounting.gumroad.com"
+    weight = 10
+  [[menu.main]]
+    identifier = "tags"
+    name = "Topics"
+    url = "/tags/"
+    weight = 20
+  [[menu.main]]
+    identifier = "about"
+    name = "About"
+    url = "/about/"
+    weight = 30
