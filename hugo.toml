@@ -13,16 +13,52 @@ paginate = 10
   ShowPostNavLinks = true
   ShowBreadCrumbs = true
   ShowCodeCopyButtons = true
-  defaultTheme = "light"
+  defaultTheme = "auto"
   ShowToc = true
+  DateFormat = "January 2, 2006"
 
-  [params.homeInfoParams]
-    Title = "KDesk Accounting"
-    Content = "Practical guides, templates, and tools for ASC 606, ASC 842, and commission accounting. Built by a CPA for finance teams that need audit-ready solutions — not six-figure software contracts."
+  [params.profileMode]
+    enabled = true
+    title = "KDesk Accounting"
+    subtitle = "Audit-ready ASC 606 tools and guides — built by a CPA, not a software company."
+    imageUrl = ""
+    imageTitle = ""
+    imageWidth = 120
+    imageHeight = 120
+
+    [[params.profileMode.buttons]]
+      name = "📊 Browse Templates"
+      url = "https://kdeskaccounting.gumroad.com"
+
+    [[params.profileMode.buttons]]
+      name = "📖 Read the Blog"
+      url = "/posts/"
+
+    [[params.profileMode.buttons]]
+      name = "About"
+      url = "/about/"
 
   [[params.socialIcons]]
     name = "gumroad"
     url = "https://kdeskaccounting.gumroad.com"
+
+  [[params.socialIcons]]
+    name = "github"
+    url = "https://github.com/kdeskaccounting"
+
+  [params.label]
+    text = "KDesk Accounting"
+    icon = ""
+    iconHeight = 35
+
+  [params.fuseOpts]
+    isCaseSensitive = false
+    shouldSort = true
+    location = 0
+    distance = 1000
+    threshold = 0.4
+    minMatchCharLength = 0
+    keys = ["title", "permalink", "summary", "content"]
 
 [outputs]
   home = ["HTML", "RSS", "JSON"]
@@ -30,20 +66,31 @@ paginate = 10
 [markup]
   [markup.highlight]
     noClasses = false
+    style = "monokai"
 
 [menu]
   [[menu.main]]
     identifier = "templates"
-    name = "Templates"
+    name = "🛒 Templates"
     url = "https://kdeskaccounting.gumroad.com"
     weight = 10
+  [[menu.main]]
+    identifier = "blog"
+    name = "Blog"
+    url = "/posts/"
+    weight = 20
   [[menu.main]]
     identifier = "tags"
     name = "Topics"
     url = "/tags/"
-    weight = 20
+    weight = 30
+  [[menu.main]]
+    identifier = "search"
+    name = "🔍"
+    url = "/search/"
+    weight = 40
   [[menu.main]]
     identifier = "about"
     name = "About"
     url = "/about/"
-    weight = 30
+    weight = 50

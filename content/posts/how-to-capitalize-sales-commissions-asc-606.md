@@ -2,13 +2,13 @@
 title: "How to Capitalize Sales Commissions Under ASC 606 (With Excel Walkthrough)"
 date: 2026-03-10
 description: "Step-by-step guide to capitalizing and amortizing sales commissions under ASC 606 and ASC 340-40. Includes journal entries, amortization methods, and a practical Excel approach."
+summary: "Most finance teams know they need to capitalize commissions under ASC 606 — but building the actual amortization schedule is where things break down. Here's a step-by-step walkthrough with journal entries and a practical Excel approach."
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "revenue recognition", "SaaS accounting"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
+weight: 1
 ---
-
-If your company pays sales commissions on contracts longer than 12 months, you're probably required to capitalize those costs under **ASC 606 (ASC 340-40)**. That means you can't just expense the commission when it's paid — you need to spread it over the period of benefit.
 
 This guide walks through exactly how to do that, step by step.
 
