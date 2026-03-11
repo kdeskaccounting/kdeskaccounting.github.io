@@ -7,6 +7,7 @@
 
 /* ── Root tokens ─────────────────────────────────────────────────── */
 :root {
+  --main-width:   1400px;   /* Override PaperMod's 720px default so homepage sections aren't squished */
   --kd-navy:      #1F3864;
   --kd-blue:      #2E75B6;
   --kd-blue-dk:   #235d91;
