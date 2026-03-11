@@ -1,4 +1,4 @@
-/* Brand colors — professional navy + accent green */
+/* KDesk Accounting — brand colors */
 :root {
   --nav-bg: #1a2332;
   --accent: #2c7a4b;
@@ -10,13 +10,12 @@
   background: var(--accent);
   color: #fff !important;
   border: none;
-  padding: 12px 28px;
+  padding: 12px 24px;
   border-radius: 6px;
   font-weight: 600;
   font-size: 0.95rem;
   transition: background 0.2s ease, transform 0.15s ease;
 }
-
 .profile .buttons a:hover {
   background: var(--accent-hover);
   transform: translateY(-1px);
@@ -24,9 +23,9 @@
 
 /* Profile subtitle */
 .profile .profile_inner h2 {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   color: var(--secondary);
-  max-width: 560px;
+  max-width: 580px;
   margin: 0 auto;
   line-height: 1.6;
 }
@@ -39,7 +38,6 @@
   margin-bottom: 16px;
   transition: box-shadow 0.2s ease, transform 0.15s ease;
 }
-
 .post-entry:hover {
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
   transform: translateY(-2px);
@@ -54,31 +52,27 @@
   font-size: 0.8rem;
   font-weight: 500;
 }
-
-.post-tags a:hover {
-  background: var(--accent-hover);
-}
+.post-tags a:hover { background: var(--accent-hover); }
 
 /* Table of contents */
-.toc {
-  border-left: 3px solid var(--accent);
-  padding-left: 16px;
-}
+.toc { border-left: 3px solid var(--accent); padding-left: 16px; }
 
 /* Code blocks */
-.highlight pre {
-  border-radius: 8px;
-}
+.highlight pre { border-radius: 8px; }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
-}
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
 
-/* CTA callout boxes in content */
+/* Blockquote CTA */
 .post-content blockquote {
   border-left: 4px solid var(--accent);
   background: rgba(44, 122, 75, 0.05);
   padding: 16px 20px;
   border-radius: 0 8px 8px 0;
+}
+
+/* Nav link active */
+.menu__inner a[aria-current="page"] {
+  color: var(--accent);
+  font-weight: 700;
 }

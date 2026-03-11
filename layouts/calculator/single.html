@@ -1,0 +1,427 @@
+{{ define "main" }}
+<style>
+  .calc-wrap {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 16px 60px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .calc-hero {
+    text-align: center;
+    padding: 32px 0 24px;
+  }
+  .calc-hero h1 { font-size: 2rem; margin-bottom: 8px; }
+  .calc-hero p { color: var(--secondary); font-size: 1.05rem; max-width: 560px; margin: 0 auto; }
+
+  /* Tabs */
+  .calc-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .calc-tab {
+    padding: 10px 22px;
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--secondary);
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .calc-tab.active {
+    color: #2c7a4b;
+    border-bottom-color: #2c7a4b;
+  }
+  .calc-tab:hover { color: #2c7a4b; }
+  .calc-panel { display: none; }
+  .calc-panel.active { display: block; }
+
+  /* Form layout */
+  .calc-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 560px) { .calc-grid { grid-template-columns: 1fr; } }
+  .calc-field label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .calc-field input,
+  .calc-field select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 1rem;
+    background: var(--entry);
+    color: var(--primary);
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+  }
+  .calc-field input:focus,
+  .calc-field select:focus {
+    outline: none;
+    border-color: #2c7a4b;
+  }
+  .calc-btn {
+    display: inline-block;
+    background: #2c7a4b;
+    color: #fff;
+    border: none;
+    padding: 12px 32px;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .calc-btn:hover { background: #236b3f; transform: translateY(-1px); }
+
+  /* Results */
+  .calc-results {
+    margin-top: 28px;
+    display: none;
+  }
+  .calc-results.show { display: block; }
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .kpi-card {
+    background: var(--entry);
+    border: 1px solid var(--border);
+    border-top: 3px solid #2c7a4b;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .kpi-card .kpi-val {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #2c7a4b;
+  }
+  .kpi-card .kpi-lbl {
+    font-size: 0.8rem;
+    color: var(--secondary);
+    margin-top: 4px;
+  }
+
+  /* Table */
+  .calc-table-wrap { overflow-x: auto; margin-bottom: 24px; }
+  .calc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  .calc-table th {
+    background: #1a2332;
+    color: #fff;
+    padding: 9px 12px;
+    text-align: right;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .calc-table th:first-child { text-align: left; }
+  .calc-table td {
+    padding: 8px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  .calc-table td:first-child { text-align: left; font-weight: 500; }
+  .calc-table tr:nth-child(even) td { background: var(--entry); }
+  .calc-table tfoot td {
+    font-weight: 700;
+    border-top: 2px solid #2c7a4b;
+    background: none;
+  }
+
+  /* CTA */
+  .calc-cta {
+    background: var(--entry);
+    border: 1px solid var(--border);
+    border-left: 4px solid #2c7a4b;
+    border-radius: 0 8px 8px 0;
+    padding: 20px 24px;
+    margin-top: 28px;
+  }
+  .calc-cta strong { display: block; font-size: 1.05rem; margin-bottom: 6px; }
+  .calc-cta p { color: var(--secondary); margin: 0 0 14px; font-size: 0.95rem; }
+  .calc-cta a {
+    display: inline-block;
+    background: #2c7a4b;
+    color: #fff !important;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+  }
+  .calc-cta a:hover { background: #236b3f; }
+  .note { font-size: 0.82rem; color: var(--secondary); margin-top: 8px; }
+</style>
+
+<div class="calc-wrap">
+  <div class="calc-hero">
+    <h1>Free Amortization Calculator</h1>
+    <p>Instant estimates for commission capitalization (ASC 606) and lease accounting (ASC 842). Runs entirely in your browser — no signup, no data sent anywhere.</p>
+  </div>
+
+  <div class="calc-tabs">
+    <button class="calc-tab active" onclick="switchTab('asc606', this)">ASC 606 — Commission</button>
+    <button class="calc-tab" onclick="switchTab('asc842', this)">ASC 842 — Lease</button>
+  </div>
+
+  <!-- ═══════════════════════════ ASC 606 PANEL ═══════════════════════════ -->
+  <div id="panel-asc606" class="calc-panel active">
+    <div class="calc-grid">
+      <div class="calc-field">
+        <label>Commission Amount ($)</label>
+        <input type="number" id="c606-amount" placeholder="e.g. 15000" min="0" step="100">
+      </div>
+      <div class="calc-field">
+        <label>Amortization Method</label>
+        <select id="c606-method">
+          <option value="contract">Contract Term</option>
+          <option value="benefit">Estimated Benefit Period</option>
+          <option value="expedient">Practical Expedient (≤12 mo)</option>
+        </select>
+      </div>
+      <div class="calc-field" id="c606-term-field">
+        <label>Contract Term (months)</label>
+        <input type="number" id="c606-term" placeholder="e.g. 36" min="1" max="120">
+      </div>
+      <div class="calc-field" id="c606-benefit-field" style="display:none">
+        <label>Estimated Benefit Period (months)</label>
+        <input type="number" id="c606-benefit" placeholder="e.g. 48" min="1" max="120">
+      </div>
+    </div>
+    <button class="calc-btn" onclick="calc606()">Calculate</button>
+
+    <div id="results-asc606" class="calc-results">
+      <div class="kpi-row" id="kpis-asc606"></div>
+      <div class="calc-table-wrap">
+        <table class="calc-table" id="table-asc606"></table>
+      </div>
+      <p class="note">Showing first 24 months. Full schedule up to 120 months available in the workbook.</p>
+      <div class="calc-cta">
+        <strong>Need the full schedule?</strong>
+        <p>The ASC 606 Commission Accrual Workbook handles 50 deals simultaneously with dynamic period selection, journal entry generation, rollforward disclosure, and reconciliation — all in Excel, no macros.</p>
+        <a href="https://kdeskaccounting.gumroad.com/l/mwmwpe" target="_blank">Get the Workbook — $79 →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ ASC 842 PANEL ═══════════════════════════ -->
+  <div id="panel-asc842" class="calc-panel">
+    <div class="calc-grid">
+      <div class="calc-field">
+        <label>Monthly Payment ($)</label>
+        <input type="number" id="c842-payment" placeholder="e.g. 5000" min="0" step="100">
+      </div>
+      <div class="calc-field">
+        <label>Lease Term (months)</label>
+        <input type="number" id="c842-term" placeholder="e.g. 60" min="1" max="120">
+      </div>
+      <div class="calc-field">
+        <label>Incremental Borrowing Rate (%)</label>
+        <input type="number" id="c842-ibr" placeholder="e.g. 5.0" min="0" max="30" step="0.1">
+      </div>
+      <div class="calc-field">
+        <label>Lease Type</label>
+        <select id="c842-type">
+          <option value="operating">Operating Lease</option>
+          <option value="finance">Finance Lease</option>
+        </select>
+      </div>
+      <div class="calc-field">
+        <label>Initial Direct Costs ($) <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <input type="number" id="c842-idc" placeholder="e.g. 2000" min="0" step="100" value="0">
+      </div>
+      <div class="calc-field">
+        <label>Lease Incentives ($) <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <input type="number" id="c842-incentives" placeholder="e.g. 0" min="0" step="100" value="0">
+      </div>
+    </div>
+    <button class="calc-btn" onclick="calc842()">Calculate</button>
+
+    <div id="results-asc842" class="calc-results">
+      <div class="kpi-row" id="kpis-asc842"></div>
+      <div class="calc-table-wrap">
+        <table class="calc-table" id="table-asc842"></table>
+      </div>
+      <p class="note">Showing first 24 months. Full 120-month schedule available in the workbook.</p>
+      <div class="calc-cta">
+        <strong>Need the full schedule for all your leases?</strong>
+        <p>The ASC 842 Lease Accounting Workbook handles 20 leases simultaneously with dynamic period selection, six-category journal entry generation, ROU asset rollforward, and reconciliation — all in Excel, no macros.</p>
+        <a href="https://kdeskaccounting.gumroad.com" target="_blank">Get the Workbook — $97 →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(id, btn) {
+  document.querySelectorAll('.calc-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.calc-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ─── Method toggle for 606 ─────────────────────────────────────────────────
+document.getElementById('c606-method').addEventListener('change', function() {
+  var m = this.value;
+  document.getElementById('c606-term-field').style.display   = m === 'benefit'   ? 'none' : 'block';
+  document.getElementById('c606-benefit-field').style.display = m === 'benefit'  ? 'block' : 'none';
+  if (m === 'expedient') {
+    document.getElementById('c606-term-field').style.display = 'none';
+  }
+});
+
+function fmt(n) {
+  return '$' + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function fmtN(n) {
+  return n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+// ─── ASC 606 Calculator ────────────────────────────────────────────────────
+function calc606() {
+  var amount  = parseFloat(document.getElementById('c606-amount').value) || 0;
+  var method  = document.getElementById('c606-method').value;
+  var term    = parseInt(document.getElementById('c606-term').value)    || 0;
+  var benefit = parseInt(document.getElementById('c606-benefit').value) || 0;
+
+  if (amount <= 0) { alert('Please enter a commission amount.'); return; }
+
+  var kpiDiv = document.getElementById('kpis-asc606');
+  var tbl    = document.getElementById('table-asc606');
+  var res    = document.getElementById('results-asc606');
+
+  if (method === 'expedient') {
+    kpiDiv.innerHTML = kpi(fmt(amount), 'Period Expense') + kpi('$0.00', 'Deferred Asset') + kpi('N/A', 'Monthly Amortization') + kpi('Immediate', 'Treatment');
+    tbl.innerHTML = '';
+    res.classList.add('show');
+    return;
+  }
+
+  var months = method === 'benefit' ? benefit : term;
+  if (months <= 0) { alert('Please enter a term in months.'); return; }
+
+  var monthly = amount / months;
+  var display = Math.min(months, 24);
+
+  kpiDiv.innerHTML =
+    kpi(fmt(amount),    'Initial Deferred Asset') +
+    kpi(fmt(monthly),   'Monthly Amortization') +
+    kpi(months + ' mo', 'Amortization Period') +
+    kpi(method === 'benefit' ? 'Est. Benefit' : 'Contract Term', 'Method');
+
+  var rows = '<thead><tr><th>Month</th><th>Beg. Balance</th><th>Amortization</th><th>End. Balance</th></tr></thead><tbody>';
+  var bal = amount;
+  var totalAmort = 0;
+  for (var i = 1; i <= display; i++) {
+    var amort = (i < months) ? monthly : bal;
+    amort = Math.round(amort * 100) / 100;
+    var end = Math.max(0, Math.round((bal - amort) * 100) / 100);
+    rows += '<tr><td>Month ' + i + '</td><td>' + fmt(bal) + '</td><td>(' + fmt(amort) + ')</td><td>' + fmt(end) + '</td></tr>';
+    totalAmort += amort;
+    bal = end;
+  }
+  if (months > 24) {
+    rows += '<tr><td style="color:var(--secondary);font-style:italic" colspan="4">... ' + (months - 24) + ' more months in full workbook</td></tr>';
+  }
+  rows += '</tbody><tfoot><tr><td>Total</td><td>' + fmt(amount) + '</td><td>(' + fmt(totalAmort) + ')</td><td>' + fmt(Math.max(0, amount - totalAmort)) + '</td></tr></tfoot>';
+  tbl.innerHTML = rows;
+  res.classList.add('show');
+}
+
+// ─── ASC 842 Calculator ────────────────────────────────────────────────────
+function pv(rate, nper, pmt) {
+  // PV of ordinary annuity
+  if (rate === 0) return pmt * nper;
+  return pmt * (1 - Math.pow(1 + rate, -nper)) / rate;
+}
+
+function calc842() {
+  var payment    = parseFloat(document.getElementById('c842-payment').value)    || 0;
+  var term       = parseInt(document.getElementById('c842-term').value)         || 0;
+  var ibrPct     = parseFloat(document.getElementById('c842-ibr').value)        || 0;
+  var leaseType  = document.getElementById('c842-type').value;
+  var idc        = parseFloat(document.getElementById('c842-idc').value)        || 0;
+  var incentives = parseFloat(document.getElementById('c842-incentives').value) || 0;
+
+  if (payment <= 0 || term <= 0 || ibrPct <= 0) {
+    alert('Please enter payment, term, and IBR.');
+    return;
+  }
+
+  var r = ibrPct / 100 / 12;
+  var liability = Math.round(pv(r, term, payment) * 100) / 100;
+  var rou = Math.round((liability + idc - incentives) * 100) / 100;
+
+  var display = Math.min(term, 24);
+  var kpiDiv = document.getElementById('kpis-asc842');
+  var tbl    = document.getElementById('table-asc842');
+  var res    = document.getElementById('results-asc842');
+
+  var monthlyDepr = leaseType === 'finance' ? rou / term : 0;
+
+  kpiDiv.innerHTML =
+    kpi(fmt(liability), 'Initial Lease Liability') +
+    kpi(fmt(rou),       'Initial ROU Asset') +
+    kpi(fmtN(ibrPct) + '%', 'IBR') +
+    kpi(leaseType === 'finance' ? 'Finance' : 'Operating', 'Lease Type');
+
+  var rows = '<thead><tr><th>Month</th><th>Beg. Liability</th><th>Interest</th><th>Payment</th><th>End. Liability</th><th>Beg. ROU</th>';
+  rows += leaseType === 'finance' ? '<th>Depreciation</th>' : '<th>Amortization</th>';
+  rows += '<th>End. ROU</th></tr></thead><tbody>';
+
+  var curLiab = liability;
+  var curROU  = rou;
+
+  for (var i = 1; i <= display; i++) {
+    var interest = Math.round(curLiab * r * 100) / 100;
+    var principal = Math.round((payment - interest) * 100) / 100;
+    var endLiab = Math.max(0, Math.round((curLiab - principal) * 100) / 100);
+
+    var rouChange, endROU;
+    if (leaseType === 'finance') {
+      rouChange = Math.round(monthlyDepr * 100) / 100;
+      endROU = Math.max(0, Math.round((curROU - rouChange) * 100) / 100);
+    } else {
+      // Operating: expense = payment, ROU amort = expense - interest
+      var expense = payment;
+      rouChange = Math.round((expense - interest) * 100) / 100;
+      endROU = Math.max(0, Math.round((curROU - rouChange) * 100) / 100);
+    }
+
+    rows += '<tr><td>Month ' + i + '</td><td>' + fmt(curLiab) + '</td><td>' + fmt(interest) + '</td><td>(' + fmt(payment) + ')</td><td>' + fmt(endLiab) + '</td><td>' + fmt(curROU) + '</td><td>(' + fmt(rouChange) + ')</td><td>' + fmt(endROU) + '</td></tr>';
+    curLiab = endLiab;
+    curROU  = endROU;
+  }
+
+  if (term > 24) {
+    rows += '<tr><td style="color:var(--secondary);font-style:italic" colspan="8">... ' + (term - 24) + ' more months in full workbook</td></tr>';
+  }
+  rows += '</tbody>';
+  tbl.innerHTML = rows;
+  res.classList.add('show');
+}
+
+function kpi(val, lbl) {
+  return '<div class="kpi-card"><div class="kpi-val">' + val + '</div><div class="kpi-lbl">' + lbl + '</div></div>';
+}
+</script>
+{{ end }}

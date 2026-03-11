@@ -1,12 +1,16 @@
-baseURL = "https://kdeskaccounting.github.io/"
+baseURL = "https://kdeskaccounting.com/"
 languageCode = "en-us"
 title = "KDesk Accounting"
 theme = "PaperMod"
 paginate = 10
 
+[services]
+  [services.googleAnalytics]
+    id = "G-XXXXXXXXXX"   # TODO: replace with your real GA4 Measurement ID
+
 [params]
   env = "production"
-  description = "Practical tools and guides for ASC 606, ASC 842, commission accounting, and revenue recognition. Built by a CPA for controllers, accounting managers, and finance teams."
+  description = "Audit-ready Excel templates and guides for ASC 606, ASC 842, commission accounting, lease accounting, and finance ops. Built by a CPA for controllers, accounting managers, and finance teams."
   author = "KDesk Accounting"
   ShowReadingTime = true
   ShowShareButtons = true
@@ -20,7 +24,7 @@ paginate = 10
   [params.profileMode]
     enabled = true
     title = "KDesk Accounting"
-    subtitle = "Audit-ready ASC 606 tools and guides — built by a CPA, not a software company."
+    subtitle = "Audit-ready Excel templates for ASC 606, ASC 842, and beyond — built by a CPA, not a software company."
     imageUrl = ""
     imageTitle = ""
     imageWidth = 120
@@ -31,12 +35,12 @@ paginate = 10
       url = "https://kdeskaccounting.gumroad.com"
 
     [[params.profileMode.buttons]]
-      name = "📖 Read the Blog"
-      url = "/posts/"
+      name = "🧮 Free Calculator"
+      url = "/calculator/"
 
     [[params.profileMode.buttons]]
-      name = "About"
-      url = "/about/"
+      name = "📖 Read the Blog"
+      url = "/posts/"
 
   [[params.socialIcons]]
     name = "gumroad"
@@ -67,6 +71,8 @@ paginate = 10
   [markup.highlight]
     noClasses = false
     style = "monokai"
+  [markup.goldmark.renderer]
+    unsafe = true
 
 [menu]
   [[menu.main]]
@@ -75,22 +81,27 @@ paginate = 10
     url = "https://kdeskaccounting.gumroad.com"
     weight = 10
   [[menu.main]]
+    identifier = "calculator"
+    name = "🧮 Calculator"
+    url = "/calculator/"
+    weight = 20
+  [[menu.main]]
     identifier = "blog"
     name = "Blog"
     url = "/posts/"
-    weight = 20
+    weight = 30
   [[menu.main]]
     identifier = "tags"
     name = "Topics"
     url = "/tags/"
-    weight = 30
+    weight = 40
   [[menu.main]]
     identifier = "search"
     name = "🔍"
     url = "/search/"
-    weight = 40
+    weight = 50
   [[menu.main]]
     identifier = "about"
     name = "About"
     url = "/about/"
-    weight = 50
+    weight = 60
