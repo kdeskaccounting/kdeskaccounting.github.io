@@ -22,25 +22,7 @@ paginate = 10
   DateFormat = "January 2, 2006"
 
   [params.profileMode]
-    enabled = true
-    title = "KDesk Accounting"
-    subtitle = "Audit-ready Excel templates for ASC 606, ASC 842, and beyond — built by a CPA, not a software company."
-    imageUrl = ""
-    imageTitle = ""
-    imageWidth = 120
-    imageHeight = 120
-
-    [[params.profileMode.buttons]]
-      name = "📊 Browse Templates"
-      url = "https://kdeskaccounting.gumroad.com"
-
-    [[params.profileMode.buttons]]
-      name = "🧮 Free Calculator"
-      url = "/calculator/"
-
-    [[params.profileMode.buttons]]
-      name = "📖 Read the Blog"
-      url = "/posts/"
+    enabled = false
 
   [[params.socialIcons]]
     name = "gumroad"
