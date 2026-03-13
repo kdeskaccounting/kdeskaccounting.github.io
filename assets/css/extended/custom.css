@@ -91,6 +91,18 @@ body, .main, .post-content {
   max-width: 520px;
 }
 .kd-hero__ctas { display: flex; gap: 12px; flex-wrap: wrap; }
+.kd-hero .kd-btn--ghost {
+  background: rgba(255,255,255,0.94);
+  color: var(--kd-navy) !important;
+  border-color: rgba(31,56,100,0.14);
+  box-shadow: 0 10px 24px rgba(31,56,100,0.08);
+}
+.kd-hero .kd-btn--ghost:hover {
+  background: #fff;
+  color: var(--kd-blue) !important;
+  border-color: rgba(46,117,182,0.35);
+  box-shadow: 0 14px 28px rgba(31,56,100,0.12);
+}
 .kd-hero__microproof {
   display: flex;
   flex-wrap: wrap;
