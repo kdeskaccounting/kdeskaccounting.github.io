@@ -59,12 +59,12 @@ paginate = 10
 [menu]
   [[menu.main]]
     identifier = "templates"
-    name = "🛒 Templates"
+    name = "Templates"
     url = "https://kdeskaccounting.gumroad.com"
     weight = 10
   [[menu.main]]
     identifier = "calculator"
-    name = "🧮 Calculator"
+    name = "Calculator"
     url = "/calculator/"
     weight = 20
   [[menu.main]]
@@ -79,7 +79,7 @@ paginate = 10
     weight = 40
   [[menu.main]]
     identifier = "search"
-    name = "🔍"
+    name = "Search"
     url = "/search/"
     weight = 50
   [[menu.main]]
