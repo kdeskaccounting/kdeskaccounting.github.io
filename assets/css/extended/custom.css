@@ -86,7 +86,7 @@ body, .main, .post-content {
 .kd-hero__sub {
   font-size: 1.05rem;
   line-height: 1.7;
-  color: var(--kd-muted);
+  color: #374151;
   margin-bottom: 32px;
   max-width: 520px;
 }
@@ -126,7 +126,7 @@ body, .main, .post-content {
 }
 .kd-proof-pill span {
   font-size: 0.82rem;
-  color: var(--kd-muted);
+  color: #374151;
 }
 .kd-hero__grid { perspective: 1800px; }
 .kd-hero__visuals {
