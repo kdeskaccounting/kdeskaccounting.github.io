@@ -1,6 +1,6 @@
 ---
 title: "ASC 842 Amortization Schedule: How to Build One in Excel"
-date: 2026-03-17
+date: 2026-03-16
 description: "Step-by-step guide to building an ASC 842 lease amortization schedule in Excel. Covers PV calculation, monthly columns, running balances, and the maintenance problem at scale."
 summary: "Building an ASC 842 amortization schedule in Excel is manageable for one lease. With five or more, the manual approach breaks down fast. Here's exactly how the schedule works — and what it takes to maintain it at scale."
 tags: ["ASC 842", "lease accounting", "amortization schedule", "Excel", "lease amortization", "GAAP"]
