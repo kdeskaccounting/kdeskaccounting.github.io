@@ -120,7 +120,7 @@ If you're in the "too many deals for manual, too early for enterprise software" 
 
 ## Get the Workbook
 
-Our [ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com) handles everything in this guide:
+Our [ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe) handles everything in this guide:
 
 - **50-deal capacity** with three amortization methods
 - **Automated journal entries** with GL account mapping
@@ -129,7 +129,9 @@ Our [ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com) h
 - **Reconciliation tab** — all variances should show $0
 - **No macros** — pure Excel formulas, works everywhere
 
-$79, one time. No subscription. [Get it here →](https://kdeskaccounting.gumroad.com)
+$79, one time. No subscription. [Get it here →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
+
+Or [try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) before you buy.
 
 ---
 

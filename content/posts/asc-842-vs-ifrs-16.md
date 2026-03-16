@@ -182,9 +182,11 @@ Most multi-standard companies maintain separate lease schedules for each framewo
 
 Whether you're under ASC 842, IFRS 16, or both, the underlying math — PV of payments, amortization waterfall, ROU asset rollforward — is the same. The difference is in presentation and classification.
 
-The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com) is structured around US GAAP but the amortization math and journal entry logic is compatible with IFRS 16 as well. Operating leases can be treated with the finance lease tab if needed for IFRS reporting.
+The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) is structured around US GAAP but the amortization math and journal entry logic is compatible with IFRS 16 as well. Operating leases can be treated with the finance lease tab if needed for IFRS reporting.
 
-**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com)**
+**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
+
+Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) before you buy.
 
 ---
 

@@ -201,11 +201,11 @@ Whether you have operating leases, finance leases, or a mix, you need a system t
 - Aggregates across your portfolio for period-end close
 - Produces a rollforward for disclosure
 
-The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com) handles both lease types in a single workbook — you classify each lease on input, and the schedule, journal entries, and rollforward adjust automatically.
+The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) handles both lease types in a single workbook — you classify each lease on input, and the schedule, journal entries, and rollforward adjust automatically.
 
-**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com)**
+**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 
-Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com) first.
+Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) first.
 
 ---
 

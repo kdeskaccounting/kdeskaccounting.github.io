@@ -112,7 +112,7 @@ For each active lease:
 - [ ] Any new leases commenced this period — initial recognition entry posted
 - [ ] Any leases modified or terminated — remeasurement entry posted
 
-> *For multi-lease portfolios, a structured workbook is essential. The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com) handles 20 leases with period-level journal entry aggregation and balance sheet reconciliation.*
+> *For multi-lease portfolios, a structured workbook is essential. The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) handles 20 leases with period-level journal entry aggregation and balance sheet reconciliation.*
 
 ### Prepaid expenses
 - [ ] Prepaid schedule updated with new payments
@@ -232,8 +232,8 @@ Two of the most time-consuming close tasks — deferred commission accounting an
 **[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $79
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.
 
-**[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com)** — $97
-Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation.
+**[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $97
+Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation. [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 
 Both are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
 

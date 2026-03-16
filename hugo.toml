@@ -6,7 +6,7 @@ paginate = 10
 
 [services]
   [services.googleAnalytics]
-    id = "G-XXXXXXXXXX"   # TODO: replace with your real GA4 Measurement ID
+    id = "G-1ZJZEE0G75"
 
 [params]
   env = "production"
