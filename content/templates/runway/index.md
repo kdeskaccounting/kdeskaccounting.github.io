@@ -7,7 +7,19 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 3
+price: 49
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
+faq:
+  - q: "Does it handle variable payment schedules?"
+    a: "Yes. Each revenue and expense line has a frequency dropdown (Monthly, Quarterly, Annual, One-Time) and an occurrences field. A quarterly expense only hits cash flow every 3 months; a one-time payment hits once and stops."
+  - q: "Can I model a future fundraise?"
+    a: "Yes. Add a row to the Financing tab with the expected raise amount and the month you expect to receive it. The dashboard will immediately show your extended runway."
+  - q: "Does it work on a Mac?"
+    a: "Yes. Pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
+  - q: "What is the difference between gross burn and net burn?"
+    a: "The workbook shows net burn rate — total cash outflows minus total cash inflows per month. Gross burn is outflows only (before revenue). Both are visible in the cash flow projection table."
+  - q: "Can I add more than 20 input rows?"
+    a: "Email hello@kdeskaccounting.com for a custom build."
 ---
 
 If you're raising a round, preparing a board update, or just trying to answer "how long do we have?" — this workbook gives you a defensible answer in minutes. **$49, one-time purchase. No subscription. No macros.**
@@ -110,7 +122,7 @@ This workbook models cash in and cash out — it is not a three-statement financ
 ## Technical Specifications
 
 | Specification | Detail |
-|---------------|--------|
+|---------------|---------|
 | Forecast window | 12, 24, 36, or 48 months (dropdown) |
 | Input rows per tab | 20 (paid version) |
 | Scenarios | Base, Optimistic, Pessimistic |
@@ -128,8 +140,6 @@ This workbook models cash in and cash out — it is not a three-statement financ
 Not ready to buy? Try the free 12-month version — same structure, limited to 5 input rows per tab and a 12-month window. See how the dashboard and scenario logic work before committing.
 
 [Try the free version →](https://kdeskaccounting.gumroad.com)
-
-> **Note:** Direct purchase links will be updated once the Gumroad listings are live. In the meantime, browse [kdeskaccounting.gumroad.com](https://kdeskaccounting.gumroad.com) to check availability.
 
 ---
 

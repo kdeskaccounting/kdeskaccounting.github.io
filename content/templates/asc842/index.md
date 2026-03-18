@@ -7,7 +7,19 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 1
+price: 97
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
+faq:
+  - q: "Does it handle both operating and finance leases?"
+    a: "Yes. Each lease in the register has a type dropdown — operating or finance. The amortization schedule, JE Generator, and rollforward all adjust automatically."
+  - q: "Does it work on a Mac?"
+    a: "Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
+  - q: "What if I need to modify a lease mid-term?"
+    a: "Update the inputs in the Lease Register (new term, new payment, new IBR as of the modification date). The schedule recalculates from that point. You handle the remeasurement journal entry in your accounting system using the output from the JE Generator."
+  - q: "Can I use it for IFRS 16?"
+    a: "The underlying PV math and amortization logic is identical. Classify all leases as Finance and the workbook produces depreciation and interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same."
+  - q: "What if I have more than 20 leases?"
+    a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
 If you're implementing ASC 842 for the first time, or your current spreadsheet breaks every time a lease changes, this workbook handles the math correctly and produces audit-ready output. **$97, one-time purchase. No subscription. No macros.**
@@ -132,7 +144,7 @@ This workbook is designed for companies with up to 20 leases. If you have 50–1
 ## Technical Specifications
 
 | Specification | Detail |
-|---------------|--------|
+|---------------|---------|
 | Lease capacity | 20 leases |
 | Schedule length | 120 months per lease |
 | Lease types | Operating and Finance |

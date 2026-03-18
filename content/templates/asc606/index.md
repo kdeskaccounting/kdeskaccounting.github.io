@@ -7,7 +7,21 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 2
+price: 79
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
+faq:
+  - q: "Does it handle variable commission rates?"
+    a: "Yes. Each deal row has its own commission amount — there's no fixed rate applied across the portfolio. Enter the actual commission paid per deal."
+  - q: "What if my contracts have renewal terms?"
+    a: "Use the Estimated Benefit Period amortization type and enter the total expected benefit period (original term plus expected renewals) in the period field. The workbook amortizes over that full period."
+  - q: "Does it work on a Mac?"
+    a: "Yes. Pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
+  - q: "What if a deal gets cancelled or amended?"
+    a: "For cancellations, zero out the remaining commission balance and post a reversing journal entry. For amendments, add a new deal row with the updated commission and term. Document your accounting policy in your footnotes."
+  - q: "What is the difference between Contract Term and Estimated Benefit Period?"
+    a: "Contract Term amortizes over the stated contract length. Estimated Benefit Period amortizes over the expected customer relationship — useful when customers typically renew, making the benefit period longer than any single contract. Both are acceptable under ASC 340-40."
+  - q: "What if I have more than 50 deals?"
+    a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
 If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math correctly and produces audit-ready output. **$79, one-time purchase. No subscription. No macros.**
@@ -121,7 +135,7 @@ This workbook handles the commission cost side of ASC 606 (ASC 340-40) — the a
 ## Technical Specifications
 
 | Specification | Detail |
-|---------------|--------|
+|---------------|---------|
 | Deal capacity | 50 deals |
 | Schedule length | 60 months |
 | Amortization types | Immediately Expensed, Contract Term, Estimated Benefit Period |
