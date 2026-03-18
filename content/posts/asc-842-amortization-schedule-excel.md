@@ -3,7 +3,7 @@ title: "ASC 842 Amortization Schedule: How to Build One in Excel"
 date: 2026-03-16
 description: "Step-by-step guide to building an ASC 842 lease amortization schedule in Excel. Covers PV calculation, monthly columns, running balances, and the maintenance problem at scale."
 summary: "Building an ASC 842 amortization schedule in Excel is manageable for one lease. With five or more, the manual approach breaks down fast. Here's exactly how the schedule works — and what it takes to maintain it at scale."
-tags: ["ASC 842", "lease accounting", "amortization schedule", "Excel", "lease amortization", "GAAP"]
+tags: ["ASC 842", "lease accounting", "amortization schedule", "Excel", "Excel template", "lease amortization", "GAAP"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -154,9 +154,7 @@ Each row references the prior row for beginning balances. The liability declines
 | 35 | $9,710 | $49 | $5,000 | $4,951 | $4,759 |
 | 36 | $4,759 | $24 | $4,783 | $4,759 | $0 |
 
-In the final period, the payment is slightly less than $5,000 due to rounding. You'll have a small true-up: either adjust the final payment in the schedule, or book a rounding adjustment ($17 in this example). Both approaches are acceptable.
-
-The ending liability in Period 36 should be exactly $0. Same for the ending ROU balance.
+In the final period, the payment is slightly less than $5,000 due to rounding. The ending liability in Period 36 should be exactly $0. Same for the ending ROU balance.
 
 ---
 
@@ -174,7 +172,7 @@ ASC 842 requires a maturity analysis of lease liabilities in the footnotes. The 
 | Less: imputed interest | Total − PV | ($15,971) |
 | **Total lease liability** | **PV of payments** | **$164,029** |
 
-The total lease liability in the maturity analysis should tie exactly to the balance sheet. If it doesn't, you have an error in either the schedule or the GL posting.
+The total lease liability in the maturity analysis should tie exactly to the balance sheet.
 
 ---
 
@@ -184,24 +182,13 @@ Building the schedule for one lease takes a few hours. Maintaining it across 5�
 
 **1. Multiple commencement dates.** Each lease starts on a different date and has a different term. Building one Schedule tab per lease creates a fragile workbook that's hard to aggregate for the journal entry and disclosure.
 
-**2. Lease modifications.** A lease extension or payment change requires remeasuring the liability. If your schedule uses chained row references (`=C6` in C7, `=C7` in C8), a modification mid-schedule requires manually rebuilding all subsequent rows.
+**2. Lease modifications.** A lease extension or payment change requires remeasuring the liability. If your schedule uses chained row references, a modification mid-schedule requires manually rebuilding all subsequent rows.
 
 **3. Period-close aggregation.** Your JE Generator needs the total interest, depreciation, and principal across all leases for the selected period. Manually summing across 10 separate schedule tabs takes 30–60 minutes per close and is error-prone.
 
-**4. Audit traceability.** Auditors want to trace each balance sheet line back to the underlying schedule. With a manual workbook, this tracing is manual and slow. A structured workbook with clear cell references makes the audit faster and cheaper.
+**4. Audit traceability.** Auditors want to trace each balance sheet line back to the underlying schedule. With a manual workbook, this tracing is manual and slow.
 
-**5. Error compounding.** Chained formulas (`=C7` referencing `=C6` referencing `=C5`) mean one wrong input in Period 1 propagates through all 120 periods. Non-chained PV formulas calculate each period independently, so errors don't compound.
-
----
-
-## What a Production-Ready Schedule Looks Like
-
-A schedule built for multi-lease, multi-period use has these characteristics:
-
-- **Non-chained PV formulas** — each period's beginning balance calculates independently from original inputs, not from the prior row
-- **Period selector** — changing a dropdown shifts the workbook to show the selected period's JE amounts and running balances
-- **Auto-aggregation** — the JE Generator sums interest, depreciation, and principal across all leases for the selected period
-- **Reconciliation check** — a dedicated tab confirms the schedule ties to $0 variance between the amortization output and the GL balances
+**5. Error compounding.** Chained formulas mean one wrong input in Period 1 propagates through all 120 periods. Non-chained PV formulas calculate each period independently, so errors don't compound.
 
 ---
 
@@ -217,4 +204,4 @@ If you have 5–20 leases, different commencement dates, or lease modifications 
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](https://kdeskaccounting.gumroad.com)*
+*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*

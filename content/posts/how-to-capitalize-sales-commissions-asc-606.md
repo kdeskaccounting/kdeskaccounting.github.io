@@ -3,7 +3,7 @@ title: "How to Capitalize Sales Commissions Under ASC 606 (With Excel Walkthroug
 date: 2026-03-10
 description: "Step-by-step guide to capitalizing and amortizing sales commissions under ASC 606 and ASC 340-40. Includes journal entries, amortization methods, and a practical Excel approach."
 summary: "Most finance teams know they need to capitalize commissions under ASC 606 — but building the actual amortization schedule is where things break down. Here's a step-by-step walkthrough with journal entries and a practical Excel approach."
-tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "revenue recognition", "SaaS accounting"]
+tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "revenue recognition", "SaaS accounting", "Excel template"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -48,7 +48,7 @@ Pull your commission payment data and classify each deal:
 
 ## Step 2: Calculate Monthly Amortization
 
-For straight-line amortization (which is what most companies use):
+For straight-line amortization:
 
 **Monthly Amortization = Commission Amount ÷ Amortization Period (months)**
 
@@ -97,18 +97,18 @@ Your auditors will want a **rollforward schedule** showing:
 | − Amortization Expense | ($X,XXX) |
 | = Ending Deferred Commission Balance | $XX,XXX |
 
-This needs to tie to your general ledger balance. If it doesn't, you have a reconciliation issue to investigate before close.
+This needs to tie to your general ledger balance.
 
 ## Common Mistakes
 
-1. **Capitalizing base salary** — only incremental costs qualify. If the rep gets paid regardless of the deal, it's not incremental.
+1. **Capitalizing base salary** — only incremental costs qualify.
 2. **Using the wrong amortization period** — contract term vs. estimated benefit period is a policy election. Be consistent and document your rationale.
 3. **Forgetting deal amendments** — if a contract is extended or modified, you may need to adjust the remaining amortization.
-4. **No reconciliation process** — if your JE amounts don't tie to your amortization schedule, you'll find out during the audit. Don't wait.
+4. **No reconciliation process** — if your JE amounts don't tie to your amortization schedule, you'll find out during the audit.
 
 ## The Excel Problem
 
-Most finance teams start with a manual spreadsheet. It works for 5-10 deals. Then the contract base grows, deals renew, amendments happen, and suddenly you're spending hours every month maintaining a fragile workbook that nobody else can follow.
+Most finance teams start with a manual spreadsheet. It works for 5–10 deals. Then the contract base grows, deals renew, amendments happen, and suddenly you're spending hours every month maintaining a fragile workbook that nobody else can follow.
 
 The options are usually:
 
@@ -120,7 +120,7 @@ If you're in the "too many deals for manual, too early for enterprise software" 
 
 ## Get the Workbook
 
-Our [ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe) handles everything in this guide:
+Our [ASC 606 Commission Accrual Workbook](/templates/asc606/) handles everything in this guide:
 
 - **50-deal capacity** with three amortization methods
 - **Automated journal entries** with GL account mapping
@@ -135,4 +135,4 @@ Or [try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) b
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](https://kdeskaccounting.gumroad.com)*
+*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*

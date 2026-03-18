@@ -1,6 +1,6 @@
 {{- define "main" }}
 
-<!-- ═══════════════════════════════════════════════════════ HERO ══ -->
+<!-- ═════════════════════════════════════════════════════════ HERO ══ -->
 <section class="kd-hero">
   <div class="kd-hero__inner">
     <div class="kd-hero__badge">Built for SaaS Finance Teams · Pure Excel · No Macros</div>
@@ -9,16 +9,16 @@
       <span class="kd-hero__accent">for SaaS Technical Accounting</span>
     </h1>
     <p class="kd-hero__sub">
-      ASC 606 commission capitalization. ASC 842 lease accounting. Built for
+      ASC 606 commission capitalization. ASC 842 lease accounting. Startup runway modeling. Built for
       controllers and finance managers at Series A–C SaaS companies who need
       audit-defensible schedules without a $20k software contract.
     </p>
     <div class="kd-hero__ctas">
-      <a class="kd-btn kd-btn--primary" href="https://kdeskaccounting.gumroad.com" target="_blank">Browse Templates →</a>
+      <a class="kd-btn kd-btn--primary" href="/templates/">Browse Templates →</a>
       <a class="kd-btn kd-btn--ghost" href="/calculator/">Free Calculator</a>
     </div>
     <div class="kd-hero__microproof">
-      <div class="kd-proof-pill"><strong>2</strong><span>Core standards covered</span></div>
+      <div class="kd-proof-pill"><strong>3</strong><span>Excel templates available</span></div>
       <div class="kd-proof-pill"><strong>0</strong><span>Macros or add-ins required</span></div>
       <div class="kd-proof-pill"><strong>1x</strong><span>Purchase, perpetual use</span></div>
     </div>
@@ -37,7 +37,7 @@
   </div>
 </section>
 
-<!-- ════════════════════════════════════════════════ TRUST BAR ══ -->
+<!-- ════════════════════════════════════════════ TRUST BAR ══ -->
 <div class="kd-trust">
   <div class="kd-trust__inner">
     <div class="kd-trust__item">
@@ -83,7 +83,7 @@
       </article>
       <article class="kd-proof-card">
         <div class="kd-proof-card__eyebrow">Coverage</div>
-        <h3>ASC 606 and ASC 842 handled in separate purpose-built files</h3>
+        <h3>ASC 606, ASC 842, and runway modeling in purpose-built files</h3>
         <p>No generic spreadsheet bundle. Each workbook is tailored to a specific accounting workflow and reporting problem.</p>
       </article>
     </div>
@@ -104,7 +104,7 @@
   </div>
 </section>
 
-<!-- ══════════════════════════════════════════════ PRODUCTS ══ -->
+<!-- ════════════════════════════════════════════ PRODUCTS ══ -->
 <section class="kd-section">
   <div class="kd-container">
     <div class="kd-section__hd">
@@ -176,11 +176,38 @@
         </div>
       </div>
 
+      <div class="kd-product">
+        <div class="kd-product__top">
+          <div class="kd-product__badge">Cash Flow · Runway</div>
+          <h3 class="kd-product__name">Startup Runway Calculator</h3>
+          <p class="kd-product__desc">
+            12 to 48-month cash flow forecast for founders and finance leads who need to
+            know exactly how many months of runway they have — and what happens in each
+            scenario. Switch between Base, Optimistic, and Pessimistic with one dropdown.
+          </p>
+          <ul class="kd-product__features">
+            <li>Base, Optimistic, and Pessimistic scenario modeling</li>
+            <li>Dashboard KPIs: Months of Runway, Cash Zero Date, Burn Rate</li>
+            <li>Financing, Revenue, Fixed, Variable, and CapEx input tabs</li>
+            <li>Annual growth rate + frequency logic per line item</li>
+            <li>12 / 24 / 36 / 48-month forecast window</li>
+          </ul>
+        </div>
+        <div class="kd-product__foot">
+          <div class="kd-product__price">
+            <span class="kd-product__amount">$49</span>
+            <span class="kd-product__per">one time</span>
+          </div>
+          <a class="kd-btn kd-btn--primary" href="/templates/runway/">Get Template →</a>
+          <a class="kd-product__free" href="/templates/runway/">See free 12-month version</a>
+        </div>
+      </div>
+
     </div>
   </div>
 </section>
 
-<!-- ══════════════════════════════════════ CALCULATOR CALLOUT ══ -->
+<!-- ════════════════════════════════════════ CALCULATOR CALLOUT ══ -->
 <section class="kd-calc-callout">
   <div class="kd-container kd-calc-callout__inner">
     <div class="kd-calc-callout__text">
@@ -193,7 +220,7 @@
   </div>
 </section>
 
-<!-- ══════════════════════════════════════════════ BLOG POSTS ══ -->
+<!-- ════════════════════════════════════════════ BLOG POSTS ══ -->
 {{- $posts := (where .Site.RegularPages "Type" "posts") | first 3 }}
 {{- if $posts }}
 <section class="kd-section kd-section--light">
@@ -228,9 +255,9 @@
 <section class="kd-bottom-cta">
   <div class="kd-container kd-bottom-cta__inner">
     <h2>Stop rebuilding the same schedule every month.</h2>
-    <p>$79–$97 gets you a production-ready workbook that handles everything in this guide
+    <p>$49–$97 gets you a production-ready workbook that handles everything in this guide
     — and ties out every time. No subscription. No software contract.</p>
-    <a class="kd-btn kd-btn--yellow" href="https://kdeskaccounting.gumroad.com" target="_blank">Browse Templates on Gumroad →</a>
+    <a class="kd-btn kd-btn--yellow" href="/templates/">Browse All Templates →</a>
   </div>
 </section>
 

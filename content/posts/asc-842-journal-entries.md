@@ -3,7 +3,7 @@ title: "ASC 842 Journal Entries: A Complete Guide with Examples"
 date: 2026-03-11
 description: "Step-by-step ASC 842 journal entries for operating and finance leases — from initial recognition through monthly close. Includes real numbers, debit/credit format, and common mistakes."
 summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's every entry you need, with real numbers."
-tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "GAAP"]
+tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "Excel template", "GAAP"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -69,18 +69,6 @@ Operating leases use a **single straight-line expense** approach. The total cash
 
 For constant monthly payments (the most common case), this means one clean entry per month:
 
-### Monthly entry — operating lease
-
-```
-DR  Lease Expense               5,000
-    CR  Lease Liability — current          Interest portion
-    CR  Right-of-Use Asset                 Plug (expense − interest)
-```
-
-In practice, you split the payment between:
-- **Reducing the lease liability** by the cash payment minus the interest accrual
-- **Amortizing the ROU asset** as the plug to make total expense equal to the straight-line amount
-
 Let's work through Month 1 of our example:
 
 | Item | Month 1 |
@@ -97,23 +85,9 @@ Let's work through Month 1 of our example:
 
 ```
 DR  Lease Expense               5,000
-    CR  Cash                              5,000
-```
-
-*Then record the liability and ROU movement:*
-
-```
 DR  Lease Liability             3,894
     CR  Right-of-Use Asset                3,894
-```
-
-Many companies combine these into one entry:
-
-```
-DR  Lease Expense               5,000
-DR  Lease Liability             3,894
     CR  Cash                              5,000
-    CR  Right-of-Use Asset                3,894
 ```
 
 The ROU asset balance decreases by the principal portion each month. By the end of the lease, both the liability and the ROU asset reach $0.
@@ -123,8 +97,6 @@ The ROU asset balance decreases by the principal portion each month. By the end 
 ## Monthly Finance Lease Entries
 
 Finance leases split the income statement into **two separate lines**: depreciation (straight-line over the lease term) and interest expense (front-loaded using the effective interest method).
-
-This means total expense is higher in early periods and lower in later periods — the opposite of an operating lease, which is perfectly flat.
 
 Using a similar example:
 
@@ -147,8 +119,6 @@ DR  Lease Liability             2,500
     CR  Cash                              2,500
 ```
 
-*(Net liability reduction = $2,500 − $623 = $1,877)*
-
 ### Month 1 — depreciation
 
 ```
@@ -158,7 +128,7 @@ DR  Depreciation Expense        2,225      (106,785 ÷ 48 months)
 
 Total Month 1 expense: **$623 interest + $2,225 depreciation = $2,848**
 
-By Month 48, interest expense will be near $0 (tiny remaining balance) and total expense will be just $2,225 — noticeably lower than early periods. That front-loading is the defining characteristic of finance lease accounting.
+By Month 48, interest expense will be near $0 and total expense will be just $2,225 — noticeably lower than early periods.
 
 ---
 
@@ -171,26 +141,13 @@ DR  Lease Expense               350
     CR  Cash                              350
 ```
 
-That's it. No ROU asset, no liability, no amortization schedule. Just a straight operating expense each period.
-
-> **Important:** The election is made by **class of underlying asset**, not lease by lease. If you elect the short-term exemption for office equipment, it applies to all short-term office equipment leases.
+No ROU asset, no liability, no amortization schedule. Just a straight operating expense each period.
 
 ---
 
 ## Lease Termination Entry
 
-When a lease ends (or is terminated early), you derecognize both the ROU asset and the lease liability.
-
-If the balances aren't equal at termination (early termination penalty, unamortized IDC, etc.), the difference hits the income statement as a gain or loss.
-
-### Clean termination at natural end of lease
-
-```
-DR  Lease Liability             0          (fully amortized)
-    CR  Right-of-Use Asset                  0          (fully amortized)
-```
-
-Both balances are $0 at natural lease end — nothing to book.
+When a lease ends (or is terminated early), you derecognize both the ROU asset and the lease liability. If the balances aren't equal at termination, the difference hits the income statement as a gain or loss.
 
 ### Early termination (example)
 
@@ -206,57 +163,28 @@ DR  Loss on Lease Termination   6,196
 
 ---
 
-## Lease Modification Entries
-
-A lease modification (extended term, added space, reduced payments) may require remeasuring the lease liability and adjusting the ROU asset.
-
-For a **modification that grants an additional right of use** (e.g., adding a floor to an office lease), treat it as a separate lease.
-
-For **all other modifications**, remeasure the liability using updated inputs and adjust the ROU asset for the difference:
-
-```
-DR  Right-of-Use Asset          [increase]
-    CR  Lease Liability                    [increase]
-```
-
-or
-
-```
-DR  Lease Liability             [decrease]
-    CR  Right-of-Use Asset                [decrease]
-```
-
-Any difference that can't be absorbed by the ROU asset hits the income statement.
-
----
-
 ## Common Mistakes
 
 **1. Using the rate implicit in the lease instead of the IBR**
-Most lessees don't know the implicit rate. Default to the IBR unless you can calculate the implicit rate with confidence. Using the wrong rate shifts every number in the schedule.
+Most lessees don't know the implicit rate. Default to the IBR unless you can calculate the implicit rate with confidence.
 
 **2. Forgetting to remeasure on variable rate leases**
-If your lease payments change based on a benchmark rate (e.g., SOFR + spread), you must remeasure the liability when the rate changes.
+If your lease payments change based on a benchmark rate, you must remeasure the liability when the rate changes.
 
 **3. Treating operating lease ROU amortization as a separate line**
-Operating lease ROU amortization is a **plug** — it's not separately disclosed. The only P&L line is "Lease Expense." Finance lease depreciation, however, is disclosed separately.
+Operating lease ROU amortization is a **plug** — it's not separately disclosed. The only P&L line is "Lease Expense."
 
 **4. Wrong cash flow classification for finance leases**
-Finance lease principal payments go in **financing activities**. Interest payments go in **operating activities** (unless you use the optional policy to show them in financing). Getting this wrong throws off your cash flow statement.
+Finance lease principal payments go in **financing activities**. Interest payments go in **operating activities**.
 
 **5. Not reconciling the liability rollforward to the GL**
-At period end, your lease liability balance per the amortization schedule should tie exactly to the GL. If it doesn't, you have a journal entry error somewhere that will compound over time.
+At period end, your lease liability balance per the amortization schedule should tie exactly to the GL.
 
 ---
 
 ## The Reconciliation Problem
 
-The journal entries above work cleanly for a single lease. With 5, 10, or 20 leases across different commencement dates, you need a systematic way to:
-
-1. Track beginning and ending balances for each lease
-2. Aggregate interest, depreciation, and amortization across the portfolio
-3. Generate the correct journal entry amounts for the period
-4. Tie everything to the balance sheet
+The journal entries above work cleanly for a single lease. With 5, 10, or 20 leases across different commencement dates, you need a systematic way to aggregate interest, depreciation, and amortization — and tie everything to the balance sheet.
 
 That's exactly what the ASC 842 Lease Accounting Workbook handles — 20 leases, 120-month amortization schedule, period-level journal entry aggregation, and a reconciliation tab that confirms everything ties to $0 every month.
 
@@ -266,4 +194,4 @@ Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) t
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](https://kdeskaccounting.gumroad.com)*
+*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*

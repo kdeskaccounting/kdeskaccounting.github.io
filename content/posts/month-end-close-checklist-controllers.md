@@ -3,7 +3,7 @@ title: "Month-End Close Checklist for Controllers (With Accounting Templates)"
 date: 2026-03-11
 description: "A complete month-end close checklist for controllers and accounting managers — from subledger reconciliations to lease and commission schedules. Includes what to review, what to sign off, and how to cut close time."
 summary: "A reliable month-end close comes down to a repeatable checklist and the right supporting schedules. Here's the full sequence — from Day 1 through final signoff — with specific focus on the technical areas that trip up growing finance teams."
-tags: ["month-end close", "controller", "accounting", "reconciliation", "close process", "finance operations"]
+tags: ["month-end close", "controller", "accounting", "reconciliation", "close process", "finance operations", "Excel template"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -75,11 +75,6 @@ Subledger to GL reconciliations are non-negotiable. If these don't tie, you're c
 - [ ] Accumulated depreciation ties to fixed asset subledger
 - [ ] Confirm any asset retirements or transfers are reflected
 
-### Inventory (if applicable)
-- [ ] Inventory subledger ties to GL
-- [ ] Physical count adjustments (if cycle count performed) posted
-- [ ] Obsolescence reserve updated
-
 ---
 
 ## Day 3–4: Technical Accounting Schedules
@@ -118,7 +113,6 @@ For each active lease:
 - [ ] Prepaid schedule updated with new payments
 - [ ] Monthly amortization entries posted for each prepaid
 - [ ] Prepaid balance per schedule ties to GL
-- [ ] Any prepaids fully amortized removed from the schedule
 
 ### Accrued liabilities
 - [ ] Recurring accruals posted (insurance, rent, professional fees)
@@ -130,7 +124,6 @@ For each active lease:
 - [ ] Deferred revenue schedule updated for new billings
 - [ ] Revenue recognized this period calculated per schedule
 - [ ] Deferred revenue balance per schedule ties to GL
-- [ ] Any contract modifications or cancellations reflected
 
 ---
 
@@ -141,7 +134,6 @@ Before you close, read the P&L. Not as a list of numbers — as a story.
 ### Revenue
 - [ ] Revenue by line item vs. prior month — explain any variance >5%
 - [ ] Revenue vs. budget — document significant variances
-- [ ] Deferred revenue movement ties to revenue recognized
 
 ### Cost of goods sold / cost of revenue
 - [ ] Gross margin % vs. prior period — explain movement
@@ -149,13 +141,13 @@ Before you close, read the P&L. Not as a list of numbers — as a story.
 
 ### Operating expenses
 - [ ] Each expense line vs. prior month and budget
-- [ ] Headcount-driven costs (payroll, benefits) reviewed against headcount changes
+- [ ] Headcount-driven costs reviewed against headcount changes
 - [ ] Confirm no items were miscoded to the wrong account
 
 ### Below-the-line items
 - [ ] Interest expense ties to debt schedule
 - [ ] Depreciation ties to fixed asset schedule
-- [ ] Lease expense (operating) or depreciation + interest (finance) ties to lease schedule
+- [ ] Lease expense ties to lease schedule
 - [ ] Commission amortization ties to deferred commission schedule
 
 ---
@@ -187,9 +179,7 @@ Run a balance sheet as of the last day of the month and review every line:
 
 ## Day 5–6: Flux Analysis
 
-A flux analysis (variance analysis) is a line-by-line explanation of what changed and why. It serves two purposes: catching errors before they become audit findings, and building institutional knowledge about your business.
-
-For each significant P&L and balance sheet line:
+A flux analysis is a line-by-line explanation of what changed and why. It catches errors before they become audit findings and builds institutional knowledge about your business.
 
 | Account | Current Month | Prior Month | $ Change | % Change | Explanation |
 |---------|--------------|-------------|----------|----------|-------------|
@@ -227,7 +217,7 @@ The goal is a 5-day close where Day 6 is review, not catch-up.
 
 ## Templates That Support the Close
 
-Two of the most time-consuming close tasks — deferred commission accounting and lease accounting — are handled by our workbooks:
+Three of the most time-consuming finance tasks — deferred commission accounting, lease accounting, and cash runway modeling — are handled by our workbooks:
 
 **[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $79
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.
@@ -235,8 +225,11 @@ Handles 50 deals with three amortization methods, automated journal entries, rol
 **[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $97
 Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation. [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 
-Both are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
+**[Startup Runway Calculator](/templates/runway/)** — $49
+12 to 48-month cash flow forecast with Base, Optimistic, and Pessimistic scenario modeling. Know exactly how many months of runway you have before every board meeting.
+
+All three are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](https://kdeskaccounting.gumroad.com)*
+*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
