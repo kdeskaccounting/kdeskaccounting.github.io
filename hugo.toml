@@ -34,8 +34,8 @@ paginate = 10
 
   [params.label]
     text = "KDesk Accounting"
-    icon = ""
-    iconHeight = 35
+    icon = "/images/brand/kdesk-mark.svg"
+    iconHeight = 34
 
   [params.fuseOpts]
     isCaseSensitive = false

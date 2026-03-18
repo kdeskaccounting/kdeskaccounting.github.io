@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" role="img" aria-label="KDesk Accounting">
+  <defs>
+    <linearGradient id="kd-mark-panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#234273" />
+      <stop offset="100%" stop-color="#172b4c" />
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="4" width="64" height="64" rx="15" fill="#1F3864" />
+  <rect x="4" y="8" width="56" height="6" rx="3" fill="#FFF2CC" />
+  <rect x="4" y="58" width="56" height="6" rx="3" fill="#2E75B6" />
+
+  <g opacity="0.14" stroke="#9BC2E6" stroke-width="1">
+    <path d="M18 22H46" />
+    <path d="M18 30H46" />
+    <path d="M18 38H46" />
+    <path d="M18 46H46" />
+    <path d="M22 20V50" />
+    <path d="M30 20V50" />
+    <path d="M38 20V50" />
+    <path d="M46 20V50" />
+  </g>
+
+  <rect x="14" y="18" width="36" height="36" rx="10" fill="url(#kd-mark-panel)" />
+  <g fill="#FFFFFF">
+    <rect x="22" y="24" width="6" height="24" rx="2" />
+    <path d="M29 35.5L42.5 24.5C43.4 23.8 44.7 23.9 45.4 24.8L46.4 26C47.1 26.9 47 28.2 46.1 28.9L35.4 37.4L46.1 45.1C47.1 45.8 47.2 47.1 46.5 48L45.6 49.2C44.9 50.1 43.6 50.3 42.6 49.5L29 39.8V35.5Z" />
+  </g>
+
+  <text x="84" y="34" font-family="'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="30" font-weight="700" fill="#1F3864" letter-spacing="-0.4">KDesk</text>
+  <text x="85" y="54" font-family="'Aptos', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="13" font-weight="600" fill="#2E75B6" letter-spacing="2.6">ACCOUNTING</text>
+</svg>
