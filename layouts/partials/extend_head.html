@@ -1,3 +1,67 @@
 <!-- Cloudflare Web Analytics -->
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "cfe501ae4fca4d869a902689d64ff670"}'></script>
 <!-- End Cloudflare Web Analytics -->
+
+{{/* JSON-LD Structured Data */}}
+{{- if .IsHome }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "KDesk Accounting",
+  "url": {{ .Site.BaseURL | jsonify }},
+  "description": "Audit-ready Excel templates for controllers and finance managers at SaaS startups. ASC 606 commission capitalization, ASC 842 lease accounting, startup runway modeling."
+}
+</script>
+{{- else if eq .Section "templates" }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": {{ .Title | jsonify }},
+  "description": {{ .Description | jsonify }},
+  "brand": {
+    "@type": "Brand",
+    "name": "KDesk Accounting"
+  },
+  "url": {{ .Permalink | jsonify }},
+  "category": "Software > Business and Finance",
+  "offers": {
+    "@type": "Offer",
+    "priceCurrency": "USD",
+    "availability": "https://schema.org/InStock",
+    "seller": {
+      "@type": "Organization",
+      "name": "KDesk Accounting"
+    }
+  }
+}
+</script>
+{{- else if eq .Section "posts" }}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": {{ .Title | jsonify }},
+  "description": {{ .Description | jsonify }},
+  "datePublished": "{{ .Date.Format "2006-01-02" }}",
+  {{- with .Lastmod }}
+  "dateModified": "{{ .Format "2006-01-02" }}",
+  {{- end }}
+  "author": {
+    "@type": "Organization",
+    "name": "KDesk Accounting",
+    "url": {{ .Site.BaseURL | jsonify }}
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "KDesk Accounting",
+    "url": {{ .Site.BaseURL | jsonify }}
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": {{ .Permalink | jsonify }}
+  }
+}
+</script>
+{{- end }}
