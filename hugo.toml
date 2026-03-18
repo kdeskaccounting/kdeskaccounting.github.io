@@ -60,7 +60,7 @@ paginate = 10
   [[menu.main]]
     identifier = "templates"
     name = "Templates"
-    url = "https://kdeskaccounting.gumroad.com"
+    url = "/templates/"
     weight = 10
   [[menu.main]]
     identifier = "calculator"

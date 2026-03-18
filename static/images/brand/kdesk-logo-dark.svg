@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 60" width="220" height="60" role="img" aria-label="KDesk Accounting">
+  <defs>
+    <clipPath id="icon-clip-d">
+      <rect x="0" y="0" width="60" height="60" rx="10" ry="10"/>
+    </clipPath>
+    <linearGradient id="icon-bg-d" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#253E74"/>
+      <stop offset="100%" stop-color="#1F3864"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="60" height="60" rx="10" ry="10" fill="url(#icon-bg-d)"/>
+  <rect x="0" y="50" width="60" height="10" fill="#2E75B6" opacity="0.55" clip-path="url(#icon-clip-d)"/>
+  <g transform="translate(10,10)" fill="white">
+    <rect x="0" y="0" width="8" height="40"/>
+    <polygon points="6.2,17.6 9.8,22.4 35,2 32,0"/>
+    <polygon points="9.8,17.6 6.2,22.4 32,40 35,38"/>
+  </g>
+  <text x="72" y="35" font-family="'Calibri','Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="27" font-weight="700" fill="white" letter-spacing="-0.3">KDesk</text>
+  <text x="74" y="52" font-family="'Calibri','Segoe UI','Helvetica Neue',Arial,sans-serif" font-size="11.5" font-weight="400" fill="#7EB8E8" letter-spacing="3">ACCOUNTING</text>
+</svg>
