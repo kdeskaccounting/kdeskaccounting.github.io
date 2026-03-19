@@ -8,6 +8,9 @@ ShowToc: true
 TocOpen: true
 weight: 2
 price: 79
+buy_url: "https://kdeskaccounting.gumroad.com/l/mwmwpe"
+free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
+free_label: "Try free 5-deal version"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
 faq:
   - q: "Does it handle variable commission rates?"

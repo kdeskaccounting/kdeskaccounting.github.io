@@ -8,6 +8,9 @@ ShowToc: true
 TocOpen: true
 weight: 3
 price: 49
+buy_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator"
+free_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator-free"
+free_label: "Try free 12-month version"
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
 faq:
   - q: "Does it handle variable payment schedules?"

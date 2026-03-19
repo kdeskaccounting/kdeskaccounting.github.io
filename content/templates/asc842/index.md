@@ -8,6 +8,9 @@ ShowToc: true
 TocOpen: true
 weight: 1
 price: 97
+buy_url: "https://kdeskaccounting.gumroad.com/l/phxigq"
+free_url: "https://kdeskaccounting.gumroad.com/l/gljxc"
+free_label: "Try free 3-lease version"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
 faq:
   - q: "Does it handle both operating and finance leases?"

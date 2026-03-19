@@ -1,0 +1,180 @@
+{{- define "main" }}
+
+{{- $price := .Params.price | default 0 }}
+{{- $buyUrl := .Params.buy_url | default "" }}
+{{- $freeUrl := .Params.free_url | default "" }}
+{{- $freeLabel := .Params.free_label | default "Try the free version" }}
+
+<!-- ═══════════════════════════════════════════ PRODUCT HERO ══ -->
+<section class="kd-phero">
+  <div class="kd-phero__inner">
+    {{- if .Params.tags }}
+    <div class="kd-phero__badges">
+      {{- range first 3 .Params.tags }}
+      <span class="kd-hero__badge">{{ . }}</span>
+      {{- end }}
+    </div>
+    {{- end }}
+    <h1 class="kd-hero__h1">{{ .Title }}</h1>
+    <p class="kd-phero__desc">{{ .Description }}</p>
+    <div class="kd-phero__actions">
+      {{- if gt $price 0 }}
+      <span class="kd-phero__price">${{ $price }}</span>
+      <span class="kd-phero__per">one-time purchase</span>
+      {{- end }}
+    </div>
+    <div class="kd-hero__ctas">
+      {{- if $buyUrl }}
+      <a class="kd-btn kd-btn--primary" href="{{ $buyUrl }}" target="_blank" rel="noopener">Get the Workbook (${{ $price }}) &rarr;</a>
+      {{- end }}
+      {{- if $freeUrl }}
+      <a class="kd-btn kd-btn--ghost" href="{{ $freeUrl }}" target="_blank" rel="noopener">{{ $freeLabel }}</a>
+      {{- end }}
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ MAIN LAYOUT ══ -->
+<div class="kd-playout">
+
+  <!-- Content + Sidebar -->
+  <div class="kd-playout__body kd-container">
+
+    <!-- Sidebar (desktop) -->
+    <aside class="kd-psidebar">
+
+      {{- if .Params.ShowToc | default (.Site.Params.ShowToc | default false) }}
+      <nav class="kd-ptoc" aria-label="Table of contents">
+        <h2 class="kd-ptoc__title">On this page</h2>
+        {{ .TableOfContents }}
+      </nav>
+      {{- end }}
+
+      <div class="kd-pspecs">
+        <h3 class="kd-pspecs__title">Quick Specs</h3>
+        <table class="kd-pspecs__table">
+          {{- if gt $price 0 }}
+          <tr><td>Price</td><td><strong>${{ $price }}</strong> one-time</td></tr>
+          {{- end }}
+          <tr><td>Format</td><td>.xlsx (Excel)</td></tr>
+          <tr><td>Macros</td><td>None</td></tr>
+          <tr><td>Compatibility</td><td>Excel 2016+, 365, Mac</td></tr>
+        </table>
+        {{- if $buyUrl }}
+        <a class="kd-btn kd-btn--primary kd-pspecs__cta" href="{{ $buyUrl }}" target="_blank" rel="noopener">Get Template (${{ $price }}) &rarr;</a>
+        {{- end }}
+        {{- if $freeUrl }}
+        <a class="kd-pspecs__free" href="{{ $freeUrl }}" target="_blank" rel="noopener">{{ $freeLabel }}</a>
+        {{- end }}
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <article class="kd-pcontent">
+
+      {{- if .Site.Params.ShowBreadCrumbs }}
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <ul>
+          <li><a href="/">Home</a></li>
+          <li><a href="/templates/">Templates</a></li>
+          <li class="active" aria-current="page">{{ .Title }}</li>
+        </ul>
+      </nav>
+      {{- end }}
+
+      <!-- Mobile TOC -->
+      {{- if .Params.ShowToc | default (.Site.Params.ShowToc | default false) }}
+      <details class="kd-ptoc-mobile">
+        <summary class="kd-ptoc-mobile__toggle">Table of Contents</summary>
+        <nav class="kd-ptoc-mobile__nav">
+          {{ .TableOfContents }}
+        </nav>
+      </details>
+      {{- end }}
+
+      <div class="post-content">
+        {{ .Content }}
+      </div>
+
+      {{- if .Params.tags }}
+      <div class="post-tags" style="margin-top: 2rem;">
+        {{- range .Params.tags }}
+        <a href="{{ absURL (printf "tags/%s/" (urlize .)) }}">{{ . }}</a>
+        {{- end }}
+      </div>
+      {{- end }}
+    </article>
+  </div>
+
+  <!-- FAQ Section -->
+  {{- if .Params.faq }}
+  <section class="kd-section kd-section--light kd-pfaq-section">
+    <div class="kd-container">
+      <div class="kd-section__hd">
+        <h2>Frequently Asked Questions</h2>
+      </div>
+      <div class="kd-pfaq">
+        {{- range .Params.faq }}
+        <details class="kd-pfaq__item">
+          <summary class="kd-pfaq__q">{{ .q }}</summary>
+          <div class="kd-pfaq__a">
+            <p>{{ .a }}</p>
+          </div>
+        </details>
+        {{- end }}
+      </div>
+    </div>
+  </section>
+  {{- end }}
+
+  <!-- Bottom CTA -->
+  <section class="kd-bottom-cta">
+    <div class="kd-container kd-bottom-cta__inner">
+      <h2>Stop rebuilding the same schedule every month.</h2>
+      <p>${{ $price }} gets you a production-ready workbook that handles everything above
+      — and ties out every time. No subscription. No software contract.</p>
+      <div class="kd-hero__ctas" style="justify-content: center;">
+        {{- if $buyUrl }}
+        <a class="kd-btn kd-btn--yellow" href="{{ $buyUrl }}" target="_blank" rel="noopener">Get the Workbook (${{ $price }}) &rarr;</a>
+        {{- end }}
+        <a class="kd-btn kd-btn--ghost" href="/templates/" style="border-color: rgba(255,255,255,0.3); color: #fff !important;">Browse All Templates</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- ═══════════════════════════════════════════ STICKY BUY BAR ══ -->
+{{- if $buyUrl }}
+<div class="kd-stickybar" id="kd-stickybar">
+  <div class="kd-stickybar__inner kd-container">
+    <div class="kd-stickybar__info">
+      <strong class="kd-stickybar__name">{{ .Title }}</strong>
+      {{- if gt $price 0 }}
+      <span class="kd-stickybar__price">${{ $price }}</span>
+      {{- end }}
+    </div>
+    <a class="kd-btn kd-btn--primary kd-stickybar__btn" href="{{ $buyUrl }}" target="_blank" rel="noopener">Get Template &rarr;</a>
+  </div>
+</div>
+<script>
+(function() {
+  var bar = document.getElementById('kd-stickybar');
+  var hero = document.querySelector('.kd-phero');
+  if (!bar || !hero) return;
+  var shown = false;
+  function check() {
+    var rect = hero.getBoundingClientRect();
+    var shouldShow = rect.bottom < 0;
+    if (shouldShow !== shown) {
+      shown = shouldShow;
+      bar.classList.toggle('kd-stickybar--visible', shown);
+    }
+  }
+  window.addEventListener('scroll', check, { passive: true });
+  check();
+})();
+</script>
+{{- end }}
+
+{{- end }}
