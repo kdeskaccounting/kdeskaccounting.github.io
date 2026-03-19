@@ -95,3 +95,17 @@
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+
+{{/* Scroll-triggered fade-in animations */}}
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  var targets=document.querySelectorAll('.kd-proof-card,.kd-product,.kd-post-card,.kd-section__hd,.kd-animate-target');
+  if(!targets.length||!('IntersectionObserver' in window))return;
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){e.target.classList.add('kd-animate');obs.unobserve(e.target);}
+    });
+  },{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+  targets.forEach(function(t){obs.observe(t);});
+});
+</script>

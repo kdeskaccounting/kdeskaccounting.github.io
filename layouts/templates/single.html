@@ -34,6 +34,13 @@
   </div>
 </section>
 
+<!-- ═══════════════════════════════════════════ PRODUCT SCREENSHOT ══ -->
+{{- $slug := path.Base (strings.TrimSuffix "/" .File.Dir) }}
+{{- $shotPath := printf "/images/products/%s-cover.png" $slug }}
+<div class="kd-pshot">
+  <img src="{{ $shotPath }}" alt="{{ .Title }} preview screenshot" loading="lazy">
+</div>
+
 <!-- ═══════════════════════════════════════════ MAIN LAYOUT ══ -->
 <div class="kd-playout">
 
@@ -95,6 +102,15 @@
       <div class="post-content">
         {{ .Content }}
       </div>
+
+      <!-- Mid-page CTA -->
+      {{- if $buyUrl }}
+      <div class="kd-midcta">
+        <h2>Ready to stop building this by hand?</h2>
+        <p>Get the complete workbook with sample data, protected formulas, and audit-ready output. One-time purchase.</p>
+        <a class="kd-btn kd-btn--primary" href="{{ $buyUrl }}" target="_blank" rel="noopener">Get the Workbook (${{ $price }}) →</a>
+      </div>
+      {{- end }}
 
       {{- if .Params.tags }}
       <div class="post-tags" style="margin-top: 2rem;">

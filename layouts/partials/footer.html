@@ -1,61 +1,39 @@
 <footer class="kd-footer">
   <div class="kd-footer__inner">
-    <nav class="kd-footer__links">
-      <a href="/templates/">Templates</a>
-      <span class="kd-footer__sep">&middot;</span>
-      <a href="/posts/">Blog</a>
-      <span class="kd-footer__sep">&middot;</span>
-      <a href="/about/">About</a>
-    </nav>
-    <p class="kd-footer__copy">&copy; {{ now.Year }} <a href="{{ "" | absURL }}">KDesk Accounting</a></p>
+    <div class="kd-footer__grid">
+
+      <div class="kd-footer__col kd-footer__col--brand">
+        <a href="/" class="kd-footer__logo">
+          <img src="/images/brand/kdesk-mark.svg" alt="KDesk Accounting" height="28">
+          <span>KDesk Accounting</span>
+        </a>
+        <p class="kd-footer__tagline">Audit-ready Excel templates for SaaS finance teams. Built by a CPA for controllers and accounting managers.</p>
+      </div>
+
+      <div class="kd-footer__col">
+        <h4 class="kd-footer__heading">Templates</h4>
+        <ul class="kd-footer__list">
+          <li><a href="/templates/asc842/">ASC 842 Lease Accounting</a></li>
+          <li><a href="/templates/asc606/">ASC 606 Commission Capitalization</a></li>
+          <li><a href="/templates/runway/">Startup Runway Calculator</a></li>
+          <li><a href="/calculator/">Free Amortization Calculator</a></li>
+        </ul>
+      </div>
+
+      <div class="kd-footer__col">
+        <h4 class="kd-footer__heading">Resources</h4>
+        <ul class="kd-footer__list">
+          <li><a href="/posts/">Blog</a></li>
+          <li><a href="/about/">About</a></li>
+          <li><a href="/tags/">Topics</a></li>
+          <li><a href="/search/">Search</a></li>
+          <li><a href="https://kdeskaccounting.gumroad.com" target="_blank" rel="noopener">Gumroad Store</a></li>
+        </ul>
+      </div>
+
+    </div>
+    <div class="kd-footer__bottom">
+      <p class="kd-footer__copy">&copy; {{ now.Year }} <a href="{{ "" | absURL }}">KDesk Accounting</a>. All rights reserved.</p>
+    </div>
   </div>
 </footer>
-
-<style>
-.kd-footer {
-  border-top: 1px solid var(--kd-border);
-  padding: 28px 40px;
-  text-align: center;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-.kd-footer__inner {
-  max-width: 1160px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-}
-.kd-footer__links {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-.kd-footer__links a {
-  color: var(--kd-muted);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  transition: color 0.15s;
-}
-.kd-footer__links a:hover {
-  color: var(--kd-blue);
-}
-.kd-footer__sep {
-  color: var(--kd-border);
-  font-size: 0.85rem;
-}
-.kd-footer__copy {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--kd-muted);
-}
-.kd-footer__copy a {
-  color: var(--kd-navy);
-  text-decoration: none;
-  font-weight: 600;
-}
-.kd-footer__copy a:hover {
-  color: var(--kd-blue);
-}
-</style>
