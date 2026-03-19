@@ -24,7 +24,7 @@ faq:
 
 If you're raising a round, preparing a board update, or just trying to answer "how long do we have?" — this workbook gives you a defensible answer in minutes. **$49, one-time purchase. No subscription. No macros.**
 
-[Get the Workbook ($49) →](https://kdeskaccounting.gumroad.com)
+[Get the Workbook ($49) →](https://kdeskaccounting.gumroad.com/l/runway-calculator)
 
 ---
 
@@ -135,11 +135,11 @@ This workbook models cash in and cash out — it is not a three-statement financ
 
 ## Get the Workbook
 
-[**Get the Workbook ($49) →**](https://kdeskaccounting.gumroad.com)
+[**Get the Workbook ($49) →**](https://kdeskaccounting.gumroad.com/l/runway-calculator)
 
 Not ready to buy? Try the free 12-month version — same structure, limited to 5 input rows per tab and a 12-month window. See how the dashboard and scenario logic work before committing.
 
-[Try the free version →](https://kdeskaccounting.gumroad.com)
+[Try the free version →](https://kdeskaccounting.gumroad.com/l/runway-calculator-free)
 
 ---
 

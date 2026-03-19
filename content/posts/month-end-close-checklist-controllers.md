@@ -225,8 +225,8 @@ Handles 50 deals with three amortization methods, automated journal entries, rol
 **[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $97
 Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation. [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 
-**[Startup Runway Calculator](/templates/runway/)** — $49
-12 to 48-month cash flow forecast with Base, Optimistic, and Pessimistic scenario modeling. Know exactly how many months of runway you have before every board meeting.
+**[Startup Runway Calculator](https://kdeskaccounting.gumroad.com/l/runway-calculator)** — $49
+12 to 48-month cash flow forecast with Base, Optimistic, and Pessimistic scenario modeling. Know exactly how many months of runway you have before every board meeting. [Try the free 12-month version →](https://kdeskaccounting.gumroad.com/l/runway-calculator-free)
 
 All three are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
 
