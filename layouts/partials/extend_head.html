@@ -109,3 +109,40 @@ document.addEventListener('DOMContentLoaded',function(){
   targets.forEach(function(t){obs.observe(t);});
 });
 </script>
+
+{{/* GA4 Key Event instrumentation — outbound Gumroad clicks, calculator opens, internal CTA clicks.
+     Fires events even if the click opens a new tab. Falls back silently if gtag isn't loaded. */}}
+<script>
+(function(){
+  function fire(name, params){
+    if (typeof window.gtag === 'function') {
+      try { window.gtag('event', name, params || {}); } catch(e){}
+    }
+  }
+  document.addEventListener('click', function(e){
+    var a = e.target.closest && e.target.closest('a');
+    if (!a || !a.href) return;
+    var href = a.href;
+    var page = location.pathname;
+    // Outbound Gumroad clicks — the most important conversion signal
+    if (/(?:^https?:)\/\/(?:[^/]*\.)?gumroad\.com\//i.test(href)) {
+      // Try to extract the product permalink slug from /l/<slug>
+      var m = href.match(/gumroad\.com\/l\/([^/?#]+)/i);
+      fire('click_gumroad_outbound', {
+        product_slug: m ? m[1] : 'unknown',
+        link_url: href,
+        link_text: (a.textContent || '').trim().slice(0, 80),
+        source_page: page
+      });
+    }
+    // Internal calculator page entry — funnel top-of-list lead magnet
+    else if (a.pathname === '/calculator/' || /\/calculator\/?$/.test(a.pathname || '')) {
+      fire('open_calculator', { source_page: page });
+    }
+    // Internal template page click — buying-intent signal
+    else if (/^\/templates\//.test(a.pathname || '')) {
+      fire('view_template_page', { template_path: a.pathname, source_page: page });
+    }
+  }, { passive: true });
+})();
+</script>

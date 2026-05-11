@@ -1,0 +1,8 @@
+# Hugo build output (deployed via Actions, not from repo)
+public/
+.hugo_build.lock
+
+# OS / editor noise
+.DS_Store
+*.swp
+*~
