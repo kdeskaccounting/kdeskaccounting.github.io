@@ -1,0 +1,9 @@
+[Unit]
+Description=KDesk — weekly SEO snapshot (GSC + GA4 → marketing/seo-tracking/*.jsonl)
+Documentation=file:///home/kdeskconsulting/kdeskaccounting-blog/scripts/README.md
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kdeskaccounting-blog
+ExecStart=/bin/bash -lc '%h/kdeskaccounting-blog/scripts/pull_seo_snapshot.py >> %h/kdeskaccounting-blog/logs/seo-snapshot.log 2>&1'
+Nice=10

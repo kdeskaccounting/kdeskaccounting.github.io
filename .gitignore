@@ -10,3 +10,5 @@ public/
 # MCP / agent session artifacts (local-only; do not commit)
 .mcp.json
 .playwright-mcp/
+logs/
+__pycache__/
