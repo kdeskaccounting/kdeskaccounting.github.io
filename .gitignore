@@ -6,3 +6,7 @@ public/
 .DS_Store
 *.swp
 *~
+
+# MCP / agent session artifacts (local-only; do not commit)
+.mcp.json
+.playwright-mcp/

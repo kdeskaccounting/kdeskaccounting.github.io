@@ -1,8 +1,9 @@
 ---
-title: "ASC 842 Journal Entries: A Complete Guide with Examples"
+title: "ASC 842 Journal Entries: Operating and Finance Lease Examples"
 date: 2026-03-11
-description: "Step-by-step ASC 842 journal entries for operating and finance leases — from initial recognition through monthly close. Includes real numbers, debit/credit format, and common mistakes."
-summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's every entry you need, with real numbers."
+lastmod: 2026-05-12
+description: "ASC 842 journal entries with real numbers — initial recognition, monthly operating lease expense, monthly finance lease (depreciation + interest), and termination. Side-by-side debit/credit examples for both lease types."
+summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's an ASC 842 lease accounting example with every entry you need, with real numbers."
 tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "Excel template", "GAAP"]
 author: "KDesk Accounting"
 ShowToc: true

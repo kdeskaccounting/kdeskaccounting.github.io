@@ -142,6 +142,8 @@ DR  Lease Liability             4,180
 
 If these numbers match, your schedule is set up correctly. If the interest accrual or principal reduction are off, check your IBR input (it should be the annual rate, not monthly — divide by 12 in the formula).
 
+For the full set of monthly entries — operating vs. finance, plus termination — see [ASC 842 Journal Entries: A Complete Guide with Examples](/posts/asc-842-journal-entries/).
+
 ---
 
 ## Step 5 — Running to Period 36

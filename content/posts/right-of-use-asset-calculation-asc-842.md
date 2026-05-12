@@ -140,6 +140,8 @@ DR  Lease Incentive Obligation   10,000
 
 After this entry: Lease liability = $164,029, ROU asset = $161,029. Both reach $0 at month 36.
 
+For the **monthly close entries** that follow this initial recognition — operating vs. finance lease, plus termination — see [ASC 842 Journal Entries: A Complete Guide with Examples](/posts/asc-842-journal-entries/).
+
 ---
 
 ## Tracking It Over the Lease Life

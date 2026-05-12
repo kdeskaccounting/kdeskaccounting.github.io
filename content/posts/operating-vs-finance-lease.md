@@ -98,6 +98,8 @@ Because interest is calculated on the outstanding liability (highest at the star
 
 ## Side-by-Side Journal Entries
 
+For the full debit/credit breakdown of every month-end entry — including initial recognition, monthly close, and termination for both lease types — see [ASC 842 Journal Entries: A Complete Guide with Examples](/posts/asc-842-journal-entries/).
+
 ### Month 1: Operating lease ($5,000 payment, 5% IBR)
 
 ```
