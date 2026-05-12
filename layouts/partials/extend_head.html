@@ -2,6 +2,16 @@
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "cfe501ae4fca4d869a902689d64ff670"}'></script>
 <!-- End Cloudflare Web Analytics -->
 
+<!-- MailerLite Universal — wires up forms with class="ml-block-form" with CSRF, validation, ajax submit, and tracking -->
+<script>
+    (function(w,d,e,u,f,l,n){w[f]=w[f]||function(){(w[f].q=w[f].q||[])
+    .push(arguments);},l=d.createElement(e),l.async=1,l.src=u,
+    n=d.getElementsByTagName(e)[0],n.parentNode.insertBefore(l,n);})
+    (window,document,'script','https://assets.mailerlite.com/js/universal.js','ml');
+    ml('account', '2340006');
+</script>
+<!-- End MailerLite Universal -->
+
 {{/* JSON-LD Structured Data */}}
 {{- if .IsHome }}
 <script type="application/ld+json">

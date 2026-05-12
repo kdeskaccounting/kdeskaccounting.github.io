@@ -2,7 +2,8 @@ baseURL = "https://kdeskaccounting.com/"
 languageCode = "en-us"
 title = "KDesk Accounting"
 theme = "PaperMod"
-paginate = 10
+[pagination]
+  pagerSize = 10
 
 [services]
   [services.googleAnalytics]

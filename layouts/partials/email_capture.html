@@ -1,27 +1,32 @@
 {{/* Email-capture CTA, rendered at the end of every blog post.
-     Backend: MailerLite (replace MAILERLITE_FORM_ACTION + ML form id when Stephen provisions).
-     Until then the form submits to a placeholder Cloudflare Worker that returns 200,
-     so visitor experience is "smooth" rather than broken. */}}
+     Form posts to MailerLite (account 2340006, form 187224873250063752 —
+     "KDesk blog email capture" feeding the "KDesk Accounting subscribers" group).
+     The MailerLite Universal script in extend_head.html upgrades any
+     form.ml-block-form with CSRF, validation, and AJAX submit. */}}
 <aside class="kd-email-cta" data-kd-email-cta>
   <div class="kd-email-cta__inner">
     <h2 class="kd-email-cta__title">Get all 4 free Excel templates</h2>
     <p class="kd-email-cta__copy">
       ASC 606 commission tracker, ASC 842 lease workbook, runway calculator, and SaaS metrics dashboard
-      &mdash; the free versions, bundled in one download. Plus monthly accounting tactics in your inbox.
+      &mdash; the free versions, bundled in one email. Plus monthly accounting tactics.
     </p>
-    <form class="kd-email-cta__form"
-          action="https://assets.mailerlite.com/jsonp/PENDING/forms/PENDING/subscribe"
+    <form class="ml-block-form kd-email-cta__form"
+          action="https://assets.mailerlite.com/jsonp/2340006/forms/187224873250063752/subscribe"
+          data-code=""
           method="post"
-          data-ml-form="pending"
+          target="_blank"
           onsubmit="if(window.gtag){gtag('event','email_signup',{location:'post_end',page:location.pathname});}">
       <label for="kd-email-input" class="kd-email-cta__label">Email address</label>
       <input type="email"
              id="kd-email-input"
              name="fields[email]"
-             class="kd-email-cta__input"
+             class="kd-email-cta__input form-control"
              placeholder="you@company.com"
              autocomplete="email"
+             aria-required="true"
              required>
+      <input type="hidden" name="ml-submit" value="1">
+      <input type="hidden" name="anticsrf" value="true">
       <button type="submit" class="kd-btn kd-btn--primary kd-email-cta__submit">
         Send me the templates &rarr;
       </button>
