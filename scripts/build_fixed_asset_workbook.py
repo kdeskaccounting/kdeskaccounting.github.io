@@ -335,11 +335,13 @@ def build_setup(wb: Workbook, variant: str):
     style_input(ws["B9"])
 
     if variant == "paid":
-        ws["A11"] = "GL System Preset (drives JE Generator columns)"
+        ws["A11"] = "GL Dimension Labels (relabels JE Generator columns I/J/K)"
         ws["B11"] = "Generic"
         style_input(ws["B11"])
+        ws["C11"] = "Relabels 3 dimension headers only; JE body is generic — map to your GL's import template."
+        ws["C11"].font = Font(italic=True, color="FF777777", size=9)
     else:
-        ws["A11"] = "GL System Preset"
+        ws["A11"] = "GL Dimension Labels"
         ws["B11"] = "Generic"
         ws["B11"].font = Font(italic=True, color="FF777777")
         ws["B11"].protection = LOCKED
@@ -1421,11 +1423,13 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
             f'-SUMIFS(Disposal_Cost,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end}))'
         )
     if key == "opening_ad":
-        # Sum Sched_DeprFinal where CatKey <= cat|EOMONTH(FY_Start, -1)  (i.e. last period before FY)
-        # Plus Register opening accum depr for the cat.
-        # Minus any disposals before FY start (their accum is gone).
+        # CatKey is text "{cat}|YYYY-MM"; SUMIFS criteria are lexical. We bound both sides
+        # by the cat prefix so the sum stays inside this category — otherwise later-alphabet
+        # cats over-match all earlier-alphabet rows. The ">="&cat&"|" floor is the empty-date
+        # version, lexically lower than any cat|YYYY-MM key.
         return (
-            f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,"<="&"{cat}|"&TEXT(EOMONTH({fy_start},-1),"YYYY-MM"))'
+            f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
+            f'Sched_CatKey,"<="&"{cat}|"&TEXT(EOMONTH({fy_start},-1),"YYYY-MM"))'
             f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<"&({fy_start}))'
         )
@@ -1442,19 +1446,19 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
         )
     if key == "close_ad":
         return (
-            f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
+            f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
+            f'Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
             f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end}))'
         )
     if key == "nbv":
-        # Closing Cost - Closing AD
-        col_letter = ""  # placeholder; we use the per-cat columns
-        # We'll re-compute: opening_cost+add-disp - (close_ad)
+        # Closing Cost - Closing AD, per category. Same lexical CatKey bounds as close_ad.
         return (
             f'=(SUMIFS(Register_Cost,Register_Category,"{cat}",'
             f'Register_InServiceDate,"<="&({rp_end}))'
             f'-SUMIFS(Disposal_Cost,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end})))'
-            f'-(SUMIFS(Sched_DeprFinal,Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
+            f'-(SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
+            f'Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
             f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end})))'
         )
@@ -1471,8 +1475,9 @@ DISP_HEADERS = [
     "Evidence Type", "Evidence Reference", "Counterparty",
     "Disposal Cost (calc)", "Accum Depr at Disposal (calc)", "NBV at Disposal (calc)",
     "Gain / (Loss) (calc)", "Notes",
-    # Hidden helpers for Rollforward:
+    # Hidden helpers:
     "_Category (calc)",
+    "_InPeriodNBV (calc)",
 ]
 
 
@@ -1483,6 +1488,7 @@ def build_disposal_log(wb: Workbook, variant: str):
     set_col_widths(ws, {
         "A": 12, "B": 14, "C": 16, "D": 18, "E": 14, "F": 22, "G": 14,
         "H": 18, "I": 18, "J": 22, "K": 14, "L": 16, "M": 16, "N": 14, "O": 28, "P": 22,
+        "Q": 22,
     })
 
     for j, h in enumerate(DISP_HEADERS, start=1):
@@ -1532,11 +1538,17 @@ def build_disposal_log(wb: Workbook, variant: str):
         ws.cell(row=r, column=16, value=(
             f'=IF(LEN(A{r})=0,"",IFERROR(INDEX(Register_Category,MATCH(A{r},Register_AssetID,0)),""))'
         ))
+        # Q: _InPeriodNBV helper — NBV-at-disposal for rows whose disposal date is on/before
+        # the Reporting Period. Lets Reconciliation Check 4 Side A be period-gated independently
+        # of Side B (preserves the cross-check).
+        ws.cell(row=r, column=17, value=(
+            f'=IF(LEN(A{r})=0,0,IF(B{r}<=Setup!$B$4,M{r},0))'
+        )).number_format = "#,##0.00"
 
-        for col_idx in range(1, 17):
+        for col_idx in range(1, 18):
             cell = ws.cell(row=r, column=col_idx)
             cell.border = BORDER_ALL
-            if col_idx in (11, 12, 13, 14, 16):
+            if col_idx in (11, 12, 13, 14, 16, 17):
                 cell.protection = LOCKED
             else:
                 cell.protection = UNLOCKED
@@ -1561,8 +1573,9 @@ def build_disposal_log(wb: Workbook, variant: str):
     dv_ev.add(f"H2:H{end_row}")
     ws.add_data_validation(dv_ev)
 
-    # Hide helper column P
+    # Hide helper columns P and Q
     ws.column_dimensions["P"].hidden = True
+    ws.column_dimensions["Q"].hidden = True
 
     ws.freeze_panes = "C2"
     ws.protection.set_password(SHEET_PW)
@@ -1705,8 +1718,8 @@ def build_reconciliation(wb: Workbook, variant: str):
             "side_b": f"={rf_close_cost}",
         },
         {
-            "name": "Disposal NBV total = Disposal Log Σ(NBV at Disposal)",
-            "side_a": f'=SUM(\'Disposal Log\'!M2:M{wb["Disposal Log"]._anchors["end_row"]})',
+            "name": "Disposal NBV total (in-period) = Disposal Log Σ(NBV at Disposal)",
+            "side_a": f'=SUM(\'Disposal Log\'!Q2:Q{wb["Disposal Log"]._anchors["end_row"]})',
             "side_b": (
                 f'=SUMIFS(Disposal_Cost,Disposal_Date,"<="&{rp_end})'
                 f'-SUMIFS(Disposal_AD,Disposal_Date,"<="&{rp_end})'

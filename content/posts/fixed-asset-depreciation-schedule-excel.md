@@ -1,9 +1,10 @@
 ---
 title: "Fixed Asset Depreciation Schedule in Excel: How to Build One From Scratch"
 date: 2026-03-19
-description: "Learn how to build a depreciation schedule in Excel with straight-line, double-declining balance, and SYD methods, plus journal entries and rollforward tips."
-summary: "A step-by-step guide to building a fixed asset depreciation schedule in Excel. Covers three depreciation methods with formulas, worked examples, journal entries, and the register structure you need for audit-ready reporting."
-tags: ["depreciation schedule", "fixed assets", "depreciation methods", "Excel", "Excel template", "straight line depreciation", "accounting"]
+lastmod: 2026-05-13
+description: "How to build a fixed asset depreciation schedule in Excel — straight-line, double-declining balance, sum-of-years methods, journal entries, and rollforward — plus a ready-made workbook if you don't want to build it from scratch."
+summary: "A step-by-step guide to building a fixed asset depreciation schedule in Excel. Covers three depreciation methods with formulas, worked examples, journal entries, and the register structure you need for audit-ready reporting. Includes a link to a pre-built audit-ready workbook."
+tags: ["depreciation schedule", "fixed assets", "depreciation methods", "Excel", "Excel template", "straight line depreciation", "ASC 360", "accounting"]
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -382,11 +383,23 @@ This is exactly the kind of problem we build templates to solve.
 
 ---
 
-## Coming Soon: Fixed Asset and Depreciation Register Workbook
+## The Pre-Built Alternative: Fixed Asset Rollforward Workbook
 
-We are building a Fixed Asset and Depreciation Register workbook that handles all of the above out of the box: multiple depreciation methods, partial-year conventions, disposal tracking with gain/loss calculations, automated journal entries, and a rollforward schedule that ties to the GL.
+If you'd rather not build all of this from scratch, the [**Fixed Asset Rollforward Workbook**](/templates/fixed-assets/) ($79) handles everything in this post out of the box for up to 50 assets:
 
-If you want early access, email hello@kdeskaccounting.com.
+- Four depreciation methods (Straight-Line, Double-Declining Balance with auto-switch, Sum-of-Years, Units of Production)
+- Mid-month and full-month conventions, applied per asset
+- In-service date distinct from acquisition date (depreciation starts when *placed in service*, not invoiced — ASC 360-10-30-1)
+- Leasehold Improvements automatically capped at the shorter of useful life or remaining lease term
+- Disposal Log with gain/loss math + evidence trail (Authorization, Evidence Type, Counterparty)
+- ASC 250 Change Log for useful-life and method revisions
+- JE Generator with GL system presets (Generic / QuickBooks / NetSuite / Sage Intacct / Xero)
+- Five-way reconciliation tab — Schedule = JE = Rollforward = Register = GL — with a diagnostic sub-section that ranks likely variance causes
+- Print-ready Audit Confirmation Export tab for the auditor's PBC sample
+
+[**Get the Workbook ($79) →**](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)
+
+Or [try the free 5-asset version](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free) first to see the mechanics on your own data.
 
 ---
 
