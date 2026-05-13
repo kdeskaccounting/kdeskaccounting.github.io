@@ -12,3 +12,6 @@ public/
 .playwright-mcp/
 logs/
 __pycache__/
+
+# Built product binaries (published separately to Gumroad)
+dist/
