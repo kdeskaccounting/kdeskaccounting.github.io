@@ -375,7 +375,7 @@ A single depreciation schedule in Excel works fine. Ten assets in a register are
 - **Mid-year additions and disposals** require prorating both the first and last year, plus removing disposed assets from future periods.
 - **Multiple depreciation books** (GAAP vs. tax) double your column count.
 - **Category rollups** for the rollforward require careful `SUMIFS` that break when someone inserts a row.
-- **Partial-period disposals** with gain/loss calculations add another layer of complexity.
+- **Partial-period disposals** with gain/loss calculations add another layer of complexity. (For the journal entries on the disposal side — sale, retirement, trade-in under ASC 845, write-off, and casualty loss — see [Fixed Asset Disposal Journal Entries](/posts/fixed-asset-disposal-journal-entries/).)
 
 None of these problems are unsolvable in Excel. But they require a carefully designed workbook with proper structure, validation, and protection so that a formula error in row 47 does not silently break your financial statements.
 
