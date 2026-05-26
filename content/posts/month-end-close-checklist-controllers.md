@@ -14,6 +14,8 @@ A fast, clean close isn't about working harder the last three days of the month.
 
 This checklist covers the full close cycle — from cutoff through final signoff — with specific attention to the technical areas (lease accounting, deferred commissions, deferred revenue) where growing companies tend to slow down or make errors.
 
+> **Free Excel workbook:** the full checklist below is also available as a [free 5-tab Month-End Close Workbook](/templates/month-end-close/) with 42 pre-populated tasks, 18 subledger reconciliations, a JE tracker, and a printable sign-off page. Pay What You Want on Gumroad, $0 minimum. Read on for the long-form guide, or [download the workbook →](/templates/month-end-close/).
+
 ---
 
 ## Before You Start: Prerequisites for a Clean Close
@@ -217,7 +219,10 @@ The goal is a 5-day close where Day 6 is review, not catch-up.
 
 ## Templates That Support the Close
 
-Three of the most time-consuming finance tasks — deferred commission accounting, lease accounting, and cash runway modeling — are handled by our workbooks:
+Five of the most time-consuming finance tasks — close orchestration, deferred commission accounting, lease accounting, fixed asset depreciation, and cash runway modeling — are handled by our workbooks:
+
+**[Month-End Close Checklist + Tie-Out Workbook](/templates/month-end-close/)** — **Free**
+A 5-tab Excel workbook that holds your entire close in one place: 42 pre-populated tasks, 18 subledger reconciliations with materiality flag, JE tracker, and printable sign-off. Pay What You Want, $0 minimum.
 
 **[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $79
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.
@@ -225,10 +230,13 @@ Handles 50 deals with three amortization methods, automated journal entries, rol
 **[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $97
 Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation. [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 
+**[Fixed Asset Rollforward Workbook](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)** — $79
+50 capitalized assets, four depreciation methods, JE generator with GL system presets, and a five-way reconciliation tab. [Try the free 5-asset version →](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free)
+
 **[Startup Runway Calculator](https://kdeskaccounting.gumroad.com/l/runway-calculator)** — $49
 12 to 48-month cash flow forecast with Base, Optimistic, and Pessimistic scenario modeling. Know exactly how many months of runway you have before every board meeting. [Try the free 12-month version →](https://kdeskaccounting.gumroad.com/l/runway-calculator-free)
 
-All three are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
+All five are pure Excel — no macros, no setup, no subscription. Download and use in the same close cycle.
 
 ---
 
