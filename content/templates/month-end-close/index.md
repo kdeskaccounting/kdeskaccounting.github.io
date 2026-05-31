@@ -8,8 +8,8 @@ ShowToc: true
 TocOpen: true
 weight: 5
 price: 0
-buy_url: "https://kdeskaccounting.gumroad.com/l/TBD-MEC-FREE"
-free_url: "https://kdeskaccounting.gumroad.com/l/TBD-MEC-FREE"
+buy_url: "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist"
+free_url: "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist"
 free_label: "Download — Free"
 tags: ["month-end close", "controller", "reconciliation", "Excel template", "close checklist", "tie-out", "journal entries"]
 faq:
@@ -33,7 +33,7 @@ faq:
 
 A complete month-end close workbook in five tabs — free. Built by a CPA who has run SaaS close cycles at multiple companies and got tired of rebuilding the same checklist in Notion / Google Docs / Smartsheet every time. **Free. Pay What You Want on Gumroad.**
 
-[Download the Workbook (Free) →](https://kdeskaccounting.gumroad.com/l/TBD-MEC-FREE)
+[Download the Workbook (Free) →](https://kdeskaccounting.gumroad.com/l/month-end-close-checklist)
 
 This is the scaffolding that holds your close together. The technical schedules (commissions, leases, fixed assets) belong in dedicated workbooks — links at the bottom — but the close itself runs on a checklist, a reconciliation set, a JE log, and a sign-off. That's what this workbook is.
 
@@ -159,7 +159,7 @@ Or run them all on a free browser-based estimate first: **[Free Amortization Cal
 
 ## Get the Workbook
 
-[**Download the Workbook (Free) →**](https://kdeskaccounting.gumroad.com/l/TBD-MEC-FREE)
+[**Download the Workbook (Free) →**](https://kdeskaccounting.gumroad.com/l/month-end-close-checklist)
 
 Pay What You Want on Gumroad. $0 minimum. $5 suggested if it saves you time.
 

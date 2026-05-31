@@ -37,7 +37,7 @@ It's a complete month-end close workbook in five tabs:
 It's free. Pay What You Want on Gumroad, $0 minimum. If it saves you time the suggested $5 is appreciated but not required.
 
 Download it here:
-https://kdeskaccounting.gumroad.com/l/TBD-MEC-FREE
+https://kdeskaccounting.gumroad.com/l/month-end-close-checklist
 
 The full long-form guide (the same 42 tasks with technical accounting context for each phase) is on the blog:
 https://kdeskaccounting.com/posts/month-end-close-checklist-controllers/
