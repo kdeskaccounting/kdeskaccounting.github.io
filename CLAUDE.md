@@ -1,3 +1,5 @@
+> 🧭 **Command Center vault** — Stephen's context, goals, and decisions live in `/mnt/c/CommandCenter`. Relevant note: `02-Projects/KDesk-Blog.md`. See `_meta/CLAUDE.md`; global rules in `~/.claude/CLAUDE.md`.
+
 # CLAUDE.md — KDesk Accounting blog
 
 ## Read first, every session
