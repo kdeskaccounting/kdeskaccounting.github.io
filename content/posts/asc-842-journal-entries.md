@@ -1,7 +1,7 @@
 ---
 title: "ASC 842 Journal Entries: Operating and Finance Lease Examples"
 date: 2026-03-11
-lastmod: 2026-05-12
+lastmod: 2026-05-31
 description: "ASC 842 journal entries with real numbers — initial recognition, monthly operating lease expense, monthly finance lease (depreciation + interest), and termination. Side-by-side debit/credit examples for both lease types."
 summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's an ASC 842 lease accounting example with every entry you need, with real numbers."
 tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "Excel template", "GAAP"]
@@ -9,6 +9,15 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 2
+faq:
+  - q: "What is the journal entry for a lease under ASC 842?"
+    a: "At commencement you debit the right-of-use asset and credit the lease liability for the present value of the payments. Each month, an operating lease books a single straight-line lease expense, while a finance lease books separate interest and depreciation entries."
+  - q: "How are operating and finance lease journal entries different?"
+    a: "An operating lease records one straight-line lease expense each period. A finance lease splits the cost into interest expense (effective-interest method) and depreciation of the ROU asset, producing a front-loaded total expense."
+  - q: "What is the journal entry when a lease terminates early?"
+    a: "You derecognize the remaining right-of-use asset and lease liability. Any difference between the two balances, plus any termination penalty paid, is recorded as a gain or loss on lease termination."
+  - q: "Do you record interest separately on an operating lease under ASC 842?"
+    a: "No. Interest is computed internally to amortize the liability, but it is not presented separately. The income statement shows only a single straight-line lease expense; the ROU amortization is a plug that makes total expense equal the straight-line payment."
 ---
 
 Getting the balance sheet recognition right under ASC 842 is one thing. Generating the correct journal entries every period — and knowing which accounts to hit — is where most finance teams slow down.
@@ -17,7 +26,7 @@ This guide covers every entry you'll need: initial recognition, monthly operatin
 
 ## The Two Lease Types and Why They Matter
 
-Under ASC 842, every lease is classified as either **operating** or **finance**. That classification drives the journal entry pattern for the entire lease term.
+Under ASC 842, every lease is classified as either **operating** or **finance** — see [how to classify a lease using the five tests](/posts/operating-vs-finance-lease/). That classification drives the journal entry pattern for the entire lease term.
 
 | | Operating Lease | Finance Lease |
 |--|--|--|
@@ -26,7 +35,7 @@ Under ASC 842, every lease is classified as either **operating** or **finance**.
 | Cash flow | Operating activities | Principal = financing; interest = operating |
 | Typical examples | Office space, vehicles | Equipment, machinery, property you intend to own |
 
-Both types require the same initial recognition entry. The difference shows up in the monthly entries.
+Both types require the same initial recognition entry. The difference shows up in the monthly entries. (Reporting under IFRS? [IFRS 16 vs ASC 842](/posts/asc-842-vs-ifrs-16/) — IFRS treats every lease like a finance lease, so use the finance-lease entries below and skip the operating section.)
 
 ---
 
@@ -36,7 +45,7 @@ When a lease commences, you recognize the lease liability and ROU asset simultan
 
 **Lease liability** = present value of future lease payments, discounted at the incremental borrowing rate (IBR).
 
-**ROU asset** = lease liability + initial direct costs (IDC) − lease incentives received
+**ROU asset** = lease liability + initial direct costs (IDC) − lease incentives received. (See [how to calculate the ROU asset](/posts/right-of-use-asset-calculation-asc-842/) for the full breakdown.)
 
 ### Example
 
@@ -183,9 +192,25 @@ At period end, your lease liability balance per the amortization schedule should
 
 ---
 
+## Frequently Asked Questions
+
+**What is the journal entry for a lease under ASC 842?**
+At commencement you debit the right-of-use asset and credit the lease liability for the present value of the payments. Each month, an operating lease books a single straight-line lease expense, while a finance lease books separate interest and depreciation entries.
+
+**How are operating and finance lease journal entries different?**
+An operating lease records one straight-line lease expense each period. A finance lease splits the cost into interest expense (effective-interest method) and depreciation of the ROU asset, producing a front-loaded total expense.
+
+**What is the journal entry when a lease terminates early?**
+You derecognize the remaining right-of-use asset and lease liability. Any difference between the two balances, plus any termination penalty paid, is recorded as a gain or loss on lease termination.
+
+**Do you record interest separately on an operating lease under ASC 842?**
+No. Interest is computed internally to amortize the liability, but it is not presented separately. The income statement shows only a single straight-line lease expense; the ROU amortization is a plug that makes total expense equal the straight-line payment.
+
+---
+
 ## The Reconciliation Problem
 
-The journal entries above work cleanly for a single lease. With 5, 10, or 20 leases across different commencement dates, you need a systematic way to aggregate interest, depreciation, and amortization — and tie everything to the balance sheet.
+The journal entries above all pull from the same [lease amortization schedule](/posts/asc-842-amortization-schedule-excel/), and they work cleanly for a single lease. With 5, 10, or 20 leases across different commencement dates, you need a systematic way to aggregate interest, depreciation, and amortization — and tie everything to the balance sheet.
 
 That's exactly what the ASC 842 Lease Accounting Workbook handles — 20 leases, 120-month amortization schedule, period-level journal entry aggregation, and a reconciliation tab that confirms everything ties to $0 every month.
 

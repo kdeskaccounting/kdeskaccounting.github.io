@@ -8,6 +8,16 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 4
+lastmod: 2026-05-31
+faq:
+  - q: "Is a 5-year office lease an operating or finance lease?"
+    a: "Almost always operating. A 5-year term is rarely the major part of a building's roughly 40-year economic life, and the present value of the payments is usually well below the property's fair value — so none of the five finance-lease tests are met."
+  - q: "Do operating leases go on the balance sheet under ASC 842?"
+    a: "Yes. Both operating and finance leases put a right-of-use asset and a lease liability on the balance sheet under ASC 842. The difference is in income-statement presentation, not whether the lease is capitalized."
+  - q: "What is the difference between a capital lease and a finance lease?"
+    a: "They are the same concept under different standards. ASC 840 called them capital leases; ASC 842 renamed them finance leases and tightened the classification criteria. The underlying accounting logic is largely unchanged."
+  - q: "How does an operating versus finance lease affect EBITDA?"
+    a: "Operating lease expense sits entirely above EBITDA, reducing it dollar-for-dollar. For a finance lease, depreciation is above EBITDA but interest is below it, so a finance lease produces higher EBITDA than an equivalent operating lease."
 ---
 
 The distinction between operating and finance leases isn't just an accounting technicality — it changes your income statement presentation, your EBITDA, how your cash flows are classified, and what your auditors want to see.
@@ -48,6 +58,8 @@ The underlying asset is so specialized that it has **no alternative use** to the
 | Server lease, PV = 92% of fair value | Finance | Meets Test 4 (substantially all) |
 
 When in doubt, document your analysis. Auditors will ask for the rationale behind any borderline classification.
+
+This operating-versus-finance split is a US GAAP concept. Under IFRS 16, lessees don't classify leases at all — see [IFRS 16 vs ASC 842](/posts/asc-842-vs-ifrs-16/) for the differences.
 
 ---
 
@@ -138,7 +150,25 @@ If a lease is modified in a way that grants additional rights of use, the modifi
 
 ---
 
+## Frequently Asked Questions
+
+**Is a 5-year office lease an operating or finance lease?**
+Almost always operating. A 5-year term is rarely the major part of a building's roughly 40-year economic life, and the present value of the payments is usually well below the property's fair value — so none of the five finance-lease tests are met.
+
+**Do operating leases go on the balance sheet under ASC 842?**
+Yes. Both operating and finance leases put a right-of-use asset and a lease liability on the balance sheet under ASC 842. The difference is in income-statement presentation, not whether the lease is capitalized.
+
+**What is the difference between a capital lease and a finance lease?**
+They are the same concept under different standards. ASC 840 called them capital leases; ASC 842 renamed them finance leases and tightened the classification criteria. The underlying accounting logic is largely unchanged.
+
+**How does an operating versus finance lease affect EBITDA?**
+Operating lease expense sits entirely above EBITDA, reducing it dollar-for-dollar. For a finance lease, depreciation is above EBITDA but interest is below it, so a finance lease produces higher EBITDA than an equivalent operating lease.
+
+---
+
 ## Building the Schedule for Both Types
+
+Once a lease is classified, the next steps are [calculating the right-of-use asset at commencement](/posts/right-of-use-asset-calculation-asc-842/) and [building the amortization schedule](/posts/asc-842-amortization-schedule-excel/) that drives every period's entries.
 
 The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) handles both lease types in a single workbook — you classify each lease on input, and the schedule, journal entries, and rollforward adjust automatically.
 

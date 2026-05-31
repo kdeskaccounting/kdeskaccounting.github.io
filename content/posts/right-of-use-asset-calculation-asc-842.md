@@ -8,6 +8,16 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 7
+lastmod: 2026-05-31
+faq:
+  - q: "How do you calculate the right-of-use asset under ASC 842?"
+    a: "ROU asset = lease liability + initial direct costs + prepaid rent minus lease incentives received. The lease liability is the present value of future payments; the adjustments are where most teams make errors."
+  - q: "Is the ROU asset the same as the lease liability?"
+    a: "Only when there are no initial direct costs, prepaid rent, or incentives — the common case for simple office and vehicle leases. Any IDC or prepaid increases the ROU asset above the liability; incentives reduce it."
+  - q: "Do tenant improvement allowances reduce the ROU asset?"
+    a: "Yes. A tenant improvement allowance is a lease incentive received, which reduces the opening ROU asset. Missing it is one of the most common reasons an opening ROU balance ends up overstated."
+  - q: "Is the ROU asset calculation different for operating and finance leases?"
+    a: "No. The initial ROU asset is calculated the same way for both. The difference is in subsequent amortization — a plug for operating leases versus straight-line depreciation for finance leases."
 ---
 
 When a lease commences under ASC 842, you recognize a right-of-use (ROU) asset on the balance sheet. Most finance teams calculate the lease liability correctly. The ROU asset is where adjustments get missed — and those omissions show up at audit.
@@ -102,7 +112,7 @@ DR  Lease Incentive Obligation  10,000
 
 ## Operating vs. Finance — Does It Change the ROU Asset?
 
-**No.** The initial ROU asset calculation is identical for operating and finance leases. The difference is in **amortization**:
+**No.** The initial ROU asset calculation is identical for [operating and finance leases](/posts/operating-vs-finance-lease/). The difference is in **amortization**:
 
 | | Operating Lease | Finance Lease |
 |--|--|--|
@@ -144,7 +154,25 @@ For the **monthly close entries** that follow this initial recognition — opera
 
 ---
 
+## Frequently Asked Questions
+
+**How do you calculate the right-of-use asset under ASC 842?**
+ROU asset = lease liability + initial direct costs + prepaid rent minus lease incentives received. The lease liability is the present value of future payments; the adjustments are where most teams make errors.
+
+**Is the ROU asset the same as the lease liability?**
+Only when there are no initial direct costs, prepaid rent, or incentives — the common case for simple office and vehicle leases. Any IDC or prepaid increases the ROU asset above the liability; incentives reduce it.
+
+**Do tenant improvement allowances reduce the ROU asset?**
+Yes. A tenant improvement allowance is a lease incentive received, which reduces the opening ROU asset. Missing it is one of the most common reasons an opening ROU balance ends up overstated.
+
+**Is the ROU asset calculation different for operating and finance leases?**
+No. The initial ROU asset is calculated the same way for both. The difference is in subsequent amortization — a plug for operating leases versus straight-line depreciation for finance leases.
+
+---
+
 ## Tracking It Over the Lease Life
+
+After commencement, the ROU asset amortizes to zero over the lease term — see [how to build the amortization schedule](/posts/asc-842-amortization-schedule-excel/) that tracks it period by period.
 
 The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles the full calculation — ROU asset opening balance including IDC, prepaid, and incentives; 120-month amortization schedule per lease; period journal entry aggregation — for up to 20 leases in a single file.
 

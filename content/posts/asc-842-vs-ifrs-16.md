@@ -1,7 +1,7 @@
 ---
 title: "IFRS 16 vs ASC 842: Key Differences Every Controller Should Know"
 date: 2026-03-11
-lastmod: 2026-05-12
+lastmod: 2026-05-31
 description: "IFRS 16 vs ASC 842: both standards put leases on the balance sheet, but they diverge on classification, discount rates, exemptions, and P&L treatment. Side-by-side breakdown for controllers."
 summary: "IFRS 16 and ASC 842 both eliminate off-balance-sheet operating leases, but the two standards diverge on lease classification, discount rates, short-term exemptions, and income statement presentation. If you report under both — or are switching — here's the difference between IFRS 16 and ASC 842, line by line."
 tags: ["IFRS 16", "ASC 842", "lease accounting", "GAAP", "IFRS", "Excel template", "controller"]
@@ -11,6 +11,15 @@ TocOpen: true
 weight: 3
 aliases:
   - /posts/ifrs-16-vs-asc-842/
+faq:
+  - q: "What is the main difference between IFRS 16 and ASC 842?"
+    a: "Classification. ASC 842 keeps the operating-versus-finance lease distinction for lessees; IFRS 16 uses a single model where lessees treat almost all leases like finance leases — depreciation plus interest, with front-loaded expense."
+  - q: "Does IFRS 16 have operating leases?"
+    a: "Not for lessees. IFRS 16 eliminated the operating/finance distinction on the lessee side — every in-scope lease is recognized with an ROU asset and lease liability and expensed as depreciation plus interest. Lessor accounting still distinguishes the two."
+  - q: "Does IFRS 16 have a low-value lease exemption?"
+    a: "Yes. IFRS 16 exempts leases of low-value assets (roughly $5,000 or less when new), elected lease-by-lease, in addition to the short-term (12 months or less) exemption. ASC 842 has only the short-term exemption."
+  - q: "Can one Excel workbook handle both ASC 842 and IFRS 16?"
+    a: "Largely yes. The underlying math — present value of payments, amortization waterfall, ROU rollforward — is identical. The difference is presentation: under IFRS 16 you treat every lease like a finance lease and skip the operating-lease split."
 ---
 
 IFRS 16 (international) and ASC 842 (US GAAP) were designed in parallel and share the same core principle: leases go on the balance sheet. But the two standards diverge in several important ways — some minor, some significant enough to change how you structure leases and present results.
@@ -36,7 +45,7 @@ Before the differences, what's aligned:
 This is the biggest practical difference.
 
 ### ASC 842 (US GAAP)
-Leases are classified as either **operating** or **finance** based on five criteria:
+Leases are classified as either **operating** or **finance** based on [five classification tests](/posts/operating-vs-finance-lease/):
 
 1. Transfer of ownership by end of lease
 2. Purchase option the lessee is reasonably certain to exercise
@@ -128,9 +137,25 @@ Since all leases are treated as finance leases: **Depreciation** of the ROU asse
 
 ---
 
+## Frequently Asked Questions
+
+**What is the main difference between IFRS 16 and ASC 842?**
+Classification. ASC 842 keeps the operating-versus-finance lease distinction for lessees; IFRS 16 uses a single model where lessees treat almost all leases like finance leases — depreciation plus interest, with front-loaded expense.
+
+**Does IFRS 16 have operating leases?**
+Not for lessees. IFRS 16 eliminated the operating/finance distinction on the lessee side — every in-scope lease is recognized with an ROU asset and lease liability and expensed as depreciation plus interest. Lessor accounting still distinguishes the two.
+
+**Does IFRS 16 have a low-value lease exemption?**
+Yes. IFRS 16 exempts leases of low-value assets (roughly $5,000 or less when new), elected lease-by-lease, in addition to the short-term (12 months or less) exemption. ASC 842 has only the short-term exemption.
+
+**Can one Excel workbook handle both ASC 842 and IFRS 16?**
+Largely yes. The underlying math — present value of payments, amortization waterfall, ROU rollforward — is identical. The difference is presentation: under IFRS 16 you treat every lease like a finance lease and skip the operating-lease split.
+
+---
+
 ## Building the Schedule
 
-Whether you're under ASC 842, IFRS 16, or both, the underlying math — PV of payments, amortization waterfall, ROU asset rollforward — is the same. The difference is in presentation and classification.
+Whether you're under ASC 842, IFRS 16, or both, the underlying math — PV of payments, [amortization waterfall](/posts/asc-842-amortization-schedule-excel/), ROU asset rollforward — is the same. The difference is in presentation and classification.
 
 If you need the period-by-period entries, see [ASC 842 Journal Entries: A Complete Guide with Examples](/posts/asc-842-journal-entries/) — the operating-lease split applies only under US GAAP; under IFRS 16, treat every lease like a finance lease and skip the operating-lease section.
 

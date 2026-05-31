@@ -8,6 +8,16 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 6
+lastmod: 2026-05-31
+faq:
+  - q: "How do you calculate a lease liability in Excel?"
+    a: "Use =PV(IBR/12, lease_term_months, -monthly_payment). The payment is entered as a negative because it is a cash outflow. The result is the opening lease liability — the present value of all future payments."
+  - q: "What columns does an ASC 842 amortization schedule need?"
+    a: "Ten: Period, Date, Beginning Liability, Interest Accrual, Cash Payment, Principal Reduction, Ending Liability, Beginning ROU, ROU Amortization, and Ending ROU. Both the liability and the ROU balance must reach exactly zero at lease end."
+  - q: "How is ROU amortization different for operating versus finance leases?"
+    a: "For an operating lease, ROU amortization is a plug equal to principal reduction, so total expense is straight-line. For a finance lease, ROU amortization is the ROU asset divided by the lease term, with interest recognized separately."
+  - q: "Why do manual lease amortization schedules break at scale?"
+    a: "Multiple commencement dates, lease modifications that require remeasurement, period-close aggregation across tabs, audit traceability, and error compounding from chained formulas. Past about five leases, maintenance time and error risk climb quickly."
 ---
 
 Every lease you capitalize under ASC 842 needs an amortization schedule — a period-by-period table showing exactly how the lease liability and ROU asset move from commencement to zero. For one lease, building it in Excel takes a few hours. For five or more, maintaining it every close becomes a significant problem.
@@ -42,7 +52,7 @@ Before building the schedule, collect these inputs for each lease:
 | Initial direct costs (IDC) | Added to opening ROU asset |
 | Lease incentives received | Subtracted from opening ROU asset |
 | Prepaid rent | Added to opening ROU asset |
-| Lease type (operating or finance) | Determines ROU amortization method |
+| [Lease type (operating or finance)](/posts/operating-vs-finance-lease/) | Determines ROU amortization method |
 
 If you don't know the IBR, it's the rate your company would pay to borrow a similar amount over a similar term with similar collateral — typically obtained from your bank or estimated from your recent borrowing rates.
 
@@ -74,7 +84,7 @@ A few things to note:
 
 ## Step 2 — Calculate the Opening ROU Asset
 
-The ROU asset at commencement equals:
+The [ROU asset at commencement](/posts/right-of-use-asset-calculation-asc-842/) equals:
 
 ```
 ROU Asset = Lease Liability + Initial Direct Costs + Prepaid Rent − Lease Incentives Received
@@ -191,6 +201,22 @@ Building the schedule for one lease takes a few hours. Maintaining it across 5�
 **4. Audit traceability.** Auditors want to trace each balance sheet line back to the underlying schedule. With a manual workbook, this tracing is manual and slow.
 
 **5. Error compounding.** Chained formulas mean one wrong input in Period 1 propagates through all 120 periods. Non-chained PV formulas calculate each period independently, so errors don't compound.
+
+---
+
+## Frequently Asked Questions
+
+**How do you calculate a lease liability in Excel?**
+Use =PV(IBR/12, lease_term_months, -monthly_payment). The payment is entered as a negative because it is a cash outflow. The result is the opening lease liability — the present value of all future payments.
+
+**What columns does an ASC 842 amortization schedule need?**
+Ten: Period, Date, Beginning Liability, Interest Accrual, Cash Payment, Principal Reduction, Ending Liability, Beginning ROU, ROU Amortization, and Ending ROU. Both the liability and the ROU balance must reach exactly zero at lease end.
+
+**How is ROU amortization different for operating versus finance leases?**
+For an operating lease, ROU amortization is a plug equal to principal reduction, so total expense is straight-line. For a finance lease, ROU amortization is the ROU asset divided by the lease term, with interest recognized separately.
+
+**Why do manual lease amortization schedules break at scale?**
+Multiple commencement dates, lease modifications that require remeasurement, period-close aggregation across tabs, audit traceability, and error compounding from chained formulas. Past about five leases, maintenance time and error risk climb quickly.
 
 ---
 
