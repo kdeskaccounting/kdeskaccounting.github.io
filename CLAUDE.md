@@ -111,4 +111,38 @@ See `~/.claude/projects/-home-kdeskconsulting-kdeskaccounting-blog/memory/next_s
 - LinkedIn launch announcement drafted and queued
 - Site state correctly assessed (initial audit was on stale local clone; corrected after `git pull`)
 - Channel strategy locked: LinkedIn + Reddit only
+
+## Metrics I own  (report up to the Command Center COO report)
+
+This project owns the funnel KPIs that roll into `/mnt/c/CommandCenter/02-COO-Report.md` + `01-Dashboard.md`.
+Run the weekly pull (Monday) and update `marketing/seo-tracking/*.jsonl`.
+
+**THE ONE metric:** **Confirmed ORGANIC email subscribers** (net-new/wk + cumulative). Now **0**
+(4 total MailerLite subs = 3 API-imported Gumroad downloaders + 1 Stephen test). This is the funnel's
+dead link — until it climbs, nothing else here is working, no matter how good impressions look. The list
+is the compounding asset that feeds CAE (a captured email = a repeatable CAE prospect at ~$0 marginal cost).
+
+**Also owned (and what's vanity):**
+- Organic Search sessions (de-botted ~61/28d) — NOT raw GA4 sessions (~398 is ~80% bot Direct: 2s, 9.7% engagement). **Raw sessions/users + GA4 revenue ($0, Gumroad sits outside GA4) + "34 key events" (≈1 visitor) are VANITY — do not report.**
+- Lease-cluster avg position (operating-vs-finance-lease, asc-842-journal-entries, asc-842-vs-ifrs-16) — ~64% of impressions, sit at pos ~35 (page 4) → 0 clicks. Highest-leverage SEO lever.
+- Sitewide GSC CTR (0.04% — the distribution bottleneck, the bridge between ranking and clicks).
+- Gumroad downloads (free) + paid + revenue ($15 to date). Manual read (no API).
+- GA4 `email_signup` event vs MailerLite confirmations — the leak diagnostic (submit vs confirm).
+
+**Data sources (real paths):**
+- MailerLite group `187224670039180750`; token at `/home/kdeskconsulting/kdesk-analytics/mailerlite-token.txt`; API `connect.mailerlite.com/api/subscribers` (filter active, exclude manual imports + santiagokdesk).
+- GA4 property `p528583005` + GSC → log to `marketing/seo-tracking/ga4-snapshots.jsonl` and `gsc-snapshots.jsonl` (append-only).
+- Gumroad: manual logged-in dashboard read (no API export wired yet).
+
+**Cadence:** weekly (Monday) — last-7d + last-28d pull.
+
+**Action triggers (raise to Stephen):**
+- 0 net-new organic subs for 2 weeks while organic sessions >0 → **P1: diagnose the form** (double-opt-in friction, empty welcome-email body, form visibility). The binding constraint.
+- Lease cluster not improving toward pos 15–20 by ~2026-06-28 → escalate to Phase 2 SEO (content depth / pillar page — gated on Stephen as new content).
+- GSC `email_signup` >0 but MailerLite confirmed organic =0 → fix the confirmation flow (finish welcome-email body / consider single opt-in).
+- A **business-domain** Gumroad lead (e.g. the csibas.com downloader) → flag as a **CAE/consulting warm lead** for personal follow-up. This is the actual blog→CAE handoff and it's currently uninstrumented.
+
+**Outstanding automation:** the weekly GA4/GSC pull (systemd timer + OAuth via `scripts/setup_seo_oauth.py`)
+is BUILT but NOT enabled — Stephen's one-time ~10-min OAuth step unblocks the time series. The MailerLite
+welcome-email body is still empty (silent conversion killer). The blog→CAE handoff has no instrumentation.
 - Email backend: MailerLite free tier
