@@ -1,0 +1,104 @@
+# Fixed Asset Rollforward Workbook — faceless walkthrough
+product: Fixed Asset Rollforward Workbook
+slug: fixed-assets
+source: dist/templates/fixed-asset-rollforward-v1.xlsx
+workbook_name: Fixed Asset Rollforward Workbook.xlsx
+voice: am_michael
+cover:
+  standard: ASC 360
+  name: Fixed Asset Rollforward Workbook
+  price: "$79"
+  free_label: Free 5-asset version
+  checks:
+    - 50 assets · 120-month schedules
+    - SL · DDB · SYD · units of production
+    - JE presets for QBO, NetSuite, Sage, Xero
+    - Five-way reconciliation ties
+  hero: {sheet: Schedule, range: A1:J13}
+  second: {sheet: Rollforward, range: A1:H12}
+  thumb: {sheet: Reconciliation, range: B1:F8}
+scenes:
+  - kind: title
+    heading: Fixed Asset Rollforward Workbook
+    sub: 50 assets · four depreciation methods · 120-month schedules · JE Generator with GL presets · five-way reconciliation
+    badge: EXCEL TEMPLATE · $79 ONE-TIME
+    narration: >
+      This is the KDesk fixed asset rollforward workbook. Fifty assets, four book depreciation methods,
+      one hundred twenty month schedules per asset, a journal entry generator with presets for QuickBooks,
+      NetSuite, Sage Intacct and Xero, a category rollforward, and a five-way reconciliation your auditor
+      opens first. Pure Excel, no macros. Here is how it works.
+  - sheet: Setup
+    range: A1:C11
+    highlight: [B4, B9]
+    caption: Reporting period, materiality, and policy defaults drive every tab
+    narration: >
+      Setup holds the policy. Fiscal year start, the reporting period month-end, performance materiality
+      for the reconciliation flags, the default first-period convention, and the default method. Set the
+      GL system preset here and the journal entry generator relabels its dimension columns for your system.
+  - sheet: Setup
+    range: A13:B20
+    highlight: [B14, B16]
+    caption: GL accounts by category — named ranges the JE Generator reads
+    narration: >
+      Asset and depreciation accounts are mapped by category — computer equipment, furniture, leasehold
+      improvements, machinery, vehicles — as named ranges. Change a code once and every entry that uses it
+      updates.
+  - sheet: Asset Register
+    range: A1:O7
+    highlight: [B2, K2, L2, N2, O2]
+    caption: One row per asset — in-service date, cost, salvage, life, method
+    narration: >
+      The register is one row per asset. Description, category, department, and the vouching anchors an
+      auditor asks for: vendor, invoice, purchase order, approver. Then the numbers: in-service date, cost,
+      salvage value, useful life in months, and the method from a dropdown. Six sample assets cover
+      straight-line, double-declining, sum-of-years, units of production, and a leasehold improvement
+      capped at the lease term.
+  - sheet: Schedule
+    range: A1:J13
+    highlight: [D2, H2, I2, J2]
+    caption: "FA-0001: cost 2,599 over 36 months = 72.19 per month"
+    narration: >
+      The schedule is one row per asset per month, one hundred twenty months deep. Beginning net book
+      value, depreciation this period, accumulated depreciation, ending net book value — with a disposal
+      adjustment column and the method locked per asset. The MacBook: twenty-five ninety-nine over
+      thirty-six months, seventy-two dollars and nineteen cents a month, every month, until it reaches
+      salvage.
+  - sheet: JE Generator
+    range: A1:H11
+    highlight: [D7, D8, E11]
+    caption: "December: 1,885.01 of depreciation by category, one credit to accumulated depreciation"
+    narration: >
+      The journal entry generator aggregates the reporting period by category: one debit per depreciation
+      expense account, one credit to accumulated depreciation — one thousand eight hundred eighty-five
+      dollars and one cent in December. Below it, a capitalization block for assets placed in service
+      during the period. Pick QuickBooks or NetSuite in Setup and the columns match that system's import.
+  - sheet: Rollforward
+    range: A1:H12
+    highlight: [H5, H9, H12]
+    caption: "Cost 239,299 · depreciation 59,130.24 · closing NBV 180,168.76"
+    narration: >
+      Rollforward is the schedule your auditor asks for first: cost and accumulated depreciation by
+      category, opening plus additions less disposals equals closing. Two hundred thirty-nine thousand
+      of cost, fifty-nine thousand of depreciation, a closing net book value of one hundred eighty
+      thousand — and it ties to the general ledger by construction.
+  - sheet: Reconciliation
+    range: B1:F8
+    highlight: [F4, F5, F6, F7, F8]
+    caption: "Five-way tie: Schedule = JE = Rollforward = Register = GL"
+    narration: >
+      Reconciliation runs five checks. Schedule depreciation equals the journal entry. Schedule
+      accumulated equals rollforward closing. Register cost equals rollforward cost. Disposal net book
+      value agrees to the disposal log. And the NBV math. Every one reads TIES. When one goes red, the
+      diagnostic block underneath ranks the likely causes and links you to the cell to fix.
+  - kind: outro
+    heading: Fixed Asset Rollforward Workbook
+    lines:
+      - 50 assets, 120-month schedules, four methods, disposal and change logs
+      - JE Generator presets for QuickBooks, NetSuite, Sage Intacct and Xero
+      - Free 5-asset version with the register and schedule to test on your own assets
+    price: "$79 one-time"
+    url: kdeskaccounting.com/templates/fixed-assets
+    narration: >
+      The full workbook is seventy-nine dollars, one time, no subscription. There is a free five-asset
+      version with the register and the schedule so you can test it on your own assets first. Both are at
+      kdeskaccounting.com, slash templates, slash fixed-assets.

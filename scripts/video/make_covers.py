@@ -18,8 +18,10 @@ def cover_html(c, shots, free, w=1280, h=720, zoom=1.0):
     checks = "".join(f"<li>{html.escape(x)}</li>" for x in c.get("checks", []))
     ribbon = '<div class="ribbon">FREE</div>' if free else ""
     sub = html.escape(c.get("free_label", "Free version")) if free else "Excel template · one-time purchase"
+    is_free_product = str(c.get("price", "")).strip().lower() in ("free", "$0", "0")
     price = ('<div class="price">$0 <span>free download</span></div>' if free
-             else f'<div class="price">{html.escape(c["price"])} <span>one-time · no subscription</span></div>')
+             else ('<div class="price">Free <span>pay what you want · $0 minimum</span></div>' if is_free_product
+                   else f'<div class="price">{html.escape(c["price"])} <span>one-time · no subscription</span></div>'))
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{R.BASE_CSS}
 html,body{{width:{w}px;height:{h}px;zoom:{zoom}}}
 body{{background:radial-gradient(900px 600px at 15% 0%,#2E75B6 0%,{NAVY} 45%,#0d1a33 100%);font-family:Carlito,Arial,sans-serif;color:#fff;position:relative}}
@@ -48,7 +50,7 @@ ul li::before{{content:'✓';color:#7ee08a;font-weight:700;margin-right:10px}}
 
 def thumb_html(c, shot, free, size=600):
     ribbon = '<div class="ribbon">FREE</div>' if free else ""
-    price = html.escape(c.get("free_label", "Free version")) if free else f'{html.escape(c["price"])} · one-time'
+    price = html.escape(c.get("free_label", "Free version")) if free else ('Free · pay what you want' if str(c.get("price","")).strip().lower() in ("free","$0","0") else f'{html.escape(c["price"])} · one-time')
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{R.BASE_CSS}
 html,body{{width:{size}px;height:{size}px}}
 body{{background:{NAVY};font-family:Carlito,Arial,sans-serif;color:#fff;position:relative;overflow:hidden}}

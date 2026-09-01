@@ -1,0 +1,93 @@
+# Month-End Close Checklist + Tie-Out Workbook (free) — faceless walkthrough
+product: Month-End Close Checklist + Tie-Out Workbook
+slug: month-end-close
+source: dist/templates/month-end-close-checklist-v1.xlsx
+workbook_name: Month-End Close Checklist + Tie-Out Workbook.xlsx
+voice: am_michael
+presets:
+  Close Calendar: {G6: Done, G7: Done, G8: Done, G9: Done, G10: Done, G11: Done, G12: Done, G13: In Progress, G14: In Progress, G15: Blocked}
+  Reconciliations: {E6: 412350.18, F6: 412350.18, E8: 1284900.00, F8: 1281650.00, E11: 66414.44, F11: 66414.44, E13: 59130.24, F13: 59130.24, E14: 307135.06, F14: 307135.06}
+  JE Tracker: {C6: 2026-05-31, D6: JE-001, E6: Deferred commission amortization — May, F6: 6020 Commission Expense, G6: 3442.64, I6: ASC 606 Commission Workbook, J6: S. Michels, L6: Posted,
+               C7: 2026-05-31, D7: JE-001, E7: Deferred commission amortization — May, F7: 1810 Deferred Commission Asset, H7: 3442.64, I7: ASC 606 Commission Workbook, J7: S. Michels, L7: Posted,
+               C8: 2026-05-31, D8: JE-002, E8: Monthly depreciation — May, F8: 6200 Depreciation Expense, G8: 1885.01, I8: FA Rollforward Workbook, J8: S. Michels, L8: Posted,
+               C9: 2026-05-31, D9: JE-002, E9: Monthly depreciation — May, F9: 1599 Accumulated Depreciation, H9: 1885.01, I9: FA Rollforward Workbook, J9: S. Michels, L9: Posted}
+cover:
+  standard: Close
+  name: Month-End Close Checklist + Tie-Out
+  price: "Free"
+  free_label: Pay what you want
+  checks:
+    - 42 tasks across 5 close phases
+    - 18 subledger-to-GL reconciliations
+    - JE tracker with debits = credits check
+    - Printable sign-off page
+  hero: {sheet: Close Calendar, range: B5:H20}
+  second: {sheet: Reconciliations, range: B5:I14}
+  thumb: {sheet: Reconciliations, range: B5:I12}
+scenes:
+  - kind: title
+    heading: Month-End Close Checklist + Tie-Out Workbook
+    sub: 42 tasks in 5 phases · 18 subledger-to-GL reconciliations · JE tracker · printable sign-off — free, pay what you want
+    badge: FREE EXCEL WORKBOOK
+    narration: >
+      This is the KDesk month-end close checklist and tie-out workbook, and it is free. Forty-two
+      pre-populated tasks across five close phases, eighteen standard subledger-to-G-L reconciliations
+      with a materiality flag, a journal entry tracker with a debits-equals-credits check, and a printable
+      sign-off page. Pure Excel, no macros. Here is how it holds a close together.
+  - sheet: README & Setup
+    range: B14:C22
+    highlight: [C18, C20]
+    caption: Company, period, materiality — every tab reads from Setup
+    narration: >
+      Setup takes a minute. Company name, fiscal year end, the current period, period end date,
+      performance materiality — fifty thousand in the sample — reporting currency, and whether the period
+      is locked in the G L. Every other tab reads these cells.
+  - sheet: Close Calendar
+    range: B5:H16
+    highlight: [G6, G13, G15]
+    caption: 42 pre-populated tasks in 5 phases — the status dropdown drives the color
+    narration: >
+      The close calendar is the checklist. Forty-two tasks grouped into phases: day one and two cutoff and
+      data collection, subledger reconciliations, technical accounting schedules, equity and tax, then
+      statements and review. Each task has an owner, a due date, a status dropdown that colors the row,
+      and notes. Add rows for your team, delete what does not apply.
+  - sheet: Reconciliations
+    range: B5:I14
+    highlight: [G8, H8, G11]
+    caption: GL vs. subledger, variance flagged against materiality
+    narration: >
+      Reconciliations is the tie-out. Eighteen accounts pre-populated — cash, receivables, prepaids,
+      deferred commissions, fixed assets, right-of-use assets, payables, accruals, lease liabilities,
+      deferred revenue, equity. Enter the G L balance and the subledger balance; the variance and the
+      within-materiality flag calculate. Here, receivables carry a three thousand two hundred fifty
+      dollar difference, inside the threshold, so it flags OK — but it still gets a note.
+  - sheet: JE Tracker
+    range: B5:L10
+    highlight: [G6, H7, I6]
+    caption: Every JE logged with its source, preparer and reviewer
+    narration: >
+      The journal entry tracker logs every entry posted during the close — date, J E number, description,
+      account, debit, credit, source workbook, preparer, reviewer, status. The sample shows the commission
+      amortization entry from the ASC 606 workbook and the depreciation entry from the fixed asset
+      workbook. At the bottom, a sanity check: sum of debits minus sum of credits, which has to be zero.
+  - sheet: Sign-Off
+    range: B2:F20
+    highlight: []
+    caption: Printable certification with auto-tabulated close metrics
+    narration: >
+      Sign-Off is the page you print. Tasks completed, in progress and blocked; reconciliations done and
+      flagged; entries posted; debits equal credits — all tabulated from the other tabs — plus an exception
+      list and signature blocks for preparer, reviewer and controller. That is the close package's cover
+      sheet.
+  - kind: outro
+    heading: Month-End Close Checklist + Tie-Out Workbook
+    lines:
+      - Free — pay what you want, $0 minimum
+      - Pairs with the ASC 606, ASC 842 and fixed asset workbooks that compute the schedules
+      - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
+    price: "Free"
+    url: kdeskaccounting.com/templates/month-end-close
+    narration: >
+      The workbook is free — pay what you want, zero minimum. It is the scaffolding that holds the close
+      together; the technical schedules it reconciles to come from the ASC 606, ASC 842 and fixed asset
+      workbooks. Download it at kdeskaccounting.com, slash templates, slash month-end-close.

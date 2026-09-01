@@ -1,0 +1,99 @@
+# SaaS Metrics & ARR Dashboard — faceless walkthrough
+product: SaaS Metrics & ARR Dashboard
+slug: saas-metrics
+source: ~/kdeskaccountingtemplates/templates/saas_metrics/SaaS_Metrics_ARR_Dashboard_v1.xlsx
+workbook_name: SaaS Metrics & ARR Dashboard.xlsx
+voice: am_michael
+cover:
+  standard: SaaS KPIs
+  name: SaaS Metrics & ARR Dashboard
+  price: "$67"
+  free_label: Free 6-month version
+  checks:
+    - MRR · ARR · NRR · gross churn
+    - CAC · LTV · payback · Magic Number
+    - 24 months, auto-chained balances
+    - Board-ready dashboard
+  hero: {sheet: Dashboard, range: B3:K28}
+  second: {sheet: Metrics, range: A4:N16}
+  thumb: {sheet: Dashboard, range: B3:K12}
+scenes:
+  - kind: title
+    heading: SaaS Metrics & ARR Dashboard
+    sub: MRR · ARR · Net New MRR · NRR · churn · ARPA · CAC · LTV · CAC payback · Magic Number — from seven monthly inputs
+    badge: EXCEL TEMPLATE · $67 ONE-TIME
+    narration: >
+      This is the KDesk SaaS metrics and A R R dashboard. Seven inputs a month — new, expansion,
+      contraction and churned M R R, customer counts, and sales and marketing spend — and every metric a
+      board asks for calculates automatically, tied to the same monthly revenue data as your financials.
+      Pure Excel, no macros, no B I tool. Here is how it works.
+  - sheet: Setup
+    range: A4:D13
+    highlight: [C6, C13]
+    caption: Gross margin and the selected period drive LTV, payback, and the dashboard
+    narration: >
+      Setup is short. Company name, gross margin percent — which feeds lifetime value and CAC payback —
+      fiscal year start, and the selected period that the dashboard cards report on. Change December to
+      November and the six cards move.
+  - sheet: Monthly Data
+    range: A4:M10
+    highlight: [D5, H5, I5, K5, M5]
+    caption: Seven yellow inputs per month — the rest chains automatically
+    narration: >
+      Monthly Data is the only place you type. New customers, churned customers, new M R R, expansion,
+      contraction, churned M R R, and sales and marketing spend. Beginning customers and beginning M R R
+      are formulas — they carry forward from the prior month's ending balances, so nothing is re-keyed.
+  - sheet: Monthly Data
+    range: A4:M16
+    highlight: [L5, G6]
+    caption: "January ending MRR 45,800 becomes February's beginning MRR"
+    narration: >
+      Here is the chain. January ends at forty-five thousand eight hundred of M R R. February begins at
+      forty-five thousand eight hundred. Twelve months of sample data are loaded so you can see the whole
+      pattern before you paste in your own billing export.
+  - sheet: Metrics
+    range: A4:N16
+    highlight: [C16, D16, H16]
+    caption: "December: MRR 115,400 · ARR 1,384,800 · NRR 107% annualized"
+    narration: >
+      Metrics is one row per month, every metric in its own column. Ending M R R, A R R, net new M R R,
+      gross churn rate, net revenue retention monthly and annualized. December in the sample: one hundred
+      fifteen thousand of M R R, one point three eight million of A R R, net revenue retention of one
+      hundred seven percent annualized.
+  - sheet: Metrics
+    range: A4:N16
+    highlight: [J16, K16, L16, M16]
+    caption: "CAC 2,375 · LTV 23,199 · LTV:CAC 9.8 · payback 4.4 months"
+    narration: >
+      The unit economics sit next to them. Customer acquisition cost from spend over new customers,
+      lifetime value from A R P A, gross margin and churn, the L T V to CAC ratio, and CAC payback in
+      months. The Magic Number — net new A R R against prior-quarter spend — is in the full version.
+  - sheet: Dashboard
+    range: B3:K12
+    highlight: [B5, F5, J8, F11]
+    caption: Six KPI cards driven by the period selector
+    narration: >
+      The dashboard is what goes in the board deck. Six cards for the selected period — M R R, A R R, net
+      new M R R, annualized N R R, gross churn, and L T V to CAC — plus the Magic Number. Screenshot it,
+      or insert a native Excel chart from the trend table underneath.
+  - sheet: Dashboard
+    range: B14:K28
+    highlight: [C16, C27, J27]
+    caption: 24-month trend table — the same numbers your P&L reconciles to
+    narration: >
+      The trend table lists every month in one place: M R R from forty-five thousand eight hundred in
+      January to one hundred fifteen thousand in December, with churn, retention, A R P A, CAC and the
+      ratio alongside. Because it is built from monthly revenue data, it reconciles to recognized
+      revenue instead of arguing with it.
+  - kind: outro
+    heading: SaaS Metrics & ARR Dashboard
+    lines:
+      - 24 months, 11 metrics, six-card dashboard, 24-month trend table
+      - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
+      - Free 6-month version with the inputs and metrics to test on your own numbers
+    price: "$67 one-time"
+    url: kdeskaccounting.com/templates/saas-metrics
+    narration: >
+      The full workbook is sixty-seven dollars, one time, no subscription. There is a free six-month
+      version with the inputs and the metrics tab so you can test it on your own numbers first. Both are at
+      kdeskaccounting.com, slash templates, slash saas-metrics.

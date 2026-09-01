@@ -106,7 +106,17 @@ def render_sheet(wbv, wbf, sheet, rng, out_png, highlight=(), zoom=1.0, caption=
         d = ws.row_dimensions[r] if r in ws.row_dimensions else None
         hpt = d.height if (d is not None and d.height) else 15.0
         if d is not None and d.hidden: hpt = 0
-        rowh.append(int(hpt * 1.3333) + 2)
+        px = int(hpt * 1.3333) + 2
+        if hpt:  # wrapped text grows the row like Excel's auto-fit would
+            for c, cw in zip(range(c1, c2 + 1), colw):
+                cell = ws.cell(r, c)
+                if cell.alignment is not None and cell.alignment.wrap_text and isinstance(cell.value, str) and cell.value:
+                    span = merged.get((r, c)); width = sum(colw[c - c1:c - c1 + (span[1] if span else 1)]) - 10
+                    fs = float(cell.font.size or 11) if cell.font is not None else 11.0
+                    chars_per_line = max(1, int(width / (fs * 0.62)))
+                    lines = sum(max(1, -(-len(part) // chars_per_line)) for part in cell.value.split("\n"))
+                    px = max(px, int(lines * fs * 1.45) + 6)
+        rowh.append(px)
     gutter, header_h = 48, 26
     table_w, table_h = gutter + sum(colw), header_h + sum(rowh)
     hl = set(highlight)
@@ -151,10 +161,12 @@ def render_sheet(wbv, wbf, sheet, rng, out_png, highlight=(), zoom=1.0, caption=
     else:
         fx_t, fy_t = table_w / 2, table_h / 2
     def place(frame, size, focus, pad):
-        if size * s <= frame: return pad if (frame - size * s) > 2 * pad else (frame - size * s) / 2
+        if size * s <= frame:
+            if pad is None: return (frame - size * s) / 2
+            return pad if (frame - size * s) > 2 * pad else (frame - size * s) / 2
         t = frame / 2 - focus * s
         return min(0.0, max(frame - size * s, t))
-    tx, ty = place(frame_w, table_w, fx_t, 0.0), place(frame_h, table_h, fy_t, 36.0)
+    tx, ty = place(frame_w, table_w, fx_t, None), place(frame_h, table_h, fy_t, 36.0)
     fx = (tx + fx_t * s) / W; fy = (TOP_H + ty + fy_t * s) / H
     first = highlight[0] if highlight else f"{get_column_letter(c1)}{r1}"
     fv = wsf[first].value

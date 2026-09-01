@@ -1,0 +1,107 @@
+# Startup Runway Calculator — faceless walkthrough
+product: Startup Runway Calculator
+slug: runway
+source: ~/kdeskaccountingtemplates/templates/runway/runway_v1.xlsx
+workbook_name: Startup Runway Calculator.xlsx
+voice: am_michael
+cover:
+  standard: Runway
+  name: Startup Runway Calculator
+  price: "$49"
+  free_label: Free 12-month version
+  checks:
+    - 12 to 48-month cash forecast
+    - Base · Optimistic · Pessimistic
+    - Months of runway, cash-zero date, breakeven
+    - Five input tabs, one dashboard
+  hero: {sheet: Dashboard, range: B3:J24}
+  second: {sheet: Forecast Summary, range: A5:J17}
+  thumb: {sheet: Dashboard, range: B3:J9}
+scenes:
+  - kind: title
+    heading: Startup Runway Calculator
+    sub: 12 to 48-month cash forecast · Base, Optimistic and Pessimistic scenarios · months of runway, cash-zero date, breakeven
+    badge: EXCEL TEMPLATE · $49 ONE-TIME
+    narration: >
+      This is the KDesk startup runway calculator. Five input tabs — financing, revenue, fixed expenses,
+      variable expenses and capex — one scenario switch, and a dashboard that answers the only three
+      questions a founder or finance lead actually has: how many months of runway, when does cash hit zero,
+      and when does revenue cover burn. Pure Excel, no macros. Here is how it works.
+  - sheet: Setup
+    range: A4:D9
+    highlight: [C6, C7]
+    caption: Forecast start and length — 12, 24, 36 or 48 months
+    narration: >
+      Setup is two decisions: the first month of the forecast and how long it runs — twelve, twenty-four,
+      thirty-six or forty-eight months. Rows beyond the selected length hide themselves. Everything else
+      is driven from the input tabs.
+  - sheet: Financing Inputs
+    range: B5:I8
+    highlight: [E6, F6, G6]
+    caption: Starting cash, rounds, loan draws — amount, start month, frequency
+    narration: >
+      Financing is where cash comes in. Starting cash or a seed round as a one-time inflow, an equity round
+      in a later month, or a monthly loan draw with a number of occurrences. Each row is an amount, a start
+      month, a frequency, and a count.
+  - sheet: Revenue Inputs
+    range: B5:L7
+    highlight: [F6, H6, I6, J6, K6]
+    caption: Two-rate growth — a ramp rate for N months, then a mature rate, with a monthly cap
+    narration: >
+      Revenue streams use two-rate growth, because a straight percentage is never right for an early
+      company. An initial amount, a ramp growth rate for a set number of months, then a mature growth
+      rate, and a monthly cap so the model does not run away. The sample: two thousand a month of
+      subscriptions, growing fast for six months, then settling.
+  - sheet: Fixed Expenses
+    range: B5:I9
+    highlight: [E6, E7, E8]
+    caption: Recurring costs with start month, frequency and occurrences
+    narration: >
+      Fixed expenses are the burn you cannot avoid: payroll, rent, software. Start month, amount,
+      frequency, occurrences, category. Variable expenses and capex have their own tabs with the same
+      shape, so a percentage-of-revenue cost or a one-time equipment buy lands in the right month.
+  - sheet: Scenario Assumptions
+    range: B6:G9
+    highlight: [C8, C9]
+    caption: Optimistic and Pessimistic are multipliers on the base inputs
+    narration: >
+      Scenarios are multipliers, not a second set of inputs. Optimistic scales revenue up twenty-five
+      percent; pessimistic scales it down thirty-five percent, with small moves on variable costs. Edit
+      the multipliers here, switch the scenario on the dashboard, and the whole forecast re-runs.
+  - sheet: Forecast Summary
+    range: A5:J17
+    highlight: [H6, I6, J6]
+    caption: Month by month — revenue, expenses, financing, burn, net cash, ending cash
+    narration: >
+      Forecast Summary is the engine output, one row per month: revenue, fixed and variable expenses,
+      financing, capex, burn rate, net cash, and the ending cash balance that carries into the next month.
+      Every number traces to an input row on one of the five tabs.
+  - sheet: Dashboard
+    range: B3:J9
+    highlight: [B5, F5, J5, F8]
+    caption: "16 months of runway · cash zero May 2026 · breakeven September 2026"
+    narration: >
+      The dashboard answers the questions. In the sample: sixteen months of runway, cash reaches zero in
+      May twenty twenty-six, month-one burn of ten thousand, peak cash of eighty-seven thousand, and
+      revenue overtakes burn in September. Switch the scenario selector to pessimistic and watch the
+      cash-zero date move.
+  - sheet: Dashboard
+    range: B12:J24
+    highlight: [J13, J24]
+    caption: The projection table — insert a native Excel chart from it
+    narration: >
+      Underneath, the projection table: date, revenue, burn, net cash and ending cash for every month in
+      the window. Select it and insert a native Excel chart for the board deck — no macros, nothing to
+      break.
+  - kind: outro
+    heading: Startup Runway Calculator
+    lines:
+      - 12 to 48-month window, three scenarios, five input tabs, dashboard KPIs
+      - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
+      - Free 12-month version to test on your own numbers
+    price: "$49 one-time"
+    url: kdeskaccounting.com/templates/runway
+    narration: >
+      The full workbook is forty-nine dollars, one time, no subscription. There is a free twelve-month
+      version so you can test it on your own numbers first. Both are at kdeskaccounting.com, slash
+      templates, slash runway.

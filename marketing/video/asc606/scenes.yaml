@@ -67,7 +67,7 @@ scenes:
       from the close date.
   - sheet: Amortization Schedule
     range: A4:P18
-    highlight: [J7, J11, J15]
+    highlight: [J7, J9, J11]
     caption: The waterfall — one row per deal, one column per month, sixty months
     narration: >
       The amortization schedule is the waterfall your auditor asks for. One row per deal, one column per
