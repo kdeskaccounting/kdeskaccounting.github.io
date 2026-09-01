@@ -37,7 +37,16 @@
 <!-- ═══════════════════════════════════════════ PRODUCT SCREENSHOT ══ -->
 {{- $slug := path.Base (strings.TrimSuffix "/" .File.Dir) }}
 {{- $shotPath := printf "/images/products/%s-cover.png" $slug }}
-{{- if fileExists (printf "static%s" $shotPath) }}
+{{- if .Params.video_url }}
+<div class="kd-pshot kd-pvideo" id="walkthrough">
+  <video class="kd-pvideo__el" controls preload="metadata" playsinline
+         poster="{{ .Params.video_poster | default $shotPath }}"
+         data-kd-video="{{ path.Base (strings.TrimSuffix "/" .File.Dir) }}">
+    <source src="{{ .Params.video_url }}" type="video/mp4">
+  </video>
+  <p class="kd-pvideo__cap">{{ .Params.video_caption | default "Watch the 4-minute walkthrough — every tab, real numbers, no login." }}</p>
+</div>
+{{- else if fileExists (printf "static%s" $shotPath) }}
 <div class="kd-pshot">
   <img src="{{ $shotPath }}" alt="{{ .Title }} preview screenshot" loading="lazy">
 </div>

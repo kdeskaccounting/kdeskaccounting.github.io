@@ -1,0 +1,160 @@
+# ASC 842 Lease Accounting Workbook — faceless walkthrough
+# Render: scripts/video/.venv-tts/bin/python scripts/video/build_video.py --spec marketing/video/asc842/scenes.yaml
+product: ASC 842 Lease Accounting Workbook
+slug: asc842
+source: ~/kdeskaccountingtemplates/templates/asc842/ASC_842_Lease_Accounting_Workbook_v1.3.xlsx
+workbook_name: ASC 842 Lease Accounting Workbook.xlsx
+voice: am_michael
+presets:
+  Lease Schedule:
+    C4: HQ Office Lease
+cover:
+  standard: ASC 842
+  name: Lease Accounting Workbook
+  price: "$97"
+  free_label: Free 3-lease version
+  checks:
+    - 20 leases · 120-month schedules
+    - JE Generator with your GL codes
+    - Rollforward + maturity analysis
+    - Reconciliation ties to $0
+  hero: {sheet: Lease Schedule, range: A4:K21}
+  second: {sheet: JE Generator, range: A3:I17}
+  thumb: {sheet: Dashboard, range: A4:G10}
+scenes:
+  - kind: title
+    heading: ASC 842 Lease Accounting Workbook
+    sub: 20 leases · operating and finance · 120-month schedules · journal entries · rollforward · reconciliation that ties to $0
+    badge: EXCEL TEMPLATE · $97 ONE-TIME
+    narration: >
+      This is the KDesk ASC 842 lease accounting workbook. Twenty leases, operating and finance,
+      one hundred twenty month amortization schedules, a journal entry generator, a balance sheet
+      rollforward, and a reconciliation tab that ties to zero. Pure Excel, no macros. Here is how it works,
+      tab by tab, using the sample leases that ship in the file.
+
+  - sheet: Setup
+    range: A4:D12
+    highlight: [C11, C12]
+    zoom: 1.0
+    caption: One period selector drives every tab
+    narration: >
+      Everything starts on Setup. Enter your default incremental borrowing rate, choose the reporting
+      period, and every downstream tab — the schedules, the journal entries, the rollforward — reads from
+      this one cell. Change March to April and the entire workbook moves with it. No copying, no re-keying.
+
+  - sheet: Setup
+    range: A14:D29
+    highlight: [C16, C19, C25]
+    zoom: 1.0
+    caption: GL account mapping — your chart of accounts, your codes
+    narration: >
+      The GL mapping is yours to edit. Operating right-of-use asset, lease liability current and long-term,
+      the expense accounts, the cash or payables account. The journal entry generator pulls these codes,
+      so its output pastes straight into your accounting system without a find-and-replace.
+
+  - sheet: Lease Data
+    range: A4:J8
+    highlight: [B5, E5, G5, H5]
+    zoom: 1.0
+    caption: Yellow cells are inputs — nine fields per lease
+    narration: >
+      Lease Data is the register. One row per lease: name, type, asset class, commencement date, term,
+      monthly payment, incremental borrowing rate, initial direct costs, and incentives. Nine yellow cells.
+      Three sample leases are loaded — an office lease, a vehicle, and a finance lease on production
+      equipment — plus a short-term copier lease that uses the practical expedient.
+
+  - sheet: Lease Data
+    range: H4:P8
+    highlight: [K5, L5]
+    zoom: 1.0
+    caption: Liability = PV of payments · ROU = liability + IDC − incentives
+    narration: >
+      The auto-calculated columns do the commencement math. The office lease — sixty months at five
+      thousand a month, five percent I B R — gives a lease liability of two hundred sixty-four thousand
+      nine hundred fifty-four dollars, and a right-of-use asset of that amount plus the twenty-five
+      hundred dollars of initial direct costs. No formulas to write.
+
+  - sheet: Lease Schedule
+    range: A4:K21
+    highlight: [D10, F10, G10]
+    zoom: 1.0
+    caption: Interest = beginning liability × IBR ÷ 12, every month for 120 months
+    narration: >
+      Pick a lease on the schedule tab and you get all one hundred twenty months. Month one: beginning
+      liability, interest at five percent over twelve, the five thousand dollar payment, principal
+      reduction, ending liability — and the right-of-use asset amortizing alongside it. The present value
+      formulas are not chained, so a modification recalculates cleanly instead of cascading errors down
+      the column.
+
+  - sheet: JE Generator
+    range: A3:I17
+    highlight: [H5, I6, I7]
+    zoom: 1.0
+    caption: "Operating lease: expense 5,845.84 = interest 960.70 + ROU amortization 4,885.14"
+    narration: >
+      The journal entry generator aggregates the selected period. J E one is the operating lease expense:
+      five thousand eight hundred forty-five dollars and eighty-four cents, split between interest on the
+      liability and amortization of the right-of-use asset. Finance leases get their own depreciation and
+      interest entries. Every line carries the account code from Setup.
+
+  - sheet: JE Generator
+    range: D4:I20
+    highlight: [H19, I19, H20]
+    zoom: 1.15
+    caption: Debits − Credits = $0, every period
+    narration: >
+      Seventeen thousand thirty-eight dollars and sixty-five cents of debits. The same in credits. The
+      check cell at the bottom has to read zero before anything gets posted — and it does.
+
+  - sheet: Rollforward
+    range: A4:F16
+    highlight: [C6, F6, C14, D14]
+    zoom: 1.0
+    caption: Opening + additions − reductions = closing · split current / long-term
+    narration: >
+      Rollforward is the balance sheet view. Beginning balance, interest additions, payment reductions,
+      ending balance — for operating and finance liabilities and for both right-of-use assets. Below it,
+      the classification: fifty-nine thousand seven hundred current, one hundred sixty-two thousand
+      four hundred long-term, mapped to your balance sheet accounts.
+
+  - sheet: Rollforward
+    range: A18:E28
+    highlight: [E26, E27, E28]
+    zoom: 1.0
+    caption: Maturity analysis — footnote-ready
+    narration: >
+      The maturity analysis buckets undiscounted payments by year, backs out imputed interest, and lands
+      on the present value of the lease liabilities: three hundred eight thousand five hundred seventy-two
+      dollars. That table goes into the lease footnote as is.
+
+  - sheet: Reconciliation
+    range: A4:E9
+    highlight: [E6, E7, E8, E9]
+    zoom: 1.0
+    caption: JE Generator vs. Lease Data — variance $0
+    narration: >
+      Reconciliation is the tab your auditor opens first. Interest, payments, and total expense from the
+      journal entries, against the same numbers from the lease register. Every variance reads zero. If it
+      ever doesn't, the workbook is telling you exactly where to look.
+
+  - sheet: Dashboard
+    range: A4:G17
+    highlight: [B6, D6, F6]
+    zoom: 1.0
+    caption: Total liability 308,572 · net ROU 307,135 · period expense 8,738.65
+    narration: >
+      The dashboard summarizes the period: total lease liability, net right-of-use assets, period expense,
+      and the portfolio lease by lease. Screenshot it for the close package.
+
+  - kind: outro
+    heading: ASC 842 Lease Accounting Workbook
+    lines:
+      - 20 leases, 120-month schedules, JE Generator, Rollforward, Reconciliation
+      - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
+      - Free 3-lease version with the inputs and schedule to test on your own leases
+    price: "$97 one-time"
+    url: kdeskaccounting.com/templates/asc842
+    narration: >
+      The full workbook is ninety-seven dollars, one time, no subscription. There is a free three-lease
+      version with the inputs and the schedule so you can test it on your own leases first. Both are at
+      kdeskaccounting.com, slash templates, slash asc842.

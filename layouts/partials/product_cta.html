@@ -17,6 +17,9 @@
     <a class="kd-pcta__name" href="{{ .page }}">{{ .name | safeHTML }}</a>
   </div>
   <div class="kd-pcta__actions">
+    {{- with $.Site.GetPage .page }}{{ if .Params.video_url }}
+    <a class="kd-btn kd-btn--ghost kd-pcta__watch" href="{{ .RelPermalink }}#walkthrough">&#9654; Watch the 4-min walkthrough</a>
+    {{- end }}{{ end }}
     <a class="kd-btn kd-btn--ghost kd-pcta__free" href="{{ .free }}" target="_blank" rel="noopener">Download {{ .free_label }}</a>
     {{- if gt .price 0 }}
     <a class="kd-btn kd-btn--primary" href="{{ .buy }}" target="_blank" rel="noopener">Full workbook &mdash; ${{ .price }}</a>

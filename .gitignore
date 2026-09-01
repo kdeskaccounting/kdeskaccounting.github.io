@@ -15,3 +15,7 @@ __pycache__/
 
 # Built product binaries (published separately to Gumroad)
 dist/
+
+# Video pipeline artifacts (rendered locally, published via GitHub Releases)
+scripts/video/build/
+scripts/video/.venv-tts/

@@ -154,5 +154,11 @@ document.addEventListener('DOMContentLoaded',function(){
       fire('view_template_page', { template_path: a.pathname, source_page: page });
     }
   }, { passive: true });
+  document.addEventListener('play', function(e){
+    var v = e.target;
+    if (!v || v.tagName !== 'VIDEO' || v.dataset.kdVideoFired) return;
+    v.dataset.kdVideoFired = '1';
+    fire('video_play', { product_slug: v.dataset.kdVideo || 'unknown', source_page: location.pathname });
+  }, true);
 })();
 </script>
