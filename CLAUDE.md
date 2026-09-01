@@ -87,7 +87,20 @@ TOKEN=$(cat /home/kdeskconsulting/kdesk-analytics/mailerlite-token.txt)
 curl -s -H "Authorization: Bearer $TOKEN" https://connect.mailerlite.com/api/subscribers | python3 -m json.tool
 ```
 
+## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
+
+- **Gumroad API** (read + write): token in `~/kdeskaccountingtemplates/.env` (`GUMROAD_ACCESS_TOKEN`). CLI: `python3 ~/kdeskaccountingtemplates/gumroad_publish.py list|sales`. Weekly money-metric pull: `python3 scripts/pull_gumroad_snapshot.py` → `marketing/seo-tracking/gumroad-snapshots.jsonl`. Note: the paid ASC 606 product (`mwmwpe`) is live but does NOT appear in the API product list.
+- **Offer code `UPGRADE20`** (20% off, universal) exists on Gumroad since 2026-09-01 — for follow-up emails only, never on the site.
+- **Hugo** is installed via Homebrew (`hugo --minify` works here). Free/paid workbook sources + Gumroad copy live in `~/kdeskaccountingtemplates/templates/<slug>/`.
+- **MailerLite token / dist/ binaries / Cloudflare tokens are on the Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`) — unreachable 2026-09-01. Without it or a connected Chrome, MailerLite state can't be read or changed from here.
+- **GSC/GA4 API pull is still not enabled.** The `gws` OAuth client at `~/.config/gws/client_secret.json` is a Desktop client and can be reused: enable *Search Console API* + *Google Analytics Data API* on GCP project `involuted-disk-489017-r3`, then `uv run scripts/setup_seo_oauth.py ~/.config/gws/client_secret.json` (interactive, sign in as santiagokdesk) → `KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py`.
+- **Follow-up sequence + outreach drafts:** `marketing/email-sequences/free-download-followup.md`; 5 Gmail drafts created 2026-09-01 in santiagokdesk@gmail.com (not sent).
+
 ## Currently working on (resume here next session)
+
+**Punch list as of 2026-09-01** (see decisions 20–25): (1) Stephen sends the 5 Gmail drafts; (2) wire the 3-email free→paid sequence into Gumroad Workflows or MailerLite (needs Chrome connected or the Linux token); (3) finish the empty MailerLite welcome-email body — the site form promises "all 5 free templates in one email" and delivers nothing; (4) GSC/GA4 OAuth (above) so the lease-cluster position can finally be measured; (5) Gumroad thumbnails for the 7 listings without one (UI only); (6) fix the ASC 606 free workbook's Commission Data banner (says "Limited to 50 deals" — should be 5) in `~/kdeskaccountingtemplates/templates/asc606/patch_*.py`.
+
+*(Older punch list below is from 2026-05-12 and mostly superseded.)*
 
 See `~/.claude/projects/-home-kdeskconsulting-kdeskaccounting-blog/memory/next_session.md`. Punch list highlights:
 

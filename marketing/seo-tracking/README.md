@@ -70,3 +70,14 @@ Headless via the GSC Search Analytics API and the GA4 Data API, run as a schedul
 - A small Python script (`scripts/pull_gsc.py`, `scripts/pull_ga4.py`) that the schedule fires
 
 Until that's wired, the Monday schedule routine prompts Claude to drive the authed browser when Stephen is next at the keyboard.
+
+## Gumroad snapshots (`gumroad-snapshots.jsonl`) — THE money metric
+
+Weekly (Monday), from the Mac: `python3 scripts/pull_gumroad_snapshot.py`. Reads the Gumroad API
+token from `~/kdeskaccountingtemplates/.env` (never in this repo) and appends one row with all-time /
+28d / 7d rollups: `download_events`, `unique_people`, `paid_transactions`, `paid_full_price`
+(price >= $49 — the only number that is actually revenue), `revenue_usd`, `business_domains`
+(warm CAE-adjacent leads), `by_product`, `referrers` (watch `chatgpt.com` — first LLM referral
+landed 2026-08-31). First row 2026-09-01. Append-only.
+
+The 2026-05 → 2026-08 baseline: 23 download events, 13 people, $16.99, **0 full-price sales**.
