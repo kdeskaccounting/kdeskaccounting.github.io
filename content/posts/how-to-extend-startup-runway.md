@@ -1,6 +1,7 @@
 ---
 title: "How to Extend Your Startup Runway: 12 Levers That Actually Work"
 date: 2026-03-19
+product: runway
 description: "How to extend startup runway with 12 practical levers — revenue tactics, cost cuts, and structural moves that finance teams can model and execute."
 summary: "When runway gets tight, generic advice like 'cut costs' doesn't help. This guide covers 12 specific levers a finance team can pull to extend runway — with concrete numbers, worked examples, and a framework for modeling the impact of each one."
 tags: ["startup runway", "extend runway", "burn rate", "cash management", "Excel template", "startup finance", "SaaS"]

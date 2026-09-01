@@ -33,6 +33,9 @@
   {{- if (.Param "ShowToc") }}
   {{- partial "toc.html" . }}
   {{- end }}
+  {{- if .Params.product }}
+  {{- partial "product_cta.html" . }}
+  {{- end }}
 
   {{- if .Content }}
   <div class="post-content">

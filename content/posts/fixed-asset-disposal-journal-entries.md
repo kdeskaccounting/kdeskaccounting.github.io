@@ -1,6 +1,7 @@
 ---
 title: "Fixed Asset Disposal Journal Entries: Sale, Retirement, Trade-in, and Write-off"
 date: 2026-05-13
+product: fixed-assets
 lastmod: 2026-05-13
 description: "Complete guide to fixed asset disposal journal entries — sale, retirement, trade-in (ASC 845), write-off, and casualty loss. Worked examples, gain/loss math, commercial-substance test, and the audit evidence your auditor will request."
 summary: "A practical walkthrough of journal entries for every type of fixed asset disposal. Covers the generic disposal pattern, then steps through sale, retirement, trade-in (with the ASC 845 commercial-substance test), write-off, and casualty loss — each with a worked example and the JE that ties out. Plus the authorization and evidence anchors auditors require."

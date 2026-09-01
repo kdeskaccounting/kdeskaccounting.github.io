@@ -1,6 +1,7 @@
 ---
 title: "Startup Burn Rate Formula: How to Calculate It in Excel (With Template)"
 date: 2026-03-19
+product: runway
 description: "Learn the startup burn rate formula for gross and net burn, build a dynamic calculator in Excel, and download a ready-made template."
 summary: "Burn rate is the single number that tells you how long your startup can survive. This guide walks through the gross and net burn formulas, shows you how to build a dynamic burn rate model in Excel with real cell references, and flags the mistakes that make most spreadsheet models dangerously optimistic."
 tags: ["startup burn rate calculator", "burn rate formula", "Excel", "Excel template", "cash flow", "SaaS accounting", "startup finance"]

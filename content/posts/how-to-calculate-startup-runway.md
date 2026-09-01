@@ -1,6 +1,7 @@
 ---
 title: "How to Calculate Startup Runway (With Excel Template)"
 date: 2026-03-18
+product: runway
 description: "How to calculate startup runway — the formula, what counts as burn, how to build a month-by-month cash model in Excel, and what to do when the number is lower than you expected."
 summary: "Runway is simple to define and surprisingly easy to miscalculate. Here's the formula, how to avoid the common errors, and how to build a scenario model that gives you a defensible number for investors and the board."
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "SaaS finance"]

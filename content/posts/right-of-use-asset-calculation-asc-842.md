@@ -1,6 +1,7 @@
 ---
 title: "Right-of-Use Asset: How to Calculate and Record It Under ASC 842"
 date: 2026-03-16
+product: asc842
 description: "How to calculate the right-of-use (ROU) asset at lease commencement under ASC 842 — including initial direct costs, prepaid rent, and lease incentives. With journal entries and common mistakes."
 summary: "The ROU asset at commencement equals the lease liability plus initial direct costs plus prepaid rent minus lease incentives received. Most teams get the lease liability right but miss the adjustments. Here's how to calculate it correctly."
 tags: ["ASC 842", "right-of-use asset", "ROU asset", "lease accounting", "Excel template", "GAAP", "journal entries"]

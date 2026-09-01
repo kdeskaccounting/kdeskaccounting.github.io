@@ -37,9 +37,11 @@
 <!-- ═══════════════════════════════════════════ PRODUCT SCREENSHOT ══ -->
 {{- $slug := path.Base (strings.TrimSuffix "/" .File.Dir) }}
 {{- $shotPath := printf "/images/products/%s-cover.png" $slug }}
+{{- if fileExists (printf "static%s" $shotPath) }}
 <div class="kd-pshot">
   <img src="{{ $shotPath }}" alt="{{ .Title }} preview screenshot" loading="lazy">
 </div>
+{{- end }}
 
 <!-- ═══════════════════════════════════════════ MAIN LAYOUT ══ -->
 <div class="kd-playout">

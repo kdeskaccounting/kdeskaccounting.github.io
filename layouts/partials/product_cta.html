@@ -1,0 +1,35 @@
+{{/* Compact product CTA rendered near the top of a post (after the TOC).
+     Activated by `product: <slug>` in post frontmatter. Keeps the free/paid
+     pair one click away before the reader scrolls 1,500 words. */}}
+{{- $slug := .Params.product }}
+{{- $catalog := dict
+  "asc842" (dict "name" "ASC 842 Lease Accounting Workbook" "price" 97 "buy" "https://kdeskaccounting.gumroad.com/l/phxigq" "free" "https://kdeskaccounting.gumroad.com/l/gljxc" "free_label" "free 3-lease version" "page" "/templates/asc842/")
+  "asc606" (dict "name" "ASC 606 Commission Accrual Workbook" "price" 79 "buy" "https://kdeskaccounting.gumroad.com/l/mwmwpe" "free" "https://kdeskaccounting.gumroad.com/l/cjexre" "free_label" "free 5-deal version" "page" "/templates/asc606/")
+  "runway" (dict "name" "Startup Runway Calculator" "price" 49 "buy" "https://kdeskaccounting.gumroad.com/l/runway-calculator" "free" "https://kdeskaccounting.gumroad.com/l/runway-calculator-free" "free_label" "free 12-month version" "page" "/templates/runway/")
+  "fixed-assets" (dict "name" "Fixed Asset Rollforward Workbook" "price" 79 "buy" "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward" "free" "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free" "free_label" "free 5-asset version" "page" "/templates/fixed-assets/")
+  "saas-metrics" (dict "name" "SaaS Metrics &amp; ARR Dashboard" "price" 67 "buy" "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard" "free" "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free" "free_label" "free 6-month version" "page" "/templates/saas-metrics/")
+  "month-end-close" (dict "name" "Month-End Close Checklist + Tie-Out Workbook" "price" 0 "buy" "" "free" "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist" "free_label" "free workbook" "page" "/templates/month-end-close/")
+}}
+{{- with index $catalog $slug }}
+<aside class="kd-pcta" data-kd-product-cta="{{ $slug }}">
+  <div class="kd-pcta__text">
+    <span class="kd-pcta__eyebrow">Excel workbook for this guide</span>
+    <a class="kd-pcta__name" href="{{ .page }}">{{ .name | safeHTML }}</a>
+  </div>
+  <div class="kd-pcta__actions">
+    <a class="kd-btn kd-btn--ghost kd-pcta__free" href="{{ .free }}" target="_blank" rel="noopener">Download {{ .free_label }}</a>
+    {{- if gt .price 0 }}
+    <a class="kd-btn kd-btn--primary" href="{{ .buy }}" target="_blank" rel="noopener">Full workbook &mdash; ${{ .price }}</a>
+    {{- end }}
+  </div>
+</aside>
+<style>
+.kd-pcta { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0.75rem 1rem; margin:1.25rem 0 2rem; padding:1rem 1.25rem; border:1px solid var(--border,#e3e3dc); border-left:4px solid var(--kd-blue,#2e75b6); border-radius:10px; background:var(--code-bg,#f6f6f0); }
+.kd-pcta__eyebrow { display:block; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--secondary,#6b6b6b); margin-bottom:0.15rem; }
+.kd-pcta__name { font-weight:700; font-size:1.02rem; color:var(--content,#1a1a1a); text-decoration:none; }
+.kd-pcta__name:hover { text-decoration:underline; }
+.kd-pcta__actions { display:flex; flex-wrap:wrap; gap:0.5rem; }
+.kd-pcta .kd-btn { padding:9px 16px; font-size:0.88rem; }
+@media (max-width:600px){ .kd-pcta__actions{ width:100%; } .kd-pcta .kd-btn{ flex:1 1 auto; justify-content:center; } }
+</style>
+{{- end }}

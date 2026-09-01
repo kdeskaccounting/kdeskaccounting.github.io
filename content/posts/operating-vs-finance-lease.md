@@ -1,6 +1,7 @@
 ---
 title: "Operating Lease vs Finance Lease: How to Classify and Account for Each"
 date: 2026-03-11
+product: asc842
 description: "The five classification tests, balance sheet treatment, P&L differences, and cash flow presentation for operating and finance leases under ASC 842. With real examples and journal entries."
 summary: "Under ASC 842, every lease is either operating or finance — and the classification changes your income statement, cash flow, and audit disclosures. Here's how to classify correctly and account for each type."
 tags: ["ASC 842", "operating lease", "finance lease", "lease accounting", "Excel template", "GAAP", "balance sheet"]

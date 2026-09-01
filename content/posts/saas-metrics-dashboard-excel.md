@@ -1,6 +1,8 @@
 ---
 title: "How to Build a SaaS Metrics Dashboard in Excel"
 date: 2026-03-19
+lastmod: 2026-09-01
+product: saas-metrics
 description: "Build a SaaS metrics dashboard in Excel that tracks MRR, ARR, churn, NRR, CAC, and LTV with formulas your finance team can audit."
 summary: "Your board deck needs SaaS metrics. Your investors want them monthly. Here is how to build a SaaS metrics dashboard in Excel that finance actually controls — with formulas, worked examples, and the common mistakes that make dashboards unreliable."
 tags: ["SaaS metrics", "ARR", "MRR", "SaaS dashboard", "Excel", "Excel template", "SaaS accounting", "churn"]
@@ -8,6 +10,15 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 14
+faq:
+  - q: "What is the difference between MRR and ARR?"
+    a: "MRR is the normalized monthly recurring revenue at a point in time; ARR is MRR multiplied by 12. Both are point-in-time run-rate metrics, not GAAP revenue — one-time fees, usage overages, and professional services are excluded."
+  - q: "How do you calculate net revenue retention?"
+    a: "Net revenue retention = (beginning MRR + expansion − contraction − churned MRR) ÷ beginning MRR for the cohort of customers that existed at the start of the period. New-customer MRR is excluded. Above 100% means existing customers grew on net."
+  - q: "Should finance or sales ops own the SaaS metrics dashboard?"
+    a: "Finance should own the dashboard that goes to the board, because those numbers must reconcile to recognized revenue and the P&L. Sales ops can own pipeline and bookings dashboards; the two should be reconciled, not merged."
+  - q: "How do capitalized commissions affect CAC?"
+    a: "Under ASC 340-40 commissions on multi-year contracts are capitalized and amortized, so GAAP sales and marketing expense in a month is lower than cash commissions paid. Decide whether CAC uses cash S&M spend or GAAP S&M expense, state it, and apply it consistently."
 ---
 
 Most SaaS companies build their metrics dashboard in a BI tool owned by sales ops or RevOps. Finance inherits the numbers, spots errors, and spends the last two days before board meetings reconciling ARR to the general ledger.
@@ -317,7 +328,11 @@ A single-tab Excel dashboard works well up to about fifty customers and one prod
 
 These are the exact problems that turn a simple spreadsheet into a maintenance burden. For companies approaching this complexity, having a structured workbook with pre-built cohort tracking, automated decomposition formulas, and reconciliation checks saves dozens of hours per month.
 
-We are building a **SaaS Metrics & ARR Dashboard** workbook that handles all of this — cohort-level tracking, multi-product support, automated NRR calculations, and a board-ready summary tab. If you want early access, email hello@kdeskaccounting.com.
+The [SaaS Metrics & ARR Dashboard workbook](/templates/saas-metrics/) handles the single-product version of this: 24 months of MRR movements and customer counts in, and MRR, ARR, Net New MRR, gross churn, NRR, ARPA, CAC, LTV, LTV:CAC, CAC payback, and Magic Number out — with auto-chained beginning balances, a period-driven dashboard, and formulas your auditor can trace.
+
+$67, one time. No subscription. [Get it here →](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard)
+
+Or [try the free 6-month version](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free) first — same tabs, same formulas, 6 months of capacity.
 
 ---
 
@@ -327,9 +342,26 @@ If you are building out your finance tech stack in Excel, these may be useful:
 
 - **[How to Calculate Startup Runway](/posts/how-to-calculate-startup-runway/)** — a detailed walkthrough of runway modeling, burn rate calculations, and scenario planning. Pairs well with the metrics dashboard for board presentations.
 - **[Month-End Close Checklist for Controllers](/posts/month-end-close-checklist-controllers/)** — the process that feeds your dashboard with clean monthly data.
+- **[SaaS Metrics & ARR Dashboard](/templates/saas-metrics/)** ($67) — the workbook version of this guide: 11 metrics from seven monthly inputs, board-ready dashboard, 24-month trend table.
 - **[ASC 606 Commission Workbook](/templates/asc606/)** ($79) — automates commission capitalization under ASC 340-40, which directly affects your CAC calculations.
 - **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($97) — if your SaaS company has office leases, this handles the ROU asset and liability schedules that show up on your balance sheet.
 - **[Startup Runway Calculator](/templates/runway/)** ($49) — turns your MRR growth assumptions and burn rate into a month-by-month cash forecast.
+
+---
+
+## Frequently Asked Questions
+
+**What is the difference between MRR and ARR?**
+MRR is the normalized monthly recurring revenue at a point in time; ARR is MRR multiplied by 12. Both are point-in-time run-rate metrics, not GAAP revenue — one-time fees, usage overages, and professional services are excluded.
+
+**How do you calculate net revenue retention?**
+Net revenue retention = (beginning MRR + expansion − contraction − churned MRR) ÷ beginning MRR for the cohort of customers that existed at the start of the period. New-customer MRR is excluded. Above 100% means existing customers grew on net.
+
+**Should finance or sales ops own the SaaS metrics dashboard?**
+Finance should own the dashboard that goes to the board, because those numbers must reconcile to recognized revenue and the P&L. Sales ops can own pipeline and bookings dashboards; the two should be reconciled, not merged.
+
+**How do capitalized commissions affect CAC?**
+Under ASC 340-40 commissions on multi-year contracts are capitalized and amortized, so GAAP sales and marketing expense in a month is lower than cash commissions paid. Decide whether CAC uses cash S&M spend or GAAP S&M expense, state it, and apply it consistently.
 
 ---
 

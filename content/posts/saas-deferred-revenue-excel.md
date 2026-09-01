@@ -1,6 +1,8 @@
 ---
 title: "SaaS Deferred Revenue: How to Track It in Excel (With Schedule Template)"
 date: 2026-03-19
+lastmod: 2026-09-01
+product: asc606
 description: "Learn how to build a deferred revenue Excel schedule for SaaS. Step-by-step waterfall template with formulas, journal entries, and reconciliation."
 summary: "Deferred revenue is the single largest liability on most SaaS balance sheets, and tracking it accurately in Excel gets painful fast. This guide walks through building a deferred revenue waterfall schedule from scratch, with working formulas, journal entries, and a reconciliation framework that holds up under audit."
 tags: ["deferred revenue", "SaaS accounting", "revenue recognition", "ASC 606", "Excel", "Excel template", "waterfall schedule"]
@@ -8,6 +10,15 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 12
+faq:
+  - q: "Is deferred revenue a liability?"
+    a: "Yes. Deferred revenue is a contract liability under ASC 606: the customer has paid (or been billed) for service you have not yet delivered. It sits on the balance sheet and is released to revenue as the service is performed."
+  - q: "How do you calculate monthly revenue recognition on an annual SaaS contract?"
+    a: "For a ratable subscription, divide total contract value by the number of service months. A $12,000 annual contract recognizes $1,000 per month; the deferred revenue balance drops by $1,000 each month until it reaches zero at the end of the term."
+  - q: "What is the difference between deferred revenue, unearned revenue, and a contract liability?"
+    a: "They describe the same balance. Unearned revenue and deferred revenue are the traditional labels; contract liability is the ASC 606 term. Use one label consistently in the ledger and the financial statements."
+  - q: "What is a deferred revenue waterfall?"
+    a: "A schedule with one row per contract and one column per month that shows how each contract's deferred balance releases into revenue over its service period. Column totals give the monthly revenue entry; the sum of the remaining balances gives the deferred revenue liability."
 ---
 
 If you work in SaaS finance, deferred revenue is not optional —it is the core of your balance sheet. Every annual contract billed upfront, every quarterly invoice sent before the service period begins, creates a liability that you need to track, amortize, and reconcile every single month.
@@ -306,6 +317,22 @@ Each one is built for the same audience —SaaS finance teams managing technical
 4. The rollforward (opening + billings - recognized = closing) is your reconciliation anchor. If it does not tie, do not close the books.
 5. Journal entries follow directly from the waterfall totals. Automate the JE output so your monthly close is a formula, not a manual exercise.
 6. At scale, the manual waterfall becomes a liability of its own. Purpose-built workbooks with validation, protection, and reconciliation checks save hours every month.
+
+---
+
+## Frequently Asked Questions
+
+**Is deferred revenue a liability?**
+Yes. Deferred revenue is a contract liability under ASC 606: the customer has paid (or been billed) for service you have not yet delivered. It sits on the balance sheet and is released to revenue as the service is performed.
+
+**How do you calculate monthly revenue recognition on an annual SaaS contract?**
+For a ratable subscription, divide total contract value by the number of service months. A $12,000 annual contract recognizes $1,000 per month; the deferred revenue balance drops by $1,000 each month until it reaches zero at the end of the term.
+
+**What is the difference between deferred revenue, unearned revenue, and a contract liability?**
+They describe the same balance. Unearned revenue and deferred revenue are the traditional labels; contract liability is the ASC 606 term. Use one label consistently in the ledger and the financial statements.
+
+**What is a deferred revenue waterfall?**
+A schedule with one row per contract and one column per month that shows how each contract's deferred balance releases into revenue over its service period. Column totals give the monthly revenue entry; the sum of the remaining balances gives the deferred revenue liability.
 
 ---
 

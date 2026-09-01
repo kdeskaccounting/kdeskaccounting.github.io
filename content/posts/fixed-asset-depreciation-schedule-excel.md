@@ -1,7 +1,8 @@
 ---
 title: "Fixed Asset Depreciation Schedule in Excel: How to Build One From Scratch"
 date: 2026-03-19
-lastmod: 2026-05-13
+product: fixed-assets
+lastmod: 2026-09-01
 description: "How to build a fixed asset depreciation schedule in Excel — straight-line, double-declining balance, sum-of-years methods, journal entries, and rollforward — plus a ready-made workbook if you don't want to build it from scratch."
 summary: "A step-by-step guide to building a fixed asset depreciation schedule in Excel. Covers three depreciation methods with formulas, worked examples, journal entries, and the register structure you need for audit-ready reporting. Includes a link to a pre-built audit-ready workbook."
 tags: ["depreciation schedule", "fixed assets", "depreciation methods", "Excel", "Excel template", "straight line depreciation", "ASC 360", "accounting"]
@@ -9,6 +10,15 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 13
+faq:
+  - q: "Which depreciation method should I use for book purposes?"
+    a: "Straight-line is the most common method under US GAAP for SaaS and services companies because it matches the ratable consumption of computers, furniture, and leasehold improvements. Declining-balance or sum-of-years methods are appropriate when an asset delivers more benefit early in its life. Tax depreciation (MACRS) is a separate calculation."
+  - q: "When does depreciation start?"
+    a: "When the asset is placed in service and ready for its intended use — not when it is invoiced or paid for. Track the in-service date separately from the acquisition date in the register."
+  - q: "What is a capitalization threshold?"
+    a: "A policy amount below which purchases are expensed rather than capitalized and depreciated. It is an accounting policy election that should be documented and applied consistently; it is separate from any tax de minimis rules."
+  - q: "Is a depreciation schedule the same as a fixed asset rollforward?"
+    a: "No. The depreciation schedule shows each asset's expense period by period. The rollforward summarizes the whole register for a period: opening cost and accumulated depreciation, plus additions, less disposals, plus depreciation expense, equals closing — and it is the schedule your auditor asks for first."
 ---
 
 If you manage fixed assets at a SaaS startup, you already know the pain. Every quarter, the auditors want a depreciation schedule that ties to the GL. Every month-end, you need to book the right expense. And every time someone buys a new server, laptop fleet, or office buildout, you are the one adding rows to a spreadsheet that was never designed to scale.
@@ -410,6 +420,22 @@ If you are building out your accounting infrastructure in Excel, these templates
 - **[ASC 606 Commission Capitalization Workbook](/templates/asc606/)** ($79) —Automates commission capitalization, amortization, and journal entries under ASC 340-40. If you are capitalizing sales commissions, this saves hours every month-end.
 - **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($97) —Full lease accounting schedule with ROU asset, lease liability, amortization, and journal entries. Handles both operating and finance leases.
 - **[Startup Runway Calculator](/templates/runway/)** ($49) —Cash flow forecasting with two-rate revenue growth, departmental hiring plans, and scenario modeling for board-ready runway analysis.
+
+---
+
+## Frequently Asked Questions
+
+**Which depreciation method should I use for book purposes?**
+Straight-line is the most common method under US GAAP for SaaS and services companies because it matches the ratable consumption of computers, furniture, and leasehold improvements. Declining-balance or sum-of-years methods are appropriate when an asset delivers more benefit early in its life. Tax depreciation (MACRS) is a separate calculation.
+
+**When does depreciation start?**
+When the asset is placed in service and ready for its intended use — not when it is invoiced or paid for. Track the in-service date separately from the acquisition date in the register.
+
+**What is a capitalization threshold?**
+A policy amount below which purchases are expensed rather than capitalized and depreciated. It is an accounting policy election that should be documented and applied consistently; it is separate from any tax de minimis rules.
+
+**Is a depreciation schedule the same as a fixed asset rollforward?**
+No. The depreciation schedule shows each asset's expense period by period. The rollforward summarizes the whole register for a period: opening cost and accumulated depreciation, plus additions, less disposals, plus depreciation expense, equals closing — and it is the schedule your auditor asks for first.
 
 ---
 

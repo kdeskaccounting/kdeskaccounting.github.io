@@ -1,6 +1,7 @@
 ---
 title: "IFRS 16 vs ASC 842: Key Differences Every Controller Should Know"
 date: 2026-03-11
+product: asc842
 lastmod: 2026-05-31
 description: "IFRS 16 vs ASC 842: both standards put leases on the balance sheet, but they diverge on classification, discount rates, exemptions, and P&L treatment. Side-by-side breakdown for controllers."
 summary: "IFRS 16 and ASC 842 both eliminate off-balance-sheet operating leases, but the two standards diverge on lease classification, discount rates, short-term exemptions, and income statement presentation. If you report under both — or are switching — here's the difference between IFRS 16 and ASC 842, line by line."
