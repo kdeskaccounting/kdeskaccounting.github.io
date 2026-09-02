@@ -25,6 +25,9 @@ short:
   hook: "The lease entry most spreadsheets get wrong"
   scenes: [6, 10]
   cta: "Free 3-lease version → kdeskaccounting.com/templates/asc842"
+  ranges:
+    6: "D4:I17"
+    10: "B4:E9"
 scenes:
   - kind: title
     heading: ASC 842 Lease Accounting Workbook

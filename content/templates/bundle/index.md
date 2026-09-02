@@ -1,8 +1,9 @@
 ---
 title: "SaaS Controller Bundle — All Five KDesk Excel Workbooks"
-description: "All five KDesk workbooks in one download for $249 instead of $371: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
+description: "All five KDesk workbooks in one purchase for $249 instead of $371: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
 summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $249 instead of $371, plus the close checklist that ties them together."
 date: 2026-09-01
+lastmod: 2026-09-02
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -25,7 +26,7 @@ faq:
     a: "Yes. Every workbook is pure Excel formulas — no VBA macros, no Windows-only features. Excel 2016, Excel 365, and Excel for Mac."
 ---
 
-If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — audit-ready, formula-complete, reconciled to $0 — in one download. **$249 one-time instead of $371. No subscription. No macros.**
+If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — audit-ready, formula-complete, reconciled to $0 — in one purchase. **$249 one-time instead of $371. No subscription. No macros.**
 
 [Get the Bundle ($249) →](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
 
@@ -53,7 +54,7 @@ The month-end close checklist's reconciliation tab has a row for deferred commis
 
 - **Same conventions everywhere.** Yellow input cells, protected formulas, a Setup tab with one period selector, a JE Generator with your GL codes, a rollforward, and a reconciliation that reads $0 when everything ties.
 - **Same audit posture.** Every workbook was built around the question an auditor asks first: show me the schedule that supports this balance, and show me that it ties.
-- **One purchase, one download page.** All six files land in one Gumroad library entry; version updates are added to the same purchase.
+- **One purchase, six library entries.** Gumroad delivers each workbook into your library as its own product, so every file's updates and receipt stay with that workbook.
 
 ---
 

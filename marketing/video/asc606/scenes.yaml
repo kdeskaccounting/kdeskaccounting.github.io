@@ -24,6 +24,9 @@ short:
   hook: "Deferred commissions that tie to the GL every month"
   scenes: [8, 9]
   cta: "Free 5-deal version → kdeskaccounting.com/templates/asc606"
+  ranges:
+    8: "A4:F16"
+    9: "B4:E9"
 scenes:
   - kind: title
     heading: ASC 606 Commission Accrual Workbook

@@ -11,7 +11,7 @@ Each template is purpose-built for one workflow. No generic spreadsheet packs. E
 ## Available Templates
 
 ### [SaaS Controller Bundle](/templates/bundle/) — $249
-All five paid workbooks plus the free close checklist in one download. $371 bought separately. Same Setup / inputs / JE Generator / reconciliation conventions in every file.
+All five paid workbooks plus the free close checklist in one purchase. $371 bought separately. Same Setup / inputs / JE Generator / reconciliation conventions in every file.
 
 ### [ASC 842 Lease Accounting Workbook](/templates/asc842/) — $97
 ROU asset, lease liability, amortization schedule, journal entries, rollforward, and disclosure table for operating and finance leases. 20-lease capacity. Non-chained PV formulas. Free 3-lease version available.

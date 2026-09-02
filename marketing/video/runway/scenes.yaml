@@ -21,6 +21,9 @@ short:
   hook: "How many months of runway? One dashboard answers it"
   scenes: [5, 7]
   cta: "Free 12-month version → kdeskaccounting.com/templates/runway"
+  ranges:
+    5: "B6:G9"
+    7: "B3:J9"
 scenes:
   - kind: title
     heading: Startup Runway Calculator

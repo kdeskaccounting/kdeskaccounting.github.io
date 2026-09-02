@@ -21,6 +21,9 @@ short:
   hook: "Board-ready SaaS metrics from seven inputs a month"
   scenes: [4, 6]
   cta: "Free 6-month version → kdeskaccounting.com/templates/saas-metrics"
+  ranges:
+    4: "B4:I17"
+    6: "B3:K12"
 scenes:
   - kind: title
     heading: SaaS Metrics & ARR Dashboard

@@ -28,6 +28,9 @@ short:
   hook: "A free close checklist that ties every account"
   scenes: [3, 5]
   cta: "Free download → kdeskaccounting.com/templates/month-end-close"
+  ranges:
+    3: "B5:I14"
+    5: "B2:F20"
 scenes:
   - kind: title
     heading: Month-End Close Checklist + Tie-Out Workbook
