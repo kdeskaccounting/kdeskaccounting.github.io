@@ -13,6 +13,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist"
 free_label: "Download — Free"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/month-end-close.mp4"
 video_poster: "/images/products/month-end-close-poster.png"
+youtube_url: "https://youtu.be/F0wbwXL8-go"
 tags: ["month-end close", "controller", "reconciliation", "Excel template", "close checklist", "tie-out", "journal entries"]
 faq:
   - q: "Is this actually free?"

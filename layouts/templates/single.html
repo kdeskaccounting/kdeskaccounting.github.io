@@ -44,7 +44,7 @@
          data-kd-video="{{ path.Base (strings.TrimSuffix "/" .File.Dir) }}">
     <source src="{{ .Params.video_url }}" type="video/mp4">
   </video>
-  <p class="kd-pvideo__cap">{{ .Params.video_caption | default "Watch the 4-minute walkthrough — every tab, real numbers, no login." }}</p>
+  <p class="kd-pvideo__cap">{{ .Params.video_caption | default "Watch the 4-minute walkthrough — every tab, real numbers, no login." }}{{ with .Params.youtube_url }} <a href="{{ . }}" target="_blank" rel="noopener">Also on YouTube &rarr;</a>{{ end }}</p>
 </div>
 {{- else if fileExists (printf "static%s" $shotPath) }}
 <div class="kd-pshot">

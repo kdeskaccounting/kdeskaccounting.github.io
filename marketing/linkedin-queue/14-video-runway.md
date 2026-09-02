@@ -21,6 +21,8 @@ Free 12-month version in the first comment.
 Walkthrough + free version: https://kdeskaccounting.com/templates/runway/#walkthrough
 Free download: https://kdeskaccounting.gumroad.com/l/runway-calculator-free
 
+YouTube version: https://youtu.be/G0CbfPkmgTY
+
 ## Notes
 - No emojis, no "thrilled". One concrete number per post (voice rules in README).
 - Reply to every comment within the first hour; that is what extends reach.

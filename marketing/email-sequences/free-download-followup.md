@@ -161,3 +161,13 @@ Log every send and reply in `marketing/seo-tracking/email-broadcasts.jsonl` (cre
 - **Gumroad Workflows:** all five free→paid workflows are built (trigger = purchase of the free product; emails at 0 / 3 / 7 days; copy in `workflows.json`) but Gumroad refuses to publish until the account has **$100 in earnings and a payout** ($16.99 today). They publish themselves the day that threshold is crossed — nothing to rebuild.
 - **MailerLite fallback (the path that works now):** one automation, trigger *joins group "Gumroad free downloaders"*, three emails using merge fields `{$product_name} {$free_cap} {$paid_url} {$page_url} {$price} {$full_desc}` so one sequence is product-specific. `scripts/sync_gumroad_to_mailerlite.py` pulls Gumroad free downloads and upserts them with those fields (run it Mondays with the snapshot, or daily via launchd). It needs a MailerLite API token: creating one in the UI requires ticking MailerLite's API-terms checkbox, which Claude does not tick without Stephen's OK.
 - **MailerLite welcome email** (site form promise): body now set from `welcome-email.html` via the new Custom HTML editor.
+
+
+## YouTube walkthroughs (public, 2026-09-02)
+
+- asc842: https://youtu.be/bfCMoceDcso
+- asc606: https://youtu.be/eckfdjmyiwo
+- fixed-assets: https://youtu.be/I-VAym73C-M
+- saas-metrics: https://youtu.be/janK2YXfmFU
+- runway: https://youtu.be/G0CbfPkmgTY
+- month-end-close: https://youtu.be/F0wbwXL8-go

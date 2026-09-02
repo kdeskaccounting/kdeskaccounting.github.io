@@ -19,6 +19,8 @@ Free 6-month version in the first comment.
 Walkthrough + free version: https://kdeskaccounting.com/templates/saas-metrics/#walkthrough
 Free download: https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free
 
+YouTube version: https://youtu.be/janK2YXfmFU
+
 ## Notes
 - No emojis, no "thrilled". One concrete number per post (voice rules in README).
 - Reply to every comment within the first hour; that is what extends reach.

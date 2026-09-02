@@ -17,6 +17,8 @@ Most closes live in email threads and someone's personal checklist. Here is a fr
 Walkthrough + free version: https://kdeskaccounting.com/templates/month-end-close/#walkthrough
 Free download: https://kdeskaccounting.gumroad.com/l/month-end-close-checklist
 
+YouTube version: https://youtu.be/F0wbwXL8-go
+
 ## Notes
 - No emojis, no "thrilled". One concrete number per post (voice rules in README).
 - Reply to every comment within the first hour; that is what extends reach.

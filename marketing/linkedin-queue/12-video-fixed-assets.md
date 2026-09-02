@@ -21,6 +21,8 @@ Free 5-asset version (register + schedule) in the first comment.
 Walkthrough + free version: https://kdeskaccounting.com/templates/fixed-assets/#walkthrough
 Free download: https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free
 
+YouTube version: https://youtu.be/I-VAym73C-M
+
 ## Notes
 - No emojis, no "thrilled". One concrete number per post (voice rules in README).
 - Reply to every comment within the first hour; that is what extends reach.

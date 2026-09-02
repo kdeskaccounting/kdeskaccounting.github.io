@@ -13,6 +13,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
 free_label: "Try free 5-deal version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc606.mp4"
 video_poster: "/images/products/asc606-poster.png"
+youtube_url: "https://youtu.be/eckfdjmyiwo"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
 faq:
   - q: "Does it handle variable commission rates?"

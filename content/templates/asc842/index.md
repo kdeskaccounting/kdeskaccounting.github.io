@@ -13,6 +13,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/gljxc"
 free_label: "Try free 3-lease version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc842.mp4"
 video_poster: "/images/products/asc842-poster.png"
+youtube_url: "https://youtu.be/bfCMoceDcso"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
 faq:
   - q: "Does it handle both operating and finance leases?"

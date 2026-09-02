@@ -28,6 +28,8 @@ Free 3-lease version (inputs + schedule) in the first comment.
 Walkthrough + free version: https://kdeskaccounting.com/templates/asc842/#walkthrough
 Free download: https://kdeskaccounting.gumroad.com/l/gljxc
 
+YouTube version: https://youtu.be/bfCMoceDcso
+
 ## Notes
 - No emojis, no "thrilled". One concrete number per post (voice rules in README).
 - Reply to every comment within the first hour; that is what extends reach.
