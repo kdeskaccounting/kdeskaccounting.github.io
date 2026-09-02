@@ -11,6 +11,8 @@ price: 49
 buy_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator"
 free_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator-free"
 free_label: "Try free 12-month version"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/runway.mp4"
+video_poster: "/images/products/runway-poster.png"
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
 faq:
   - q: "Does it handle variable payment schedules?"

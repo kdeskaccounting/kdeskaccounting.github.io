@@ -4,10 +4,13 @@
 
 **Why this exists:** All-time Gumroad = 23 downloads, 13 people, 0 full-price sales. The free workbooks are good enough to be the product unless something turns the download into a decision. This sequence is that something. The `UPGRADE20` code (20% off, universal, created 2026-09-01) is the nudge; it is only distributed through these emails, never on the site.
 
+**Update 2026-09-01 — lean free files + bundle + videos.** The free downloads are now *inputs + schedule only* (JE Generator, Rollforward, Reconciliation and Dashboard tabs are gone from the free files), so the "over the free version" bullets below are literal: those tabs exist only in the paid file. Every product page now has a 4-minute walkthrough video (`/templates/<slug>/#walkthrough`) — link it in Email 2 instead of describing the JE. The bundle is the second offer in Email 3 for anyone who downloaded two or more free files.
+
 **Discount links (Gumroad applies the code automatically):**
 
 | Product | Paid | With UPGRADE20 |
 |---|---|---|
+| **SaaS Controller Bundle (all 5, $249 vs $371)** | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle/UPGRADE20 |
 | ASC 842 Lease Accounting Workbook | https://kdeskaccounting.gumroad.com/l/phxigq | https://kdeskaccounting.gumroad.com/l/phxigq/UPGRADE20 |
 | ASC 606 Commission Accrual Workbook | https://kdeskaccounting.gumroad.com/l/mwmwpe | https://kdeskaccounting.gumroad.com/l/mwmwpe/UPGRADE20 |
 | Fixed Asset Rollforward Workbook | https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward | https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward/UPGRADE20 |
@@ -31,7 +34,7 @@ Thanks for grabbing the free ASC 842 workbook. Two things that save people time 
 
 1. Start on the Setup tab. Enter your IBR default and fiscal year start before you touch the Lease Data tab — every schedule reads from Setup, and changing it later re-keys nothing.
 
-2. The Reconciliation tab should show $0 variance on the three sample leases. If it doesn't, your Excel is recalculating manually (Formulas → Calculation Options → Automatic).
+2. On the Lease Schedule tab, pick "HQ Office Lease" in the selector. Month 1 should show a beginning liability of 264,953.53 and interest of 1,103.97. If the schedule is all zeros, your Excel is recalculating manually (Formulas → Calculation Options → Automatic).
 
 The free version is capped at 3 leases and 36 months. If you want to see how a modification or termination flows through the JE Generator on your own portfolio, that's what the full version is for — 20 leases, 120 months, same file structure:
 https://kdeskaccounting.gumroad.com/l/phxigq
@@ -62,6 +65,9 @@ Quick one. The month-1 operating lease entry trips up more controllers than the 
 The full walkthrough — initial recognition, monthly close for both lease types, and termination — is here:
 https://kdeskaccounting.com/posts/asc-842-journal-entries/
 
+And the 4-minute video of the workbook producing exactly this entry, tab by tab:
+https://kdeskaccounting.com/templates/asc842/#walkthrough
+
 The workbook's JE Generator produces exactly this entry for every lease in the register, for whichever period you select in Setup.
 
 — Stephen
@@ -80,10 +86,14 @@ The full ASC 842 Lease Accounting Workbook is $97. This link takes 20% off throu
 https://kdeskaccounting.gumroad.com/l/phxigq/UPGRADE20
 
 What you get over the free version:
-  • 20 leases (vs 3)
-  • 120-month schedule per lease (vs 36)
-  • Disclosure tab: maturity analysis by year, weighted-average term and IBR, footnote-ready
+  • 20 leases (vs 3) and a 120-month schedule per lease (vs 36)
+  • JE Generator — six period entries with your GL codes, debits = credits check
   • Balance sheet rollforward split current / non-current, tied to the JE Generator
+  • Reconciliation tab — JE Generator vs. lease register, every variance $0
+  • Disclosure maturity analysis, footnote-ready
+
+Running more than leases in Excel? All five workbooks together are $249 instead of $371, same 20% off with the code:
+https://kdeskaccounting.gumroad.com/l/saas-controller-bundle/UPGRADE20
 
 Same file structure as the free version, so anything you've already entered copies straight across.
 

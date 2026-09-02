@@ -6,9 +6,12 @@ summary: "Six purpose-built Excel workbooks for technical accounting and financi
 
 Six Excel workbooks built for controllers and finance managers at Series A–C SaaS companies.
 
-Each template is purpose-built for one workflow. No generic spreadsheet bundles. Every workbook ships formula-complete with sample data, protected formula cells, and yellow input zones — and every paid workbook has a free, reduced-capacity version so you can see the mechanics on your own data before you buy.
+Each template is purpose-built for one workflow. No generic spreadsheet packs. Every workbook ships formula-complete with sample data, protected formula cells, and yellow input zones — and every paid workbook has a free, reduced-capacity version so you can see the mechanics on your own data before you buy.
 
 ## Available Templates
+
+### [SaaS Controller Bundle](/templates/bundle/) — $249
+All five paid workbooks plus the free close checklist in one download. $371 bought separately. Same Setup / inputs / JE Generator / reconciliation conventions in every file.
 
 ### [ASC 842 Lease Accounting Workbook](/templates/asc842/) — $97
 ROU asset, lease liability, amortization schedule, journal entries, rollforward, and disclosure table for operating and finance leases. 20-lease capacity. Non-chained PV formulas. Free 3-lease version available.

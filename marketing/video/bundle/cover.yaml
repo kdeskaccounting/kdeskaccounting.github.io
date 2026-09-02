@@ -1,0 +1,21 @@
+# Cover-only spec for the bundle (reuses the ASC 842 workbook for the sheet shots)
+slug: bundle
+source: ~/kdeskaccountingtemplates/templates/asc842/ASC_842_Lease_Accounting_Workbook_v1.3.xlsx
+workbook_name: ASC 842 Lease Accounting Workbook.xlsx
+presets:
+  Lease Schedule:
+    C4: HQ Office Lease
+cover:
+  standard: 5 WORKBOOKS + CLOSE CHECKLIST
+  name: SaaS Controller Bundle
+  price: "$249"
+  free_label: n/a
+  checks:
+    - ASC 842 leases · ASC 606 commissions
+    - Fixed assets · SaaS metrics · runway
+    - Every file reconciles to $0
+    - $371 bought separately
+  hero: {sheet: Lease Schedule, range: A4:K21}
+  second: {sheet: JE Generator, range: A3:I17}
+  thumb: {sheet: Dashboard, range: A4:G10}
+scenes: []
