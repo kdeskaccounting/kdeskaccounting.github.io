@@ -23,6 +23,10 @@
 5. CTA: link to the blog post, not directly to Gumroad — blog captures email first
 6. Hashtags at end, max 5, no #LinkedIn or generic ones
 
+## Video posts (added 2026-09-01)
+
+One native-video post per product walkthrough: `10-video-asc842.md` … `15-video-month-end-close.md`. Personal LinkedIn is confirmed OK (2026-09-01). Post one per week, Tue–Thu 7 AM PT, video first, link in the first comment.
+
 ## Files
 
 - `01-asc606-commissions.md` — drafted
