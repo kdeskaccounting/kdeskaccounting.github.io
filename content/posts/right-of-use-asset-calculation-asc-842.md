@@ -9,7 +9,7 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 7
-lastmod: 2026-05-31
+lastmod: 2026-09-02
 faq:
   - q: "How do you calculate the right-of-use asset under ASC 842?"
     a: "ROU asset = lease liability + initial direct costs + prepaid rent minus lease incentives received. The lease liability is the present value of future payments; the adjustments are where most teams make errors."
@@ -22,6 +22,8 @@ faq:
 ---
 
 When a lease commences under ASC 842, you recognize a right-of-use (ROU) asset on the balance sheet. Most finance teams calculate the lease liability correctly. The ROU asset is where adjustments get missed — and those omissions show up at audit.
+
+*This guide is one part of the [complete ASC 842 lease accounting guide](/posts/asc-842-lease-accounting-guide/), which covers scope, classification, measurement, entries, modifications, and disclosure end to end.*
 
 The formula is straightforward:
 

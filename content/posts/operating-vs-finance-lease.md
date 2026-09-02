@@ -9,7 +9,7 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 4
-lastmod: 2026-05-31
+lastmod: 2026-09-02
 faq:
   - q: "Is a 5-year office lease an operating or finance lease?"
     a: "Almost always operating. A 5-year term is rarely the major part of a building's roughly 40-year economic life, and the present value of the payments is usually well below the property's fair value — so none of the five finance-lease tests are met."
@@ -22,6 +22,8 @@ faq:
 ---
 
 The distinction between operating and finance leases isn't just an accounting technicality — it changes your income statement presentation, your EBITDA, how your cash flows are classified, and what your auditors want to see.
+
+*This guide is one part of the [complete ASC 842 lease accounting guide](/posts/asc-842-lease-accounting-guide/), which covers scope, classification, measurement, entries, modifications, and disclosure end to end.*
 
 Under ASC 840 (the old standard), companies used capital lease vs. operating lease. ASC 842 renamed capital leases to finance leases and tightened the classification rules. The core logic is the same; the labels and thresholds shifted.
 

@@ -9,7 +9,7 @@ author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 6
-lastmod: 2026-05-31
+lastmod: 2026-09-02
 faq:
   - q: "How do you calculate a lease liability in Excel?"
     a: "Use =PV(IBR/12, lease_term_months, -monthly_payment). The payment is entered as a negative because it is a cash outflow. The result is the opening lease liability — the present value of all future payments."
@@ -22,6 +22,8 @@ faq:
 ---
 
 Every lease you capitalize under ASC 842 needs an amortization schedule — a period-by-period table showing exactly how the lease liability and ROU asset move from commencement to zero. For one lease, building it in Excel takes a few hours. For five or more, maintaining it every close becomes a significant problem.
+
+*This guide is one part of the [complete ASC 842 lease accounting guide](/posts/asc-842-lease-accounting-guide/), which covers scope, classification, measurement, entries, modifications, and disclosure end to end.*
 
 This guide walks through exactly how the schedule works, step by step, with a concrete example you can follow.
 
