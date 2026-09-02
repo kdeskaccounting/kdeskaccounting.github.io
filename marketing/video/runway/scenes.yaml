@@ -17,6 +17,10 @@ cover:
   hero: {sheet: Dashboard, range: B3:J24}
   second: {sheet: Forecast Summary, range: A5:J17}
   thumb: {sheet: Dashboard, range: B3:J9}
+short:
+  hook: "How many months of runway? One dashboard answers it"
+  scenes: [5, 7]
+  cta: "Free 12-month version → kdeskaccounting.com/templates/runway"
 scenes:
   - kind: title
     heading: Startup Runway Calculator

@@ -17,6 +17,10 @@ cover:
   hero: {sheet: Dashboard, range: B3:K28}
   second: {sheet: Metrics, range: A4:N16}
   thumb: {sheet: Dashboard, range: B3:K12}
+short:
+  hook: "Board-ready SaaS metrics from seven inputs a month"
+  scenes: [4, 6]
+  cta: "Free 6-month version → kdeskaccounting.com/templates/saas-metrics"
 scenes:
   - kind: title
     heading: SaaS Metrics & ARR Dashboard

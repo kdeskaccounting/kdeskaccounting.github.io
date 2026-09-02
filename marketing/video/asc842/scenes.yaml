@@ -21,6 +21,10 @@ cover:
   hero: {sheet: Lease Schedule, range: A4:K21}
   second: {sheet: JE Generator, range: A3:I17}
   thumb: {sheet: Dashboard, range: A4:G10}
+short:
+  hook: "The lease entry most spreadsheets get wrong"
+  scenes: [6, 10]
+  cta: "Free 3-lease version → kdeskaccounting.com/templates/asc842"
 scenes:
   - kind: title
     heading: ASC 842 Lease Accounting Workbook

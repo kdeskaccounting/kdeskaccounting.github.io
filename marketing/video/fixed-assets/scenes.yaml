@@ -17,6 +17,10 @@ cover:
   hero: {sheet: Schedule, range: A1:J13}
   second: {sheet: Rollforward, range: A1:H12}
   thumb: {sheet: Reconciliation, range: B1:F8}
+short:
+  hook: "A fixed asset rollforward that ties five ways"
+  scenes: [6, 7]
+  cta: "Free 5-asset version → kdeskaccounting.com/templates/fixed-assets"
 scenes:
   - kind: title
     heading: Fixed Asset Rollforward Workbook
