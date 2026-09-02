@@ -152,3 +152,12 @@ KDesk Accounting · kdeskaccounting.com
 ## Measurement
 
 Log every send and reply in `marketing/seo-tracking/email-broadcasts.jsonl` (create on first send). The number that matters: **free → paid conversions within 14 days of download**, tracked by `UPGRADE20` uses (`times_used` on the offer code via the Gumroad API) and by `scripts/pull_gumroad_snapshot.py` (`paid_full_price`).
+
+
+---
+
+## Delivery status (2026-09-02)
+
+- **Gumroad Workflows:** all five free→paid workflows are built (trigger = purchase of the free product; emails at 0 / 3 / 7 days; copy in `workflows.json`) but Gumroad refuses to publish until the account has **$100 in earnings and a payout** ($16.99 today). They publish themselves the day that threshold is crossed — nothing to rebuild.
+- **MailerLite fallback (the path that works now):** one automation, trigger *joins group "Gumroad free downloaders"*, three emails using merge fields `{$product_name} {$free_cap} {$paid_url} {$page_url} {$price} {$full_desc}` so one sequence is product-specific. `scripts/sync_gumroad_to_mailerlite.py` pulls Gumroad free downloads and upserts them with those fields (run it Mondays with the snapshot, or daily via launchd). It needs a MailerLite API token: creating one in the UI requires ticking MailerLite's API-terms checkbox, which Claude does not tick without Stephen's OK.
+- **MailerLite welcome email** (site form promise): body now set from `welcome-email.html` via the new Custom HTML editor.
