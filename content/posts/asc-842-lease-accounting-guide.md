@@ -1,7 +1,7 @@
 ---
 title: "ASC 842 Lease Accounting: The Complete Guide for Controllers (With Excel Examples)"
 date: 2026-09-02
-lastmod: 2026-09-02
+lastmod: 2026-09-03
 description: "ASC 842 lease accounting end to end: scope, classification tests, discount rate, ROU asset and lease liability, journal entries, modifications, disclosures, IFRS 16 differences, and an Excel template."
 summary: "Everything a controller needs to run ASC 842 in Excel — what counts as a lease, the five classification tests, the discount rate election, initial and subsequent measurement with one worked example, the journal entries, modifications, the disclosures, and where ASC 842 splits from IFRS 16. With links to the deep-dive guides and a workbook that ties to $0."
 tags: ["ASC 842", "lease accounting", "operating lease", "finance lease", "ROU asset", "lease liability", "Excel template", "GAAP", "controller"]
@@ -38,6 +38,8 @@ Under ASC 840, an operating lease was a footnote. Rent expense hit the income st
 ASC 842 keeps two lessee classifications, operating and finance (the old capital lease, renamed), but puts both on the balance sheet. The classification now decides income statement shape, not recognition. A finance lease produces front-loaded amortization plus interest; an operating lease produces one straight-line lease cost. The balance sheet looks the same either way: a right-of-use asset and a lease liability split between current and non-current.
 
 For a Series A to C SaaS company the practical scope is an office lease, a few pieces of equipment, maybe a colocation cabinet and a vehicle. Small portfolio, large balances, and an auditor who asks for the schedule first.
+
+One casualty of the change is the deferred rent account. Escalations and free months still produce straight-line cost, but the difference now sits inside the right-of-use asset instead of in its own liability; [deferred rent journal entries under ASC 842](/posts/deferred-rent-journal-entries-asc-842/) traces one lease through both standards and the transition entry.
 
 ## Scope: What Counts as a Lease
 

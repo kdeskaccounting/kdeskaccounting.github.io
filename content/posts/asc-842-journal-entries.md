@@ -2,7 +2,7 @@
 title: "ASC 842 Journal Entries: Operating and Finance Lease Examples"
 date: 2026-03-11
 product: asc842
-lastmod: 2026-09-02
+lastmod: 2026-09-03
 description: "ASC 842 journal entries with real numbers — initial recognition, monthly operating lease expense, monthly finance lease (depreciation + interest), and termination. Side-by-side debit/credit examples for both lease types."
 summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's an ASC 842 lease accounting example with every entry you need, with real numbers."
 tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "Excel template", "GAAP"]
@@ -79,6 +79,8 @@ DR  Right-of-Use Asset          267,391
 ## Monthly Operating Lease Entries
 
 Operating leases use a **single straight-line expense** approach. The total cash payments over the lease term are divided equally across all periods, regardless of whether the actual payment is constant.
+
+*Escalating rent, rent-free months, and what became of the old deferred rent account are worked through in [Deferred rent journal entries under ASC 842](/posts/deferred-rent-journal-entries-asc-842/).*
 
 For constant monthly payments (the most common case), this means one clean entry per month:
 
