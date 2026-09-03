@@ -1,6 +1,6 @@
 # LinkedIn — weekly article post #1 (deferred rent)
 
-**Status:** draft — Stephen posts from his personal profile (paste as-is, no product pitch). Format agreed 2026-09-03: one sentence with the specific number or mistake, one sentence on what the post covers, link.
+**Status:** POSTED 2026-09-03 by Stephen (personal profile). Was: draft — Stephen posts from his personal profile (paste as-is, no product pitch). Format agreed 2026-09-03: one sentence with the specific number or mistake, one sentence on what the post covers, link.
 **Article:** https://kdeskaccounting.com/posts/deferred-rent-journal-entries-asc-842/
 
 ---
