@@ -1,8 +1,9 @@
 ---
-title: "Fixed Asset Depreciation Schedule Excel Template"
-description: "Audit-ready fixed asset rollforward workbook for controllers. 50 assets, four depreciation methods (SL, DDB, SYD, UoP), auto-generated journal entries with GL system presets (QuickBooks, NetSuite, Sage, Xero), and a five-way reconciliation tab. No macros, no subscription."
+title: "Fixed Asset Register & Depreciation Schedule Excel Template (ASC 360)"
+description: "Fixed asset register with a depreciation schedule, built for controllers. 50 assets, four depreciation methods (SL, DDB, SYD, UoP), auto-generated journal entries with GL system presets (QuickBooks, NetSuite, Sage, Xero), and a five-way reconciliation tab. No macros, no subscription."
 summary: "The Fixed Asset Rollforward Workbook handles 50 capitalized assets across all four book depreciation methods — straight-line, double-declining, sum-of-years, and units of production — and produces journal entries, a category rollforward, an ASC 250 change-in-estimate log, and a five-way reconciliation your auditor opens first."
 date: 2026-05-13
+lastmod: 2026-09-03
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -14,7 +15,7 @@ free_label: "Try free 5-asset version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/fixed-assets.mp4"
 video_poster: "/images/products/fixed-assets-poster.png"
 youtube_url: "https://youtu.be/I-VAym73C-M"
-tags: ["fixed assets", "depreciation", "ASC 360", "Excel template", "rollforward", "PP&E"]
+tags: ["fixed assets", "fixed asset register", "depreciation schedule", "ASC 360", "Excel template", "rollforward", "PP&E"]
 faq:
   - q: "Does it handle straight-line, declining balance, and sum-of-years methods?"
     a: "Yes. Each asset has a method dropdown — Straight-Line, Double-Declining Balance with auto-switch to SL, Sum-of-Years-Digits, or Units of Production. The schedule, JE Generator, and rollforward adjust automatically."
@@ -34,7 +35,7 @@ faq:
     a: "Email hello@kdeskaccounting.com — for portfolios above 50 assets, dedicated fixed-asset software (Sage Fixed Assets, Bloomberg Tax) usually earns its cost. We can also discuss a custom build."
 ---
 
-If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this workbook handles the math correctly and produces audit-ready output. **$79 one-time. No subscription. No macros.**
+If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this fixed asset register and depreciation schedule template handles the math correctly and produces audit-ready output. **$79 one-time. No subscription. No macros.**
 
 [Get the Workbook ($79) →](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)
 
