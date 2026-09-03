@@ -1,8 +1,9 @@
 ---
-title: "ASC 842 Lease Accounting Excel Template"
-description: "Audit-ready ASC 842 Excel workbook for controllers and finance managers. Handles 20 leases, operating and finance lease types, monthly amortization schedules, journal entries, rollforward, and disclosure table. No macros, no subscription."
+title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-Lease Workbook)"
+description: "ASC 842 implementation in Excel: a free 3-lease template and the full audit-ready workbook for controllers. Handles 20 leases, operating and finance lease types, monthly amortization schedules, journal entries, rollforward, and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, period journal entries, balance sheet rollforward, and disclosure table — in a single audit-ready Excel file."
 date: 2026-03-16
+lastmod: 2026-09-03
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
