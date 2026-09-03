@@ -1,7 +1,7 @@
 ---
 title: "How to Capitalize Sales Commissions Under ASC 606 (With Excel Walkthrough)"
 date: 2026-03-10
-lastmod: 2026-09-01
+lastmod: 2026-09-03
 description: "Step-by-step guide to capitalizing and amortizing sales commissions under ASC 606 and ASC 340-40. Which costs qualify, the practical expedient, contract term vs. expected customer life, journal entries, the rollforward your auditor asks for, and a practical Excel approach."
 summary: "Most finance teams know they need to capitalize commissions under ASC 606 — but deciding which costs qualify, picking the amortization period, and building the actual schedule is where things break down. Here's a step-by-step walkthrough with worked numbers, journal entries, and a practical Excel approach."
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "revenue recognition", "SaaS accounting", "Excel template"]
@@ -104,6 +104,8 @@ Each month's column total is that month's amortization journal entry. Each row's
 This is where Excel gets tedious fast. Ten deals with one commencement date is manageable. Fifty deals commencing in different months, with different amortization periods and a few mid-term amendments, is a schedule you rebuild every month — unless the workbook has dynamic period selection so the whole file rolls forward when you change one cell.
 
 ## Step 4: Generate Journal Entries
+
+*The accrual side of these entries (when a commission is earned, the payout, true-ups when a deal falls through, payroll taxes) is worked through month by month in [commission accrual journal entries](/posts/commission-accrual-journal-entries/).*
 
 Each period you book two or three entries.
 
