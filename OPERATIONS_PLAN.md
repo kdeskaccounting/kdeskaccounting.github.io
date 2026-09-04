@@ -1,3 +1,5 @@
+> **Historical (May 2026).** Superseded by `marketing/roadmap-2026-09.md`, which is the live plan. Kept for the Joyfold cross-share insights.
+
 # Learnings to cross-share — Joyfold → KDesk Accounting
 
 *Drafted by Claude Code 2026-05-10, revised 2026-05-11 after Stephen scoped this to insight-sharing only (not operational takeover).*

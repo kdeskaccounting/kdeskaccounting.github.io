@@ -1,13 +1,13 @@
-> 🧭 **Command Center vault** — Stephen's context, goals, and decisions live in `/mnt/c/CommandCenter`. Relevant note: `02-Projects/KDesk-Blog.md`. See `_meta/CLAUDE.md`; global rules in `~/.claude/CLAUDE.md`.
+> 🧭 **Command Center vault** — Stephen's context, goals, and decisions live in `~/CommandCenter` (this is a Mac; the `/mnt/c/` and `/home/kdeskconsulting/` paths in older notes are the Windows/Linux machines). Relevant note: `02-Projects/KDesk-Blog.md`. See `_meta/CLAUDE.md`; global rules in `~/.claude/CLAUDE.md`.
 
 # CLAUDE.md — KDesk Accounting blog
 
 ## Read first, every session
 
-1. `OPERATIONS_PLAN.md` in this repo — strategic plan (drafted 2026-05-10, mostly still current; Move 2 done, Move 1/3/4 in progress)
-2. Stephen's overall vision: `/home/kdeskconsulting/kdesk-workspace/CLAUDE.md` (2026 exit plan, CAE, decision filter)
-3. Latest entries in `decisions/decisions.jsonl` — every autonomous action gets logged here
-4. Memory: `~/.claude/projects/-home-kdeskconsulting-kdeskaccounting-blog/memory/next_session.md` — the punch list for what's next
+1. **`marketing/roadmap-2026-09.md`** — the living plan: milestone triggers M0–M3, the 12-week calendar, the ranking program, guardrails. Its status table is updated every Monday. This supersedes `OPERATIONS_PLAN.md` (May 2026, historical).
+2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #50.
+3. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers.
+4. The **Currently working on** section below.
 
 ## What this is
 
@@ -25,8 +25,8 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 
 ## Content layout
 
-- `content/posts/` — 13 blog posts (ASC 606, ASC 842 family, runway, SaaS metrics, depreciation, month-end close)
-- `content/templates/` — 3 product/template landing pages (asc606, asc842, runway), each with FAQ schema + Product JSON-LD
+- `content/posts/` — 18 blog posts in five clusters: lease/ASC 842 (pillar + 5 spokes), commission/ASC 606 (capitalization, accrual, clawbacks), fixed assets, close, SaaS metrics/runway
+- `content/templates/` — 6 product pages + `bundle/`, each with FAQ schema, Product JSON-LD, a walkthrough video and a `compare:` block (Free vs Full table)
 - `content/calculator/` — free browser-side calculator (zero-friction lead magnet)
 - `content/about/`, `content/search/` — standard pages
 
@@ -39,9 +39,13 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 
 ## Marketing infrastructure (queues, not auto-posters)
 
-- `marketing/linkedin-queue/` — LinkedIn post drafts. 00 is the launch announcement; 01-03 are weekly distribution drafts pending Stephen's voice approval. Remaining 10 to be drafted after voice approval.
-- `marketing/reddit-templates/` — Reddit comment templates with Version A (no link, r/Accounting-safe) and Version B (with link, for aged accounts in permissive subs). 3 drafted, 7 to go.
-- Neither directory auto-posts. They're queues for Stephen to draw from manually OR for me to post via CDP once an account is set up and aged.
+- `marketing/roadmap-2026-09.md` — **the plan**. Milestone triggers, 12-week calendar, ranking program, guardrails.
+- `marketing/linkedin-queue/` — 3-line post drafts, one per article. Stephen pastes; #17 and #18 are queued. Never posted autonomously.
+- `marketing/outreach/` — `targets.md` (15 researched link targets, Bill Hanna at Controller Academy first), dated batch files, and the Bill Hanna note. **Nothing sends until Stephen replies with the numbers.**
+- `marketing/reddit-templates/` — comment templates plus `00-account-setup.md` (Stephen creates and ages the account; no links for three weeks; never link in r/Accounting).
+- `marketing/video/` — walkthrough specs, Shorts specs (`short:` blocks), YouTube URLs, plus `stephen-clips/` scripts for his monthly 60–90 s clip.
+- `marketing/seo-tracking/` — append-only JSONL: GSC, GA4, Gumroad, MailerLite sync, and `target-query-positions.jsonl` (24 buying queries, logged weekly).
+- `marketing/product-6-research.md` — what to build next and why.
 
 ## Decision log + tier framework
 
@@ -61,11 +65,15 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 
 ## Credentials & external state
 
-- MailerLite API token: `/home/kdeskconsulting/kdesk-analytics/mailerlite-token.txt` (full account access; treat as secret)
-- MailerLite metadata: `/home/kdeskconsulting/kdesk-analytics/mailerlite-form.json`
-- Cloudflare API tokens (for both joyfoldshop.com + kdeskaccounting.com zones): `/home/kdeskconsulting/digitalproducts/.env`
-- Google Workspace MCP: authed as `santiagokdesk@gmail.com` (NOT smichels1@gmail.com — different account)
-- Search Console: verified via DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
+All live on **this Mac** unless noted:
+
+- **Gumroad API** (read + write): `GUMROAD_ACCESS_TOKEN` in `~/kdeskaccountingtemplates/.env`
+- **MailerLite API**: token `kdesk-mac-sync` at `~/kdesk-analytics/mailerlite-token.txt`; group "Gumroad free downloaders" `187224670039180750`
+- **GSC + GA4**: refresh token at `~/kdesk-analytics/google-token.json` (read-only scopes on the `gws` Desktop client; both APIs enabled on GCP project `involuted-disk-489017-r3`). GA4 property `528583005`.
+- **Google Workspace** (`gws` CLI): authed as `santiagokdesk@gmail.com` — NOT smichels1@gmail.com
+- **Search Console**: verified by DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
+- **Debug Chrome** for UI-only work (Gumroad covers, MailerLite editor, YouTube Studio): Stephen launches with `--remote-debugging-port=9222`, profile `~/.kdesk/chrome-debug`; drive it with `scripts/video/cdp.py` or Playwright `connect_over_cdp`
+- **Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`, unreachable since 2026-09-01): Cloudflare API tokens, `dist/` binaries. Nothing current depends on it.
 
 ## Useful commands
 
@@ -83,8 +91,13 @@ tail -20 decisions/decisions.jsonl | python3 -c 'import sys,json; [print(f"{json
 gh run list --limit 3
 
 # MailerLite API: list subscribers
-TOKEN=$(cat /home/kdeskconsulting/kdesk-analytics/mailerlite-token.txt)
+TOKEN=$(cat ~/kdesk-analytics/mailerlite-token.txt)
 curl -s -H "Authorization: Bearer $TOKEN" https://connect.mailerlite.com/api/subscribers | python3 -m json.tool
+
+# Weekly pulls (the launchd job runs these Mondays 08:15; KDESK_SEO_SKIP_COMMIT=1 to test)
+KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py   # GSC + GA4 + target-query positions
+python3 scripts/pull_gumroad_snapshot.py                       # downloads, sales, revenue
+uv run scripts/model_page1_revenue.py                          # page-1 revenue ceiling (quarterly)
 ```
 
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
@@ -101,22 +114,27 @@ curl -s -H "Authorization: Bearer $TOKEN" https://connect.mailerlite.com/api/sub
 
 ## Currently working on (resume here next session)
 
-**Phase C done 2026-09-02 afternoon** (decisions 37–41): GSC snapshot appended; ASC 842 pillar page live (`content/posts/asc-842-lease-accounting-guide.md`); six YouTube Shorts public (`marketing/video/<slug>/short.json`, built by `scripts/video/make_short.py`, uploaded by `scripts/video/youtube_upload_shorts.py`); public playlist `marketing/video/playlist.json`; Gumroad bundle listing converted to a native bundle (one-way; editor at `gumroad.com/bundles/<id>/content/edit`); Gumroad tags set. **Next:** weekly commission-side post (accrual JEs → clawbacks → mid-year plan changes → audit PBC list), T1 with fact-check; Monday scoreboard pull; LinkedIn parked until Stephen says otherwise.
+**State as of 2026-09-04.** The build phase is done; this is now a weekly operating cadence driven by `marketing/roadmap-2026-09.md`.
 
-**Punch list as of 2026-09-02 evening** (decisions 20–36): Phase B is complete — Gumroad covers ×12, MailerLite welcome + free→paid automations ACTIVE (token in `~/kdesk-analytics/mailerlite-token.txt`; daily launchd `com.kdesk.daily-sync` syncs Gumroad downloaders → MailerLite), six YouTube walkthroughs public, five Gumroad workflows waiting on the $100 gate. Remaining for Stephen: OK the first LinkedIn video post; everything else is measurement (`gumroad-snapshots.jsonl`, `UPGRADE20` uses, GA4 `video_play`, MailerLite automation reports). Earlier list: Done since 09-01: Gumroad covers/thumbnails on all 12 listings (UI via CDP), 5 Gumroad workflows built (gated by Gumroad's $100-earnings rule — publish themselves later), MailerLite welcome email body set, YouTube video #1 uploaded. **Stephen, four small things:** (1) say "OK" to MailerLite's two terms confirmations (Activate the welcome automation; create the API token `kdesk-mac-sync`) — then Claude activates, creates the free→paid automation with merge fields, and runs `scripts/sync_gumroad_to_mailerlite.py`; (2) sign back into Google as santiagokdesk in the debug Chrome (session dropped) — Claude then sets youtu.be/bfCMoceDcso to Public and uploads the other five (`scripts/video/youtube_upload.py --only <slug>`); (3) send the 5 Gmail drafts; (4) OK the first LinkedIn video post. Debug Chrome: `--remote-debugging-port=9222`, driven by `scripts/video/cdp.py` / Playwright `connect_over_cdp`.
+**Where the funnel actually is:** 0 full-price sales lifetime ($16.99 from pay-what-you-want), ~9 free downloads/month, ~8 organic sessions/day, 16 active email subscribers, 24 tracked buying queries with 2 on page 1. The measured page-1 ceiling on today's query set is ~$350–530/month, so ranking alone does not reach $300; cluster expansion and the free→paid nurture supply the rest.
 
-*(Earlier list, 09-01 evening:)* (1) Stephen sends the 5 Gmail drafts; (2) Stephen connects the Chrome extension once → Claude sets Gumroad covers/thumbnails for all 11 listings (PNGs ready in `static/images/products/`), wires the Gumroad Workflows sequence, and fills the MailerLite welcome-email body; (3) first LinkedIn video post (`marketing/linkedin-queue/10-video-asc842.md`, Stephen's per-post OK); (4) GSC/GA4 OAuth (below); (5) W5 content engine: ASC 842 pillar page next, then the commission-side posts; (6) bundle T2 veto closes 2026-09-03 — unpublish via `PUT /products/WAKdGcEmy476e-5fWioVsQ==/disable` if Stephen objects.
+**Weekly cadence (Claude owns unless noted):**
+- **Monday:** the launchd job at 08:15 appends GSC + GA4 + target-query rows (and Gumroad on Mondays). Post a 5-line scoreboard to the vault daily note, update the roadmap status table, and state which triggers are live.
+- **One fact-checked article/week** from the 12-week calendar. **Always run a second-agent GAAP fact-check before publishing** — all four articles so far came back FIX FIRST with real citation or judgment errors.
+- **One site/product improvement/week** from the always-on backlog.
+- **One 3-line LinkedIn draft per article** in `marketing/linkedin-queue/` (Stephen pastes; #17 and #18 are queued).
+- **One outreach batch (~5)** in `marketing/outreach/`; nothing sends until Stephen replies with the numbers.
 
-*(Earlier list, same day, mostly done:)* (1) Stephen sends the 5 Gmail drafts; (2) wire the 3-email free→paid sequence into Gumroad Workflows or MailerLite (needs Chrome connected or the Linux token); (3) finish the empty MailerLite welcome-email body — the site form promises "all 5 free templates in one email" and delivers nothing; (4) GSC/GA4 OAuth (above) so the lease-cluster position can finally be measured; (5) Gumroad thumbnails for the 7 listings without one (UI only); (6) fix the ASC 606 free workbook's Commission Data banner (says "Limited to 50 deals" — should be 5) in `~/kdeskaccountingtemplates/templates/asc606/patch_*.py`.
+**Waiting on Stephen (nothing else is blocked):**
+1. DM Bill Hanna at Controller Academy — draft ready in `marketing/outreach/controller-academy-bill-hanna.md`. Warm contact (former customer at Forter), ~340k YouTube subscribers, no ASC 842 or commission content on his blog. Highest-value link target by a distance.
+2. Reply "send 2, 3, 4, 5" (or a subset) on `marketing/outreach/batch-2026-09-07.md`.
+3. Create the Reddit account per `marketing/reddit-templates/00-account-setup.md`, then 2 comment pastes/week.
+4. Record clip #1: script at `marketing/video/stephen-clips/01-deferred-rent-gap.md`.
+5. Free sign-ups whose copy is written: Eloquens, Featured.com, Source of Sources, Qwoted.
 
-*(Older punch list below is from 2026-05-12 and mostly superseded.)*
+**Next builds, in order (`marketing/product-6-research.md`, decision 50):** Balance Sheet Reconciliation Pack $49 first — the free close checklist is our most-downloaded file and has no paid upgrade, so this converts traffic we already have. Then the Deferred Revenue Schedule Workbook $79 once its cluster proves demand (free-file probe scheduled for the week of 09-14). Both gated on the M2 trigger.
 
-See `~/.claude/projects/-home-kdeskconsulting-kdeskaccounting-blog/memory/next_session.md`. Punch list highlights:
-
-1. **Finish welcome email body in MailerLite** (5 min UI or API retry tomorrow). Automation `Welcome — free templates pack` exists but body is empty. Subscribers still get MailerLite's default double-opt-in confirmation, so launch is not blocked.
-2. **Stephen reviews voice** on the 3 LinkedIn + 3 Reddit drafts; once approved I batch-write the rest.
-3. **Reddit account creation** + aging schedule (Stephen 10 min for account + sandboxed Chrome profile, then 3 weeks of helpful-comment aging before any link drops).
-4. **Internal link graph audit** across 13 posts (T0, autonomous when other work clears).
+**Recent decision context:** 37–41 Phase C (GSC pull, ASC 842 pillar, six Shorts, playlist, native Gumroad bundle) · 42 GSC/GA4 OAuth live · 43, 45 title alignment · 44, 46, 49 the deferred-rent and two commission articles · 47 roadmap adopted · 48 Free-vs-Full comparison tables · 50 product #6 research.
 
 ## Hard gates (never bypass)
 
@@ -126,45 +144,32 @@ See `~/.claude/projects/-home-kdeskconsulting-kdeskaccounting-blog/memory/next_s
 4. Refunds and anything financial: Stephen-only.
 5. Strategic pivots (channel ditch, ecosystem change): Stephen-only.
 
-## What changed in the last session (2026-05-10 → 2026-05-12)
+## History (condensed)
 
-- Marketing foundation shipped: email capture + GA4 Key Events + MailerLite wiring + decision log + marketing queues
-- Welcome automation half-built (body is the known gap)
-- LinkedIn launch announcement drafted and queued
-- Site state correctly assessed (initial audit was on stale local clone; corrected after `git pull`)
-- Channel strategy locked: LinkedIn + Reddit only
+- **May 2026** — marketing foundation: email capture, GA4 key events, MailerLite wiring, decision log, marketing queues, lease-cluster SEO pass (traffic tripled by August).
+- **2026-09-01** — conversion pass: dead upgrade links fixed, product CTAs + FAQ schema, six faceless walkthrough videos, lean free files, the $249 bundle, covers v2, the 3-email sequence.
+- **2026-09-02** — Phase B and C: MailerLite welcome + free→paid automations active, daily sync, six YouTube walkthroughs, six Shorts, public playlist, native Gumroad bundle, ASC 842 pillar page, GSC/GA4 API pull live.
+- **2026-09-03/04** — roadmap to $300/month adopted; target-query tracker; Free-vs-Full tables; three new articles; outreach program; product #6 research.
 
 ## Metrics I own  (report up to the Command Center COO report)
 
-This project owns the funnel KPIs that roll into `/mnt/c/CommandCenter/02-COO-Report.md` + `01-Dashboard.md`.
-Run the weekly pull (Monday) and update `marketing/seo-tracking/*.jsonl`.
+This project owns the funnel KPIs that roll into `~/CommandCenter/02-COO-Report.md` + `01-Dashboard.md`. The Monday pull is automated (launchd `com.kdesk.daily-sync`, 08:15); the roadmap's status table is the reporting surface.
 
-**THE ONE metric:** **Confirmed ORGANIC email subscribers** (net-new/wk + cumulative). Now **0**
-(4 total MailerLite subs = 3 API-imported Gumroad downloaders + 1 Stephen test). This is the funnel's
-dead link — until it climbs, nothing else here is working, no matter how good impressions look. The list
-is the compounding asset that feeds CAE (a captured email = a repeatable CAE prospect at ~$0 marginal cost).
+**THE ONE metric: `paid_full_price` in `marketing/seo-tracking/gumroad-snapshots.jsonl`.** Still **0** lifetime. Everything else is a leading indicator of it. ($16.99 lifetime revenue is pay-what-you-want, not a sale.)
 
-**Also owned (and what's vanity):**
-- Organic Search sessions (de-botted ~61/28d) — NOT raw GA4 sessions (~398 is ~80% bot Direct: 2s, 9.7% engagement). **Raw sessions/users + GA4 revenue ($0, Gumroad sits outside GA4) + "34 key events" (≈1 visitor) are VANITY — do not report.**
-- Lease-cluster avg position (operating-vs-finance-lease, asc-842-journal-entries, asc-842-vs-ifrs-16) — ~64% of impressions, sit at pos ~35 (page 4) → 0 clicks. Highest-leverage SEO lever.
-- Sitewide GSC CTR (0.04% — the distribution bottleneck, the bridge between ranking and clicks).
-- Gumroad downloads (free) + paid + revenue ($15 to date). Manual read (no API).
-- GA4 `email_signup` event vs MailerLite confirmations — the leak diagnostic (submit vs confirm).
+**The ladder beneath it, with current values (2026-09-04):**
 
-**Data sources (real paths):**
-- MailerLite group `187224670039180750`; token at `/home/kdeskconsulting/kdesk-analytics/mailerlite-token.txt`; API `connect.mailerlite.com/api/subscribers` (filter active, exclude manual imports + santiagokdesk).
-- GA4 property `p528583005` + GSC → log to `marketing/seo-tracking/ga4-snapshots.jsonl` and `gsc-snapshots.jsonl` (append-only).
-- Gumroad: manual logged-in dashboard read (no API export wired yet).
+| Metric | Source | Now | Where it needs to go |
+|---|---|---|---|
+| Organic sessions/day (7d avg) | GA4 `channels_7d.Organic Search` | ~8 | 12 → 20 → 30 |
+| Free downloads / calendar month | Gumroad API | ~9 | 15 → 30 → 45 |
+| Active email subscribers | MailerLite | 16 | 40 → 90 → 160 |
+| Target queries on page 1 (of 24) | `target-query-positions.jsonl` | 2 | 5 by 10-31, 12 by 12-31 |
+| Referring domains | manual / outreach log | ~0 | 10 by 2026-12-01 |
+| Full-price sales / month | Gumroad API | 0 | 1 → 3 → 4+ |
 
-**Cadence:** weekly (Monday) — last-7d + last-28d pull.
+**What is vanity and must not be reported:** raw GA4 sessions and users (Direct is heavily bot: 2-second sessions, ~10 % engagement), GA4 revenue ($0 — Gumroad sits outside GA4), and raw key-event counts.
 
-**Action triggers (raise to Stephen):**
-- 0 net-new organic subs for 2 weeks while organic sessions >0 → **P1: diagnose the form** (double-opt-in friction, empty welcome-email body, form visibility). The binding constraint.
-- Lease cluster not improving toward pos 15–20 by ~2026-06-28 → escalate to Phase 2 SEO (content depth / pillar page — gated on Stephen as new content).
-- GSC `email_signup` >0 but MailerLite confirmed organic =0 → fix the confirmation flow (finish welcome-email body / consider single opt-in).
-- A **business-domain** Gumroad lead (e.g. the csibas.com downloader) → flag as a **CAE/consulting warm lead** for personal follow-up. This is the actual blog→CAE handoff and it's currently uninstrumented.
+**Action triggers** are the milestone ladder in `marketing/roadmap-2026-09.md`. The two that need Stephen: a **business-domain download** (draft him a personal note — this is the blog→CAE handoff) and any **T2 pricing test**. Kill/pivot review is 2026-12-01 if there are 0 sales despite ≥ 40 downloads and ≥ 12 organic/day.
 
-**Outstanding automation:** the weekly GA4/GSC pull (systemd timer + OAuth via `scripts/setup_seo_oauth.py`)
-is BUILT but NOT enabled — Stephen's one-time ~10-min OAuth step unblocks the time series. The MailerLite
-welcome-email body is still empty (silent conversion killer). The blog→CAE handoff has no instrumentation.
-- Email backend: MailerLite free tier
+**Known gaps:** the blog→CAE handoff is still manual; MailerLite automation open/click rates are read by hand monthly; Gumroad's UPGRADE20 usage has no API export.
