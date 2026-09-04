@@ -19,7 +19,7 @@ Living document. Claude updates the status table every Monday from the automated
 - Paid spend unlocks only **after the first full-price sale**: $100/mo cap, then $250/mo at M3.
 - **Pricing tests within ±30 %** at the triggers below, each logged T2 with a 48-hour veto.
 - Stephen's time: weekly LinkedIn paste **+ a Reddit account (~30 min/week) + one 60–90 s video per month** + a 5-minute weekly OK on outreach drafts.
-- Rank the existing five products first; product #6 only when a content cluster proves demand (deferred revenue is candidate #1).
+- Rank the existing five products first; product #6 only when a content cluster proves demand. Candidates researched 2026-09-04: reconciliation pack (converts existing traffic) then deferred revenue (earns new traffic).
 
 ## The math to $300/month
 
@@ -68,7 +68,7 @@ Metrics are read every Monday by the automated pull; a trigger fires when the 7-
 - Product #6 discovery cluster: rework the March deferred-revenue post + two new posts + a free deferred-revenue schedule as an email-gated lead magnet.
 
 **M2 — 3 sales in any 30-day window, or organic ≥ 20/day.**
-- Build product #6 if the cluster shows ≥ 300 impressions/mo or ≥ 15 lead-magnet downloads/mo; add to the bundle (→ $299).
+- Build product #6. Research (2026-09-04, `marketing/product-6-research.md`) ranks it: **Balance Sheet Reconciliation Pack $49 first** (converts the free close checklist's downloaders, our most-downloaded item, which today has no paid upgrade; needs no new rankings), then the **Deferred Revenue Schedule Workbook $79** once its cluster shows ≥ 300 impressions/mo or ≥ 15 lead-magnet downloads/mo. Add each to the bundle (→ $299).
 - Raise the best-converting workbook +20 % (T2); second Ads product.
 - Second monthly video slot; Shorts cross-posted natively to LinkedIn.
 - Gumroad affiliate program (20 %) offered to the accounting-firm downloaders.
