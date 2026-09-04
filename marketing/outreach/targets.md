@@ -2,6 +2,12 @@
 
 Goal: 10 referring domains by 2026-12-01 (roadmap rank milestone). Ordered by feasibility inside each group. Every email goes out from santiagokdesk@gmail.com only after Stephen OKs the weekly batch. Pitches never imply an active CPA license and never touch tax positions.
 
+## 0. Warm contact (Stephen's relationship, Stephen sends)
+
+| Target | What | Why it matters | Asks | Notes |
+|---|---|---|---|---|
+| **Controller Academy — Bill Hanna, CPA** (controller-academy.com; YouTube @TheFinancialController, ~340k subs; LinkedIn bill-hanna-cpa-7653a851) | Self-paced courses (Controller, FP&A, Corporate Tax, Excel academies, CPE), 40+ blog posts, templates bundled with courses; no external tool links today; no ASC 842 or commission content | Former customer of Stephen's at Forter; the only target whose audience is exactly ours at scale | (1) Guest post on ASC 842 in Excel for his blog with the free workbook as the worked example; (2) link from his year-end checklist post to the free close workbook; (3) reciprocal mention of Controller Academy from our close post + ASC 842 pillar; (4) full workbooks free for Bill, student code if useful | Draft: `marketing/outreach/controller-academy-bill-hanna.md`. Personal note from Stephen, not the santiagokdesk batch |
+
 ## A. Self-serve listings (Stephen creates the account, Claude supplies the copy)
 
 | Target | What | Asset | Notes |
