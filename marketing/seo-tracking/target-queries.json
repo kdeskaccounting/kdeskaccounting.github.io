@@ -1,0 +1,223 @@
+{
+ "updated": "2026-09-03",
+ "window": "2026-06-04..2026-09-01",
+ "note": "Tracked buying queries. position/impr/clicks are 90-day GSC at adoption; weekly positions go to target-query-positions.jsonl. tier: near = pos<=30 at adoption, head = authority-gated.",
+ "queries": [
+  {
+   "q": "asc 842 template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "head",
+   "adopt_position": 17.8,
+   "adopt_impressions_90d": 67,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 implementation excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 8.5,
+   "adopt_impressions_90d": 50,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 excel template free",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 12.8,
+   "adopt_impressions_90d": 49,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 lease template excel free",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 16.6,
+   "adopt_impressions_90d": 49,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 15.0,
+   "adopt_impressions_90d": 46,
+   "adopt_clicks_90d": 1
+  },
+  {
+   "q": "fixed asset register with depreciation excel template",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "near",
+   "adopt_position": 11.1,
+   "adopt_impressions_90d": 44,
+   "adopt_clicks_90d": 6
+  },
+  {
+   "q": "month end close checklist excel template",
+   "cluster": "close",
+   "page": "/templates/month-end-close/",
+   "tier": "head",
+   "adopt_position": 42.2,
+   "adopt_impressions_90d": 79,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "monthly closing checklist excel",
+   "cluster": "close",
+   "page": "/templates/month-end-close/",
+   "tier": "near",
+   "adopt_position": 30.6,
+   "adopt_impressions_90d": 73,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "fixed asset schedule template excel",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "near",
+   "adopt_position": 15.6,
+   "adopt_impressions_90d": 34,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "accounting month-end close checklist excel",
+   "cluster": "close",
+   "page": "/templates/month-end-close/",
+   "tier": "near",
+   "adopt_position": 43.7,
+   "adopt_impressions_90d": 65,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "month-end close checklist template excel",
+   "cluster": "close",
+   "page": "/templates/month-end-close/",
+   "tier": "near",
+   "adopt_position": 41.5,
+   "adopt_impressions_90d": 65,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 lease accounting excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 15.3,
+   "adopt_impressions_90d": 31,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "fixed assets schedule format in excel",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "near",
+   "adopt_position": 13.1,
+   "adopt_impressions_90d": 28,
+   "adopt_clicks_90d": 2
+  },
+  {
+   "q": "capital vs operating lease test excel",
+   "cluster": "lease",
+   "page": "/posts/operating-vs-finance-lease/",
+   "tier": "near",
+   "adopt_position": 15.0,
+   "adopt_impressions_90d": 27,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 operating lease excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 13.9,
+   "adopt_impressions_90d": 26,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "operating vs capital lease test calculator",
+   "cluster": "lease",
+   "page": "/posts/operating-vs-finance-lease/",
+   "tier": "near",
+   "adopt_position": 17.2,
+   "adopt_impressions_90d": 23,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "asc 842 lease excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 16.5,
+   "adopt_impressions_90d": 21,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "capital vs operating lease test template",
+   "cluster": "lease",
+   "page": "/posts/operating-vs-finance-lease/",
+   "tier": "near",
+   "adopt_position": 18.7,
+   "adopt_impressions_90d": 20,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "fixed assets schedule template",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "near",
+   "adopt_position": 17.3,
+   "adopt_impressions_90d": 19,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "straight line rent calculation excel template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "near",
+   "adopt_position": 17.5,
+   "adopt_impressions_90d": 19,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "fixed asset schedule excel",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "near",
+   "adopt_position": 18.6,
+   "adopt_impressions_90d": 18,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "depreciation schedule template",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "head",
+   "adopt_position": 72.5,
+   "adopt_impressions_90d": 136,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "depreciation schedule template excel",
+   "cluster": "fixed-assets",
+   "page": "/templates/fixed-assets/",
+   "tier": "head",
+   "adopt_position": 68.0,
+   "adopt_impressions_90d": 114,
+   "adopt_clicks_90d": 0
+  },
+  {
+   "q": "lease accounting template",
+   "cluster": "lease",
+   "page": "/templates/asc842/",
+   "tier": "head",
+   "adopt_position": 34.5,
+   "adopt_impressions_90d": 29,
+   "adopt_clicks_90d": 0
+  }
+ ]
+}

@@ -32,6 +32,8 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 TRACKING_DIR = REPO_ROOT / "marketing" / "seo-tracking"
 GSC_JSONL = TRACKING_DIR / "gsc-snapshots.jsonl"
 GA4_JSONL = TRACKING_DIR / "ga4-snapshots.jsonl"
+TARGETS_JSON = TRACKING_DIR / "target-queries.json"
+TARGET_POS_JSONL = TRACKING_DIR / "target-query-positions.jsonl"
 
 # Stored outside the repo (gitignored if ever copied in).
 CREDS_DIR = pathlib.Path(os.environ.get("KDESK_SEO_CREDS_DIR", pathlib.Path.home() / "kdesk-analytics"))
@@ -126,6 +128,44 @@ def pull_gsc(creds: Credentials, window_days: int = 28) -> dict:
         "queries_count": queries_count,
         "top_queries": top_queries,
         "top_pages": top_pages,
+        "pulled_by": "scripts/pull_seo_snapshot.py",
+    }
+
+
+def pull_target_positions(creds: Credentials, window_days: int = 28) -> dict | None:
+    """Weekly position of every query in target-queries.json (roadmap 2026-09: rank milestones)."""
+    if not TARGETS_JSON.exists():
+        return None
+    targets = json.loads(TARGETS_JSON.read_text(encoding="utf-8")).get("queries", [])
+    wanted = {t["q"] for t in targets}
+    sc = build("searchconsole", "v1", credentials=creds, cache_discovery=False)
+    end = dt.date.today() - dt.timedelta(days=2)
+    start = end - dt.timedelta(days=window_days - 1)
+    rows = sc.searchanalytics().query(
+        siteUrl=SITE_URL,
+        body={"startDate": start.isoformat(), "endDate": end.isoformat(), "dimensions": ["query", "page"], "rowLimit": 25000},
+    ).execute().get("rows", [])
+    best: dict[str, dict] = {}
+    for r in rows:
+        q, page = r["keys"]
+        if q in wanted and (q not in best or r["impressions"] > best[q]["impressions"]):
+            best[q] = {
+                "position": round(r.get("position", 0), 1),
+                "impressions": r.get("impressions", 0),
+                "clicks": r.get("clicks", 0),
+                "page": page.replace("https://kdeskaccounting.com", ""),
+            }
+    positions = {t["q"]: best.get(t["q"]) for t in targets}  # None = no impressions this window
+    ranked = [v for v in positions.values() if v]
+    return {
+        "pulled_at": dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "window_days": window_days,
+        "window_end": end.isoformat(),
+        "tracked": len(targets),
+        "with_impressions": len(ranked),
+        "on_page1": sum(1 for v in ranked if v["position"] <= 10),
+        "top20": sum(1 for v in ranked if v["position"] <= 20),
+        "positions": positions,
         "pulled_by": "scripts/pull_seo_snapshot.py",
     }
 
@@ -256,6 +296,9 @@ def main() -> int:
 
     append_jsonl(GSC_JSONL, gsc)
     append_jsonl(GA4_JSONL, ga4)
+    tgt = pull_target_positions(creds)
+    if tgt:
+        append_jsonl(TARGET_POS_JSONL, tgt)
 
     if os.environ.get("KDESK_SEO_SKIP_COMMIT") != "1":
         commit_and_push(dt.date.today().isoformat())
@@ -269,6 +312,8 @@ def main() -> int:
         f"GA4 last 7d: {ga4['active_users_7d']} users / "
         f"{ga4['key_events_7d']} key events"
     )
+    if tgt:
+        print(f"Targets: {tgt['on_page1']}/{tgt['tracked']} on page 1, {tgt['top20']} in top 20, {tgt['with_impressions']} with impressions")
     return 0
 
 
