@@ -1,6 +1,6 @@
 # Bill Hanna / Controller Academy — personal note from Stephen
 
-**Status:** draft 2026-09-03, Stephen sends (LinkedIn DM or email, his choice). Warm contact: Bill was a customer at Forter.
+**Status:** draft 2026-09-03, Stephen sends (LinkedIn DM or email, his choice). Tone: plain and direct, no idioms; match how you two actually spoke at Forter. Warm contact: Bill was a customer at Forter.
 **What he has:** controller-academy.com (courses with CPE, 40+ blog posts, no outbound tool links, nothing on ASC 842 or commissions), YouTube @TheFinancialController (~340k subscribers), an "Ultimate Year-End Accounting Checklist" post (Jan 2025).
 **What we offer first, ask second:** free full workbooks for him, a guest post he doesn't have to write, and a reciprocal mention. The link is a by-product of being useful.
 
@@ -8,7 +8,7 @@
 
 ## Version A — short (LinkedIn DM)
 
-Bill, hope Forter's loss is Controller Academy's gain and the channel is treating you well. I've been building something you'd have used when we worked together: Excel workbooks for the technical-accounting schedules controllers keep by hand, starting with ASC 842 leases and ASC 606 commissions, each with a free version and a 4-minute walkthrough.
+Bill, it's been a while since Forter. Congratulations on Controller Academy; I've watched it grow. I've been building something you would have used when we worked together: Excel workbooks for the technical-accounting schedules controllers keep by hand, starting with ASC 842 leases and ASC 606 commissions, each with a free version and a 4-minute walkthrough.
 
 Two ideas, no pressure on either:
 
@@ -26,7 +26,7 @@ Subject: An ASC 842 guest post for Controller Academy, and free workbooks for yo
 
 Hi Bill,
 
-Long time. Hope you're well, and congratulations on what Controller Academy has become; the channel numbers are remarkable.
+It has been a while since Forter. Congratulations on what Controller Academy has become; the growth of the channel is remarkable.
 
 Since Forter I've been building KDesk Accounting: audit-ready Excel workbooks for the schedules controllers still maintain by hand. ASC 842 leases (20 leases, schedules, JE generator, rollforward, reconciliation), ASC 606 / 340-40 commissions, fixed assets, SaaS metrics, and a runway model. Every one has a free version and a four-minute faceless walkthrough, so people can check the math before they buy anything.
 
