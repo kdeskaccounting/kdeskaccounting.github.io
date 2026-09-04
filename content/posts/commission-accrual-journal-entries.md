@@ -86,7 +86,7 @@ The $35,000 customer cancelled before invoicing and no commission is owed. The r
 | Deferred commission asset (unamortized: 3,767.75 − 104.66) | | 3,663.09 |
 | Commission expense (reverse September amortization on the deal) | | 104.66 |
 
-Had the rep already been paid, the first two debits would instead be a receivable from the rep or a deduction from the next payout, and the plan's clawback language decides which. If the rep was paid and the plan has no clawback right, there is no receivable at all; the unamortized balance is an impairment charge to commission expense (ASC 340-40-35-3). The asset side is otherwise identical. This is the entry most closes skip: the accrual gets reversed at payout, but the asset keeps amortizing a commission that was never paid.
+Had the rep already been paid, the $3,500.00 debit would instead be a receivable from the rep or a deduction from the next payout, and the plan's clawback language decides which; the $267.75 employer-tax component is written off to commission expense rather than recovered (see [commission clawbacks and reversals](/posts/commission-clawbacks-reversals-asc-340-40/)). If the rep was paid and the plan has no clawback right, there is no receivable at all; the unamortized balance is an impairment charge to commission expense (ASC 340-40-35-3). The asset side is otherwise identical. This is the entry most closes skip: the accrual gets reversed at payout, but the asset keeps amortizing a commission that was never paid.
 
 October's amortization on the three surviving contracts is ($12,500.00 + $956.25) ÷ 36 = **$373.78**, booked the same way as Entry 2.
 
