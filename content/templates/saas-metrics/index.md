@@ -2,6 +2,7 @@
 title: "SaaS Metrics & ARR Dashboard Excel Template"
 description: "Board-ready SaaS metrics in one Excel workbook. Enter monthly MRR movements and customer counts; MRR, ARR, Net New MRR, gross churn, NRR, ARPA, CAC, LTV, LTV:CAC, CAC payback, and Magic Number calculate automatically across 24 months. No macros, no BI tool, no subscription."
 summary: "The SaaS Metrics & ARR Dashboard turns monthly MRR movements and customer counts into a board-ready KPI dashboard — MRR, ARR, NRR, churn, CAC, LTV, and CAC payback — with formulas your finance team controls and can reconcile to the P&L."
+lastmod: 2026-09-03
 date: 2026-09-01
 author: "KDesk Accounting"
 ShowToc: true
@@ -15,6 +16,16 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/saas-metrics-poster.png"
 youtube_url: "https://youtu.be/janK2YXfmFU"
 tags: ["SaaS metrics", "ARR", "MRR", "Excel template", "net revenue retention", "churn", "CAC"]
+compare:
+  free_name: "Free 6-month version"
+  full_name: "Full workbook"
+  rows:
+    - ["Months of data", "6", "24"]
+    - ["Metrics", "9", "11 (adds Magic Number and the 24-month trend table)"]
+    - ["Setup, Monthly Data and Metrics tabs", "yes", "yes"]
+    - ["Board-ready dashboard", "no", "yes"]
+    - ["12 months of sample data", "no", "yes"]
+    - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Can I add more than 24 months?"
     a: "The workbook supports 24 months out of the box. You can extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly."

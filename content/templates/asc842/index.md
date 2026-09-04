@@ -16,6 +16,19 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/asc842-poster.png"
 youtube_url: "https://youtu.be/bfCMoceDcso"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
+compare:
+  free_name: "Free 3-lease version"
+  full_name: "Full workbook"
+  rows:
+    - ["Leases", "3", "20"]
+    - ["Schedule length", "36 months", "120 months"]
+    - ["Setup, Lease Data and Lease Schedule tabs", "yes", "yes"]
+    - ["Operating and finance lease classification", "yes", "yes"]
+    - ["JE Generator (your GL codes)", "no", "yes"]
+    - ["Balance sheet rollforward", "no", "yes"]
+    - ["Disclosure maturity table", "no", "yes"]
+    - ["Reconciliation that ties to $0", "no", "yes"]
+    - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle both operating and finance leases?"
     a: "Yes. Each lease in the register has a type dropdown — operating or finance. The amortization schedule, JE Generator, and rollforward all adjust automatically."
@@ -166,7 +179,7 @@ This workbook is designed for companies with up to 20 leases. If you have 50–1
 
 [**Get the Workbook ($97) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 
-Not ready to buy? [Try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) — same structure, limited to 3 leases. See how the schedule, JE Generator, and reconciliation work before committing.
+Not ready to buy? [Try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) — the Setup, Lease Data and Lease Schedule tabs for 3 leases and 36 months, so you can check the math on your own leases. The JE Generator, rollforward, disclosure table and reconciliation are in the full workbook (see the comparison above).
 
 ---
 

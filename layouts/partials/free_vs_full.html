@@ -1,0 +1,54 @@
+{{/* Free vs Full comparison table on product pages. Driven by `compare:` in the product's frontmatter:
+     compare:
+       free_name: "Free 3-lease version"
+       full_name: "Full workbook"
+       rows:
+         - ["Leases", "3", "20"]
+         - ["JE Generator", "no", "yes"]
+     Cells "yes"/"no" render as marks; anything else renders as text. */}}
+{{- with .Params.compare }}
+{{- $price := $.Params.price | default 0 }}
+<section class="kd-cmp" id="free-vs-full" aria-labelledby="kd-cmp-title">
+  <h2 id="kd-cmp-title" class="kd-cmp__title">Free version vs. full workbook</h2>
+  <p class="kd-cmp__lead">{{ .lead | default "The free file is the inputs and the schedule so you can check the math on your own data. The tabs that produce the entries and prove the balances are in the full workbook." }}</p>
+  <div class="kd-cmp__scroll">
+  <table class="kd-cmp__table">
+    <thead><tr><th scope="col">What you get</th><th scope="col">{{ .free_name | default "Free version" }}</th><th scope="col">{{ .full_name | default "Full workbook" }}{{ if gt $price 0 }} <span class="kd-cmp__price">${{ $price }}</span>{{ end }}</th></tr></thead>
+    <tbody>
+    {{- range .rows }}
+    <tr>
+      <th scope="row">{{ index . 0 }}</th>
+      {{- range after 1 . }}
+      {{- $v := printf "%v" . }}
+      {{- if eq $v "yes" }}<td class="kd-cmp__yes"><span aria-label="included">&#10003;</span></td>
+      {{- else if eq $v "no" }}<td class="kd-cmp__no"><span aria-label="not included">&mdash;</span></td>
+      {{- else }}<td>{{ $v }}</td>{{ end }}
+      {{- end }}
+    </tr>
+    {{- end }}
+    </tbody>
+  </table>
+  </div>
+  <div class="kd-cmp__ctas">
+    {{- with $.Params.free_url }}<a class="kd-btn kd-btn--ghost" href="{{ . }}" target="_blank" rel="noopener">{{ $.Params.free_label | default "Get the free version" }}</a>{{ end }}
+    {{- with $.Params.buy_url }}<a class="kd-btn kd-btn--primary" href="{{ . }}" target="_blank" rel="noopener">Get the full workbook{{ if gt $price 0 }} (${{ $price }}){{ end }} &rarr;</a>{{ end }}
+  </div>
+</section>
+<style>
+.kd-cmp{max-width:900px;margin:2rem auto 1rem;padding:0 1rem}
+.kd-cmp__title{font-size:1.35rem;margin:0 0 .4rem}
+.kd-cmp__lead{color:var(--secondary,#555);margin:0 0 1rem;font-size:.97rem}
+.kd-cmp__scroll{overflow-x:auto}
+.kd-cmp__table{width:100%;border-collapse:collapse;font-size:.95rem}
+.kd-cmp__table th,.kd-cmp__table td{padding:.55rem .75rem;border-bottom:1px solid var(--border,#e3e3dc);text-align:left;vertical-align:top}
+.kd-cmp__table thead th{background:var(--code-bg,#f6f6f0);font-weight:700}
+.kd-cmp__table thead th:nth-child(3){border-top:3px solid var(--kd-blue,#2e75b6)}
+.kd-cmp__table tbody th{font-weight:500}
+.kd-cmp__table td:nth-child(2),.kd-cmp__table td:nth-child(3){text-align:center;white-space:nowrap}
+.kd-cmp__yes{color:#1f7a3f;font-weight:700}
+.kd-cmp__no{color:#9a9a9a}
+.kd-cmp__price{font-weight:400;color:var(--secondary,#666);font-size:.85rem;margin-left:.25rem}
+.kd-cmp__ctas{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1rem}
+@media(max-width:600px){.kd-cmp__ctas .kd-btn{flex:1 1 auto;justify-content:center}}
+</style>
+{{- end }}

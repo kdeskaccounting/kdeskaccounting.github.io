@@ -16,6 +16,19 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/fixed-assets-poster.png"
 youtube_url: "https://youtu.be/I-VAym73C-M"
 tags: ["fixed assets", "fixed asset register", "depreciation schedule", "ASC 360", "Excel template", "rollforward", "PP&E"]
+compare:
+  free_name: "Free 5-asset version"
+  full_name: "Full workbook"
+  rows:
+    - ["Assets", "5", "50"]
+    - ["Schedule length", "36 months", "120 months"]
+    - ["Asset Register and Schedule tabs", "yes", "yes"]
+    - ["Four depreciation methods (SL, DDB, SYD, UoP)", "yes", "yes"]
+    - ["JE Generator with QuickBooks / NetSuite / Sage / Xero presets", "no", "yes"]
+    - ["Category rollforward", "no", "yes"]
+    - ["Disposal log and change log", "no", "yes"]
+    - ["Five-way reconciliation", "no", "yes"]
+    - ["Audit confirmation export", "no", "yes"]
 faq:
   - q: "Does it handle straight-line, declining balance, and sum-of-years methods?"
     a: "Yes. Each asset has a method dropdown — Straight-Line, Double-Declining Balance with auto-switch to SL, Sum-of-Years-Digits, or Units of Production. The schedule, JE Generator, and rollforward adjust automatically."
@@ -194,7 +207,7 @@ If your portfolio exceeds 50 assets, dedicated fixed-asset software earns its co
 
 [**Get the Workbook ($79) →**](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)
 
-Not ready to buy? [Try the free 5-asset version](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free) — same structure, limited to 5 assets and 36 months. See how the Schedule, JE Generator, and Reconciliation work on your own data before committing.
+Not ready to buy? [Try the free 5-asset version](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free) — the Register and Schedule for 5 assets and 36 months with all four depreciation methods, so you can check the math on your own assets. The JE Generator, rollforward, disposal log and five-way reconciliation are in the full workbook (see the comparison above).
 
 ---
 

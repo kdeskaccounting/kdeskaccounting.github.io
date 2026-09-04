@@ -2,6 +2,7 @@
 title: "ASC 606 Commission Capitalization Excel Template"
 description: "Audit-ready Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
 summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single audit-ready Excel file."
+lastmod: 2026-09-03
 date: 2026-03-16
 author: "KDesk Accounting"
 ShowToc: true
@@ -15,6 +16,19 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/asc606-poster.png"
 youtube_url: "https://youtu.be/eckfdjmyiwo"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
+compare:
+  free_name: "Free 5-deal version"
+  full_name: "Full workbook"
+  rows:
+    - ["Deals", "5", "50"]
+    - ["Amortization schedule", "24 months", "60 months"]
+    - ["Setup, Commission Data and Amortization Schedule tabs", "yes", "yes"]
+    - ["Three amortization bases (term, benefit period, expedient)", "yes", "yes"]
+    - ["JE Generator", "no", "yes"]
+    - ["Deferred commission rollforward", "no", "yes"]
+    - ["Reconciliation that ties to $0", "no", "yes"]
+    - ["Dashboard", "no", "yes"]
+    - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle variable commission rates?"
     a: "Yes. Each deal row has its own commission amount — there's no fixed rate applied across the portfolio. Enter the actual commission paid per deal."
@@ -156,7 +170,7 @@ This workbook handles the commission cost side of ASC 606 (ASC 340-40) — the a
 
 [**Get the Workbook ($79) →**](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
-Not ready to buy? [Try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) — same structure, limited to 5 deals. See how the amortization waterfall, JE Generator, and reconciliation work before committing.
+Not ready to buy? [Try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) — the Setup, Commission Data and Amortization Schedule tabs for 5 deals and 24 months, so you can check the waterfall on your own deals. The JE Generator, rollforward, reconciliation and dashboard are in the full workbook (see the comparison above).
 
 ---
 

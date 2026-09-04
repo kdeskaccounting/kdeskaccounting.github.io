@@ -2,6 +2,7 @@
 title: "Startup Runway Calculator — Excel Template"
 description: "A 12 to 48-month startup runway calculator in Excel. Scenario modeling (Base, Optimistic, Pessimistic), KPI dashboard, and five input tabs for financing, revenue, and expenses. No macros, one-time purchase."
 summary: "The Startup Runway Calculator tells you exactly how many months of cash you have — under your base case, an optimistic scenario, and a pessimistic one. Five input tabs, KPI dashboard, and up to 48 months of projections in a single Excel file."
+lastmod: 2026-09-03
 date: 2026-03-18
 author: "KDesk Accounting"
 ShowToc: true
@@ -15,6 +16,16 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/runway-poster.png"
 youtube_url: "https://youtu.be/G0CbfPkmgTY"
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
+compare:
+  free_name: "Free 12-month version"
+  full_name: "Full workbook"
+  rows:
+    - ["Forecast window", "12 months", "12 to 48 months"]
+    - ["Input rows per tab", "5", "unlimited"]
+    - ["Scenarios", "Base only", "Base, Optimistic, Pessimistic"]
+    - ["Runway, cash-zero date and breakeven dashboard", "yes", "yes"]
+    - ["Peak cash and total capital required", "yes", "yes"]
+    - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle variable payment schedules?"
     a: "Yes. Each revenue and expense line has a frequency dropdown (Monthly, Quarterly, Annual, One-Time) and an occurrences field. A quarterly expense only hits cash flow every 3 months; a one-time payment hits once and stops."
