@@ -109,3 +109,16 @@ scenes:
       The full workbook is seventy-nine dollars, one time, no subscription. There is a free five-asset
       version with the register and the schedule so you can test it on your own assets first. Both are at
       kdeskaccounting.com, slash templates, slash fixed-assets.
+
+# Named Short variants (make_short.py --variant NAME → <slug>-short-NAME.mp4); titles live in shorts.json
+shorts:
+  depreciation:
+    hook: "Straight-line depreciation schedule in Excel, one row per asset"
+    scenes: [3, 4]
+    cta: "Free 5-asset version \u2192 kdeskaccounting.com/templates/fixed-assets"
+    ranges: {3: "A1:O7", 4: "A1:J13"}
+  je:
+    hook: "The monthly depreciation entry, by category, with your GL codes"
+    scenes: [2, 5]
+    cta: "Free 5-asset version \u2192 kdeskaccounting.com/templates/fixed-assets"
+    ranges: {2: "A13:B20", 5: "A1:H11"}

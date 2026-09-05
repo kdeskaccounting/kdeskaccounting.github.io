@@ -98,6 +98,11 @@ curl -s -H "Authorization: Bearer $TOKEN" https://connect.mailerlite.com/api/sub
 KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py   # GSC + GA4 + target-query positions
 python3 scripts/pull_gumroad_snapshot.py                       # downloads, sales, revenue
 uv run scripts/model_page1_revenue.py                          # page-1 revenue ceiling (quarterly)
+uv run scripts/pull_youtube_snapshot.py --print                # YouTube views, Shorts vs long-form, 28d analytics (Mondays)
+
+# Publish to YouTube via the Data API (lands PRIVATE until the GCP project passes YouTube's API audit — flip in Studio)
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --variant liability   # render a named Short
+uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant liability [--dry-run]
 ```
 
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
@@ -107,6 +112,7 @@ uv run scripts/model_page1_revenue.py                          # page-1 revenue 
 - **Hugo** is installed via Homebrew (`hugo --minify` works here). Free/paid workbook sources + Gumroad copy live in `~/kdeskaccountingtemplates/templates/<slug>/`.
 - **MailerLite token / dist/ binaries / Cloudflare tokens are on the Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`) — unreachable 2026-09-01. Without it or a connected Chrome, MailerLite state can't be read or changed from here.
 - **GSC/GA4 API pull is LIVE (2026-09-02).** Refresh token at `~/kdesk-analytics/google-token.json` (read-only Search Console + Analytics scopes on the `gws` Desktop client; both APIs enabled on GCP project `involuted-disk-489017-r3`). Manual run: `KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py`. The Monday block of `~/kdesk-analytics/kdesk-daily.sh` (launchd `com.kdesk.daily-sync`, 08:15) runs it and commits both snapshot files. If the token is ever revoked: `uv run scripts/setup_seo_oauth.py ~/.config/gws/client_secret.json` (Stephen signs in as santiagokdesk).
+- **YouTube Data API is LIVE (2026-09-04).** Same token now carries `youtube.force-ssl` + `yt-analytics.readonly` (Stephen re-consented; `scripts/setup_seo_oauth.py` requests all four scopes). Channel **KDeskAccounting `UCmurE9-rT0C4NAZiYVR4HBw`**. `scripts/video/youtube_publish.py` uploads + sets thumbnail/metadata/playlist with no browser; `scripts/pull_youtube_snapshot.py` appends `marketing/seo-tracking/youtube-snapshots.jsonl` every Monday. **Gotcha:** API uploads from this un-audited GCP project are forced PRIVATE until the YouTube API compliance audit passes — flip to public in Studio meanwhile. `make_short.py --variant NAME` renders the named blocks under `shorts:` in each `scenes.yaml` (titles in `shorts.json`). Day-2 data: Shorts out-view long-form ~4:1 and 76% of views came from YouTube search.
 - **Follow-up sequence + outreach drafts:** `marketing/email-sequences/free-download-followup.md`; 5 Gmail drafts created 2026-09-01 in santiagokdesk@gmail.com (not sent).
 - **Video + cover pipeline** (`scripts/video/`, spec-driven): `scripts/video/.venv-tts/bin/python scripts/video/build_video.py --spec marketing/video/<slug>/scenes.yaml` (add `--frames-only` to preview, `--scenes N` to redo one) and `make_covers.py --spec …`. Six walkthroughs + posters live on GitHub release `media-2026-09`; product pages reference them via `video_url` / `video_poster`. Re-run when a workbook changes. Always `cd` to the repo root first (shell cwd drifts).
 - **Gumroad file replacement works via API** (`~/kdeskaccountingtemplates/gumroad_files.py <product_id> <file> --swap`, presign flow) and bundles via `gumroad_bundle.py`; publish with `PUT /products/{id}/enable`. **Covers/thumbnails cannot be set via API** — Chrome extension only. `GET /products` hides the paid ASC 606 (`mwmwpe`) and the bundle.

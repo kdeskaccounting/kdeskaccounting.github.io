@@ -112,3 +112,16 @@ scenes:
       The full workbook is forty-nine dollars, one time, no subscription. There is a free twelve-month
       version so you can test it on your own numbers first. Both are at kdeskaccounting.com, slash
       templates, slash runway.
+
+# Named Short variants (make_short.py --variant NAME → <slug>-short-NAME.mp4); titles live in shorts.json
+shorts:
+  burn:
+    hook: "Burn rate and cash-zero date, month by month"
+    scenes: [2, 6]
+    cta: "Free 12-month version \u2192 kdeskaccounting.com/templates/runway"
+    ranges: {2: "B5:I8", 6: "A5:J17"}
+  growth:
+    hook: "Two growth rates, not one \u2014 a ramp, then a mature rate"
+    scenes: [3, 8]
+    cta: "Free 12-month version \u2192 kdeskaccounting.com/templates/runway"
+    ranges: {3: "B5:L7", 8: "B12:J24"}

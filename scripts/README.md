@@ -14,6 +14,37 @@ Pulls a fresh GSC + GA4 snapshot and appends two JSONL rows under
 KDESK_SEO_SKIP_COMMIT=1 ./scripts/pull_seo_snapshot.py   # dry-run (no git ops)
 ```
 
+## `pull_youtube_snapshot.py`
+
+Appends one row per run to `marketing/seo-tracking/youtube-snapshots.jsonl`: per-video lifetime
+views/likes (Data API, near-real-time), a Shorts-vs-long-form split (≤ 60 s = Short), and trailing-28-day
+channel analytics + traffic sources (YouTube Analytics API, ~48 h lag). The Monday block of
+`~/kdesk-analytics/kdesk-daily.sh` runs it; the existing `git add marketing/seo-tracking/*.jsonl` commits it.
+
+```bash
+uv run scripts/pull_youtube_snapshot.py --print
+```
+
+## `video/youtube_publish.py`
+
+Uploads walkthroughs and Shorts through the YouTube Data API — no browser, no CDP session. Sets title,
+description (auto-chapters for walkthroughs), tags, thumbnail, playlist; records the URL back into
+`marketing/video/<slug>/{youtube,short,shorts}.json` and skips anything already recorded.
+
+```bash
+uv run scripts/video/youtube_publish.py --kind walkthrough --slug asc842 --dry-run
+uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant liability
+```
+
+**YouTube forces API uploads from an un-audited Google Cloud project to PRIVATE** ("All videos uploaded via
+the videos.insert endpoint from unverified API projects created after 28 July 2020 will be restricted to
+private viewing mode"). Until project `involuted-disk-489017-r3` passes the YouTube API Services compliance
+audit (Google Support → *YouTube API Services – Audit and Quota Extension Form*), flip uploads to public in
+Studio (select all → Visibility). The CDP scripts `youtube_upload*.py` remain as a fallback.
+
+The token from `setup_seo_oauth.py` now carries `youtube.force-ssl` + `yt-analytics.readonly` alongside the
+GSC/GA4 read scopes (re-consented 2026-09-04).
+
 ## One-time setup (10 min, you only do this once)
 
 1. **Create a Google Cloud project + enable APIs**

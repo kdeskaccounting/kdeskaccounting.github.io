@@ -98,3 +98,16 @@ scenes:
       The workbook is free — pay what you want, zero minimum. It is the scaffolding that holds the close
       together; the technical schedules it reconciles to come from the ASC 606, ASC 842 and fixed asset
       workbooks. Download it at kdeskaccounting.com, slash templates, slash month-end-close.
+
+# Named Short variants (make_short.py --variant NAME → <slug>-short-NAME.mp4); titles live in shorts.json
+shorts:
+  calendar:
+    hook: "42 close tasks in five phases \u2014 free Excel checklist"
+    scenes: [1, 2]
+    cta: "Free download \u2192 kdeskaccounting.com/templates/month-end-close"
+    ranges: {1: "B14:C22", 2: "B5:H16"}
+  je-tracker:
+    hook: "Every journal entry logged with preparer and reviewer"
+    scenes: [4]
+    cta: "Free download \u2192 kdeskaccounting.com/templates/month-end-close"
+    ranges: {4: "B5:L10"}

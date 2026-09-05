@@ -104,3 +104,16 @@ scenes:
       The full workbook is sixty-seven dollars, one time, no subscription. There is a free six-month
       version with the inputs and the metrics tab so you can test it on your own numbers first. Both are at
       kdeskaccounting.com, slash templates, slash saas-metrics.
+
+# Named Short variants (make_short.py --variant NAME → <slug>-short-NAME.mp4); titles live in shorts.json
+shorts:
+  mrr:
+    hook: "Seven inputs a month is all a SaaS metrics model needs"
+    scenes: [2, 3]
+    cta: "Free 6-month version \u2192 kdeskaccounting.com/templates/saas-metrics"
+    ranges: {2: "A4:M10", 3: "A4:M16"}
+  ltv-cac:
+    hook: "LTV:CAC and CAC payback from the same numbers as your P&L"
+    scenes: [5, 7]
+    cta: "Free 6-month version \u2192 kdeskaccounting.com/templates/saas-metrics"
+    ranges: {5: "A4:N16", 7: "B14:K28"}

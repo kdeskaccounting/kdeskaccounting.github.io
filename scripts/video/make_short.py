@@ -4,6 +4,7 @@ Vertical YouTube Short (1080x1920, 30 fps, <= 59 s) composed from the existing w
 scene PNGs + narration WAVs + the `short:` block in marketing/video/<slug>/scenes.yaml.
   scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842
 Output: scripts/video/build/<slug>/<slug>-short.mp4 (+ short-review/*.png sample frames).
+  --variant NAME renders the block under `shorts: {NAME: …}` instead → <slug>-short-NAME.mp4
 All text is rendered into PNGs via HTML (this ffmpeg has no drawtext).
 """
 import argparse, html, json, math, pathlib, subprocess, sys
@@ -11,6 +12,7 @@ import yaml
 from PIL import Image, ImageChops
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
+from short_variants import select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
 TOP, BOT = 360, 312                                            # bands at render scale (300 / 260 at 1080 wide)
 CAP_BAR = 118                                                  # caption bar height on the 2400x1350 scene PNGs
@@ -65,9 +67,9 @@ html,body{{width:{RW}px;height:{RH}px;background:{GRAD}}}
 </style></head><body><div class="wrap"><div class="brand"><i></i>KDesk Accounting</div><div class="cta">{html.escape(head)}</div>{link_html}<div class="sub">Pure Excel · No macros · Windows &amp; Mac</div></div></body></html>"""
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--slug", required=True); ap.add_argument("--crf", type=int, default=26); a = ap.parse_args()
-    slug = a.slug; spec = yaml.safe_load(open(REPO / "marketing/video" / slug / "scenes.yaml")); sh = spec["short"]
-    build = HERE / "build" / slug; work = build / "short"; work.mkdir(parents=True, exist_ok=True)
+    ap = argparse.ArgumentParser(); ap.add_argument("--slug", required=True); ap.add_argument("--crf", type=int, default=26); ap.add_argument("--variant", default=None, help="named block under `shorts:` (default: legacy `short:`)"); a = ap.parse_args()
+    slug = a.slug; spec = yaml.safe_load(open(REPO / "marketing/video" / slug / "scenes.yaml")); sh = select_short(spec, a.variant)
+    build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     focus = json.load(open(build / "frames/focus.json")); durs = json.load(open(build / "audio/durations.json"))
     parts = []
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
@@ -121,11 +123,11 @@ def main():
          "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
     parts.append(out)
     lst = work / "concat.txt"; lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
-    final = build / f"{slug}-short.mp4"
+    final = paths.final
     run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
     total = dur_of(final)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
-    rev = build / "short-review"; rev.mkdir(exist_ok=True)
+    rev = paths.review; rev.mkdir(exist_ok=True)
     for name, t in (("t01", 1.0), ("mid", total / 2), ("end", max(0.0, total - 1.0))):
         run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(final), "-frames:v", "1", str(rev / f"{name}.png")])
     probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate", "-show_entries", "format=duration,size", "-of", "default=nw=1", str(final)], capture_output=True, text=True).stdout.replace("\n", " ")
