@@ -1,0 +1,119 @@
+# RSU Tax Planner — faceless walkthrough (Stream A paid tier)
+product: RSU Tax Planner Workbook
+slug: rsu-planner
+source: ~/kdeskaccountingtemplates/templates/rsu-planner/RSU_Tax_Planner_v1.xlsx
+workbook_name: RSU Tax Planner.xlsx
+voice: am_michael
+cover:
+  standard: RSU
+  name: Tax Planner Workbook
+  price: "$149"
+  free_label: Free web calculator
+  checks:
+    - Every grant, every vest, 2026–2030
+    - 22% withheld vs. your marginal rate — the gap per vest
+    - Safe harbor + four equal quarterly installments
+    - Shares sold to cover · Additional Medicare · $1M line
+  hero: {sheet: Tax Year Summary, range: B4:G24}
+  second: {sheet: Vest Schedule, range: A4:J16}
+  thumb: {sheet: Dashboard, range: B4:I9}
+short:
+  hook: "Why vested RSUs leave a bill in April"
+  scenes: [6, 7]
+  cta: "Free calculator → kdeskaccounting.com/rsu-tax-calculator"
+  ranges:
+    6: "B14:G24"
+    7: "B6:J10"
+scenes:
+  - kind: title
+    heading: RSU Tax Planner Workbook
+    sub: every grant · every vest · 2026–2030 · the withholding gap · safe harbor · quarterly installments
+    badge: EXCEL WORKBOOK · $149 ONE-TIME
+    narration: >
+      This is the KDesk RSU Tax Planner. Restricted stock units are taxed as ordinary income when they vest, but
+      payroll usually withholds a flat twenty-two percent. Stacked on a salary, the same dollars are taxed at
+      twenty-four, thirty-two, thirty-five or thirty-seven percent, and the difference becomes a bill in April.
+      This workbook lays that out for every grant, every vest and every year through twenty thirty. Pure Excel,
+      no macros. Here is how it works.
+  - sheet: Setup
+    range: B4:C20
+    highlight: [C6, C8, C13, C19]
+    caption: Yellow cells are inputs — filing status, salary, planning date, share price
+    narration: >
+      Everything starts on Setup. Filing status, base salary, pre-tax deductions, the planning date, state rates
+      if your state has an income tax, and a default share price assumption. Enter last year's total tax and the
+      workbook shows the prior-year safe-harbor alternative as well as the ninety percent test.
+  - sheet: Grants
+    range: A4:J8
+    highlight: [C5, D5, E5, F5]
+    caption: One row per grant — shares, first vest date, frequency, number of vests
+    narration: >
+      Grants is one row per award. Total shares, the first vest date, the frequency — monthly, quarterly,
+      semi-annual or annual — and the number of vests. The sample has an annual grant of twelve hundred shares
+      over four years and a quarterly grant of eight hundred shares starting the following spring.
+  - sheet: Vest Schedule
+    range: A4:J16
+    highlight: [F5, J5]
+    caption: Each vest — income at the assumed price, and what payroll withholds at 22%
+    narration: >
+      The Vest Schedule expands those grants into every vest. Three hundred shares at one hundred dollars is
+      thirty thousand of income on the first vest date, and payroll withholds the flat twenty-two percent —
+      six thousand six hundred. Once supplemental wages pass one million dollars in a year, the rate on the
+      excess becomes thirty-seven percent, and the schedule tracks that cumulatively.
+  - sheet: Vest Schedule
+    range: K4:S16
+    highlight: [O5, P5, S5]
+    caption: Total withholding, shares sold to cover, and this vest's share of the year's gap
+    narration: >
+      The right-hand columns follow payroll's rules: state withholding, Social Security up to the wage base,
+      Medicare, and the point nine percent Additional Medicare above two hundred thousand of wages. Total
+      withholding divided by the share price is the number of shares sold to cover, rounded up. The last
+      column is this vest's share of the year's gap between marginal tax and what was withheld.
+  - sheet: Tax Year Summary
+    range: B4:G17
+    highlight: [C11, C13, C14]
+    caption: Federal tax, tax on salary alone, and the tax on the RSU slice
+    narration: >
+      Tax Year Summary is the mechanics, year by year. Taxable income, federal tax by bracket, the tax on
+      salary alone — which is what a standard W-4 withholds — and the difference, the tax on the RSU slice.
+      In the sample, thirty thousand of vests in the first year is taxed at twenty-four percent — seven
+      thousand two hundred — against six thousand six hundred withheld.
+  - sheet: Tax Year Summary
+    range: B14:G24
+    highlight: [C17, C19, C24]
+    caption: The gap, the total shortfall, and the additional payments that would reach the safe harbor
+    narration: >
+      Below that: the federal gap, the state gap, and the total estimated shortfall — six hundred dollars in
+      the first sample year, rising to almost four thousand when the second grant starts vesting. Then the
+      safe-harbor tests — ninety percent of this year's tax, or the prior-year alternative — and the
+      additional payments that would reach them, plus a per-paycheck equivalent for a W-4 adjustment.
+  - sheet: Quarterly Plan
+    range: B6:J10
+    highlight: [H7, I7, J7]
+    caption: Four equal installments against cumulative withholding, with due dates
+    narration: >
+      The Quarterly Plan takes the selected year's safe-harbor amount and lays it against cumulative
+      withholding in four equal installments — due April fifteenth, June fifteenth, September fifteenth and
+      January fifteenth. Where cumulative withholding runs short of the target, the shortfall and the equal
+      installment that would close it are shown.
+  - sheet: Dashboard
+    range: B4:I9
+    highlight: [B4, B7]
+    caption: The selected year at a glance
+    narration: >
+      The Dashboard summarizes the selected year: the estimated shortfall, the effective rate on the RSU
+      slice, withheld versus owed, the safe-harbor status, the next vest, and employer-stock concentration
+      shown as a fact. Nothing here tells you whether to sell, hold or cover — that is a decision about
+      securities, and it depends on things a workbook cannot know.
+  - kind: outro
+    heading: RSU Tax Planner Workbook
+    lines:
+      - 20 grants · 240 vests · 2026–2030 · Quarterly Plan · Dashboard
+      - Tax-year-2026 tables from IRS Rev. Proc. 2025-32 and Publication 15 (2026)
+      - Free web calculator for this year's gap at kdeskaccounting.com/rsu-tax-calculator
+    price: "$149 one-time"
+    url: kdeskaccounting.com/templates/rsu-planner
+    narration: >
+      The workbook is one hundred forty-nine dollars, one time, no subscription. The free calculator at
+      kdeskaccounting.com slash rsu-tax-calculator shows this year's gap in thirty seconds. Educational
+      estimates, not tax advice — work with a qualified tax professional for decisions.

@@ -47,6 +47,8 @@ META = {
             "Tab-by-tab walkthrough of the KDesk SaaS Metrics & ARR Dashboard: seven monthly inputs, 24 months auto-chained, 11 metrics (MRR, ARR, Net New MRR, gross churn, NRR, ARPA, CAC, LTV, LTV:CAC, CAC payback, Magic Number) and a board-ready dashboard that reconciles to recognized revenue. Pure Excel, no macros."),
  "runway": ("Startup Runway Calculator Excel Template — Runway, Cash-Zero Date, Breakeven (Walkthrough)",
             "Tab-by-tab walkthrough of the KDesk Startup Runway Calculator: 12 to 48-month cash forecast from five input tabs, two-rate revenue growth, Base / Optimistic / Pessimistic scenario multipliers, and a dashboard with months of runway, cash-zero date, peak cash and breakeven. Pure Excel, no macros."),
+ "rsu-planner": ("RSU Tax Planner Excel Workbook — Every Vest, the 22% Withholding Gap, Safe Harbor, Quarterly Installments (Walkthrough)",
+            "Tab-by-tab walkthrough of the KDesk RSU Tax Planner: 20 grants expanded into every vest through 2030, federal withholding at 22% (37% over the $1M supplemental line), Social Security, Medicare and Additional Medicare by payroll rule, shares sold to cover, the tax on the RSU slice at your marginal rate, the gap, the 90% / prior-year safe-harbor tests, and four equal quarterly installments. Tax-year-2026 tables from IRS Rev. Proc. 2025-32 and Publication 15 (2026). Educational estimate, not tax advice."),
  "month-end-close": ("Free Month-End Close Checklist Excel Template — 42 Tasks, 18 Reconciliations (Walkthrough)",
             "Walkthrough of the free KDesk Month-End Close Checklist + Tie-Out Workbook: a 42-task close calendar in five phases, 18 subledger-to-GL reconciliations with a materiality flag, a JE tracker with a debits = credits check, and a printable sign-off page. Free, pay what you want."),
 }
@@ -54,13 +56,15 @@ LINKS = {"asc842": ("asc842", "https://kdeskaccounting.gumroad.com/l/gljxc"), "a
          "fixed-assets": ("fixed-assets", "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free"),
          "saas-metrics": ("saas-metrics", "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free"),
          "runway": ("runway", "https://kdeskaccounting.gumroad.com/l/runway-calculator-free"),
-         "month-end-close": ("month-end-close", "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist")}
+         "month-end-close": ("month-end-close", "https://kdeskaccounting.gumroad.com/l/month-end-close-checklist"),
+         "rsu-planner": ("rsu-planner", "https://kdeskaccounting.com/rsu-tax-calculator/")}
 TAGS = {"asc842": ["ASC 842", "lease accounting", "Excel template", "journal entries", "controller"],
         "asc606": ["ASC 606", "ASC 340-40", "sales commissions", "deferred commissions", "Excel template"],
         "fixed-assets": ["fixed assets", "depreciation schedule", "fixed asset register", "Excel template"],
         "saas-metrics": ["SaaS metrics", "MRR", "ARR", "NRR", "CAC", "LTV", "Excel dashboard"],
         "runway": ["startup runway", "burn rate", "cash forecast", "Excel template"],
-        "month-end-close": ["month end close", "close checklist", "reconciliation", "Excel template", "free"]}
+        "month-end-close": ["month end close", "close checklist", "reconciliation", "Excel template", "free"],
+        "rsu-planner": ["RSU", "RSU taxes", "equity compensation", "supplemental withholding", "estimated taxes", "safe harbor", "Excel"]}
 
 
 # ---------- pure helpers (tested in tests/test_youtube_publish.py) ----------
