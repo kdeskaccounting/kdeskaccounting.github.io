@@ -1,0 +1,28 @@
+# ASC 340-40 Commission Capitalization Kit — cover assets only (the kit reuses the ASC 606 workbook walkthrough)
+product: ASC 340-40 Commission Capitalization Kit
+slug: asc606-kit
+source: ~/kdeskaccountingtemplates/templates/asc606/ASC_606_Commission_Accrual_Workbook_v9.xlsx
+workbook_name: ASC 606 Commission Accrual Workbook.xlsx
+voice: am_michael
+presets:
+  Setup:
+    C13: 2026-01-01
+cover:
+  standard: ASC 340-40
+  name: Commission Capitalization Kit
+  price: "$1,997"
+  free_label: Workbook alone
+  checks:
+    - Technical accounting memo template + completed example
+    - Amortization-basis decision framework
+    - Clawback policy · close procedure · auditor PBC package
+    - ASC 606 workbook included · editable DOCX + PDF
+  hero: {sheet: Amortization Schedule, range: A4:P18}
+  second: {sheet: JE Generator, range: A3:I10}
+  thumb: {sheet: Dashboard, range: A4:G10}
+scenes:
+  - kind: title
+    heading: ASC 340-40 Commission Capitalization Kit
+    sub: memo template · decision framework · clawback policy · close procedure · auditor PBC package · workbook
+    badge: KIT · $1,997 ONE-TIME
+    narration: placeholder
