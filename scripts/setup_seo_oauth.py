@@ -7,7 +7,11 @@
 # ]
 # ///
 """
-One-time OAuth setup for the SEO snapshot script.
+One-time OAuth setup for the Google token (Search Console, GA4, YouTube).
+
+Re-run whenever scopes change; consenting again overwrites the token with the
+new, wider grant. Sign in as santiagokdesk@gmail.com and, if asked to choose
+between accounts/brand channels, pick the one that owns the KDesk YouTube channel.
 
 Run this once with the credentials.json downloaded from Google Cloud Console
 (OAuth 2.0 client ID, type "Desktop"). It mints a refresh token that
@@ -27,8 +31,13 @@ import sys
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = [
+    # Search Console + GA4 (weekly SEO pull)
     "https://www.googleapis.com/auth/webmasters.readonly",
     "https://www.googleapis.com/auth/analytics.readonly",
+    # YouTube: upload + edit metadata/thumbnails/playlists (replaces the CDP Studio driver)
+    "https://www.googleapis.com/auth/youtube.force-ssl",
+    # YouTube Analytics: views, watch time, traffic sources (previously zero data)
+    "https://www.googleapis.com/auth/yt-analytics.readonly",
 ]
 
 TOKEN_DIR = pathlib.Path.home() / "kdesk-analytics"
