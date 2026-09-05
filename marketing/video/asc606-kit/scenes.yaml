@@ -1,4 +1,4 @@
-# ASC 340-40 Commission Capitalization Kit — cover assets only (the kit reuses the ASC 606 workbook walkthrough)
+# ASC 340-40 Commission Capitalization Kit — implementation walkthrough over the ASC 606 workbook
 product: ASC 340-40 Commission Capitalization Kit
 slug: asc606-kit
 source: ~/kdeskaccountingtemplates/templates/asc606/ASC_606_Commission_Accrual_Workbook_v9.xlsx
@@ -20,9 +20,127 @@ cover:
   hero: {sheet: Amortization Schedule, range: A4:P18}
   second: {sheet: JE Generator, range: A3:I10}
   thumb: {sheet: Dashboard, range: A4:G10}
+short:
+  hook: "Capitalized commissions: the documentation the auditor asks for"
+  scenes: [8, 9]
+  cta: "Kit → kdeskaccounting.com/templates/asc606-kit"
+  ranges:
+    8: "A4:F16"
+    9: "B4:E9"
 scenes:
   - kind: title
     heading: ASC 340-40 Commission Capitalization Kit
-    sub: memo template · decision framework · clawback policy · close procedure · auditor PBC package · workbook
-    badge: KIT · $1,997 ONE-TIME
-    narration: placeholder
+    sub: technical memo template · decision framework · clawback policy · close procedure · auditor PBC package · the workbook
+    badge: IMPLEMENTATION WALKTHROUGH · $1,997 ONE-TIME
+    narration: >
+      This is the KDesk commission capitalization kit for ASC 606 and ASC 340-40. The workbook computes the
+      schedule; the kit is the documentation that has to sit behind it — the technical accounting memo, the
+      amortization-basis decision framework, the clawback and reversal policy, the month-end close procedure,
+      and the auditor PBC package. This walkthrough shows where each document plugs into the workbook.
+  - sheet: Setup
+    range: A4:D14
+    highlight: [C13]
+    caption: The memo's scope starts here — company, plans, period
+    narration: >
+      Setup holds the reporting period and the policy inputs. The technical accounting memorandum template
+      opens with purpose and scope, background on the plans and payees, and the list of issues — which costs
+      are incremental, whether the practical expedient applies, the amortization period and pattern,
+      impairment, presentation and disclosure. The illustrative completed memo shows all of it filled in.
+  - sheet: Setup
+    range: A16:D22
+    highlight: [C22]
+    caption: The estimated period of benefit is one input — the decision framework is how you get to it
+    narration: >
+      The estimated benefit period — sixty months in the sample — is the biggest judgment in commission
+      accounting. The decision framework is a six-step tree: is the cost incremental, is it recoverable, would
+      the period be a year or less, is the renewal commission commensurate with the initial one, does the
+      service transfer ratably, has the expected timing changed. Its cohort worksheet turns retention history
+      into the number that goes in this cell.
+  - sheet: Commission Data
+    range: A4:J12
+    highlight: [B5, E5, F5, H5]
+    caption: Incremental costs only — the memo's first analysis section is this register
+    narration: >
+      Commission Data is the register: rep, deal, close date, amount, rate, term, and the amortization basis.
+      The memo's first analysis section walks the cost table — commissions, manager overrides and per-contract
+      SDR payments are incremental; base salary, bonuses on a mix of factors and non-recoverable draws are not;
+      employer payroll taxes on a capitalized commission are capitalized with it as a separate component.
+  - sheet: Commission Data
+    range: H4:M12
+    highlight: [I5, K5]
+    caption: "Alice Chen: $125,000 at 8% is $10,000, amortized over 24 months at $416.67"
+    narration: >
+      The completed example memo uses this deal. One hundred twenty-five thousand at eight percent is a ten
+      thousand dollar commission. Because the enterprise plan pays the same rate on renewals — commensurate —
+      it is amortized over the twenty-four month contract term, four hundred sixteen dollars and sixty-seven
+      cents a month, with the seven hundred sixty-five dollars of employer tax alongside.
+  - sheet: Amortization Schedule
+    range: A4:P18
+    highlight: [J7, J9, J11]
+    caption: The waterfall — the pattern the memo concludes on
+    narration: >
+      The amortization schedule is the waterfall your auditor asks for: one row per deal, one column per
+      month. Straight-line is the pattern for a ratably delivered subscription; the memo's analysis section
+      documents that conclusion and the start convention — month of signature or contract start — applied
+      consistently.
+  - sheet: JE Generator
+    range: A3:I10
+    highlight: [H5, I6, H9, I10]
+    caption: Close procedure steps two and three — capitalize, then amortize
+    narration: >
+      The JE Generator produces the period's entries. The month-end close procedure works one month end to
+      end: determine what was earned, accrue and capitalize — debit the deferred commission asset and its
+      payroll-tax component, credit accrued commissions and accrued payroll taxes — then amortize, sixteen
+      thousand plus twelve twenty-four of tax over thirty-six months is four hundred seventy-eight forty-four
+      in the worked example.
+  - sheet: JE Generator
+    range: A12:I22
+    highlight: [B14, B18, H22]
+    caption: Beginning + capitalized − amortized = ending, every period
+    narration: >
+      Below the entries, the period movement: beginning balance plus capitalizations less amortization equals
+      the ending balance. Step four of the close procedure is the true-up — a cancelled deal that owed no
+      commission reverses the accrual and derecognizes the capitalized cost, and a paid commission that is
+      clawed back follows the clawback policy instead.
+  - sheet: Rollforward
+    range: A4:F16
+    highlight: [B5, D5, E5]
+    caption: The rollforward carries impairments and clawback derecognitions on their own line
+    narration: >
+      The rollforward is disclosure-ready and it is where the clawback and reversal policy shows up. The
+      policy carries one illustration — a six thousand dollar commission, four fifty-nine of employer tax,
+      thirty-six months — through a full clawback, a partial clawback, a cancellation with no clawback right,
+      a downgrade, and a miscalculated commission, with the entries and the non-recoverable payroll-tax
+      component written off every time.
+  - sheet: Reconciliation
+    range: A4:E9
+    highlight: [E6, E7, E8, E9]
+    caption: Variance $0 — the identity the auditor traces
+    narration: >
+      Reconciliation ties the JE amounts to the register and to the schedule, and the variance is zero. The
+      close procedure states the identity behind it: capitalized cost equals the unamortized asset plus
+      cumulative amortization. That single check catches a broken waterfall faster than anything else, and
+      it is item six on the auditor PBC request list.
+  - sheet: Dashboard
+    range: A4:G19
+    highlight: [B6, D6, F6]
+    caption: Balances by category — what the footnote discloses
+    narration: >
+      The dashboard's balances by category are what the disclosure footnote reports: the judgments made in
+      determining the costs and the amortization method, the closing balances of the asset by main category,
+      and the amortization and any impairment recognized in the period. The PBC package includes a footnote
+      template, the eleven-item request list with owners and frequency, and a sample-selection tie-out sheet
+      for tracing one commission from plan to register to accrual to payout to asset to waterfall.
+  - kind: outro
+    heading: ASC 340-40 Commission Capitalization Kit
+    lines:
+      - Memo template + completed example · decision framework · clawback policy · close procedure · auditor PBC package
+      - Editable DOCX and PDF of every document, plus the ASC 606 Commission Accrual Workbook
+      - Templates for the company's own analysis — not accounting, tax or legal advice
+    price: "$1,997 one-time"
+    url: kdeskaccounting.com/templates/asc606-kit
+    narration: >
+      The kit is one thousand nine hundred ninety-seven dollars, one time, with the workbook included and
+      every document editable. Everything in it is a template for the company's own analysis, reviewed and
+      signed by the company's own preparer and reviewer — not accounting, tax or legal advice. It is at
+      kdeskaccounting.com, slash templates, slash asc606-kit.
