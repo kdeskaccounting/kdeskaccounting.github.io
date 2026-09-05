@@ -28,6 +28,7 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 - `content/posts/` — 18 blog posts in five clusters: lease/ASC 842 (pillar + 5 spokes), commission/ASC 606 (capitalization, accrual, clawbacks), fixed assets, close, SaaS metrics/runway
 - `content/templates/` — 6 product pages + `bundle/`, each with FAQ schema, Product JSON-LD, a walkthrough video and a `compare:` block (Free vs Full table)
 - `content/calculator/` — free browser-side calculator (zero-friction lead magnet)
+- `content/rsu-tax-calculator/` — free RSU withholding-gap calculator (Stream A lead magnet, live 2026-09-05). Tax core in `static/js/rsu-tax.js` (ESM, tested: `node --test --test-reporter=tap tests/js/*.test.mjs`; TABLE_2026 pinned to Rev. Proc. 2025-32 / Pub 15). Any change to tax numbers or copy goes through the second-agent fact-check first (T3).
 - `content/about/`, `content/search/` — standard pages
 
 ## Custom layouts (the bits to know)
@@ -35,7 +36,7 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 - `layouts/_default/single.html` — overrides PaperMod theme. Renders the email-capture partial AFTER content on posts only (not on /templates/, /calculator/, /about/).
 - `layouts/partials/email_capture.html` — the inline email form. Posts to MailerLite. Excluded from non-posts pages.
 - `layouts/partials/extend_head.html` — global `<head>` injections: Cloudflare Analytics beacon, MailerLite Universal script, GA4 Key Event handler (Gumroad outbound clicks, calculator opens, template page views), JSON-LD schema.
-- `layouts/index.html`, `layouts/templates/`, `layouts/calculator/` — custom homepage + product pages + calculator.
+- `layouts/index.html`, `layouts/templates/`, `layouts/calculator/`, `layouts/rsu-calculator/` — custom homepage + product pages + the two calculators. **New tool pages must set `type: "<layout dir>"` in frontmatter** — Hugo resolves layouts by type (defaults to the section), so `layout:` alone silently falls back to `_default/single.html` with an empty body. Verify the built body (`grep -o id=… public/…`) and drive it with Playwright before publishing.
 
 ## Marketing infrastructure (queues, not auto-posters)
 
@@ -68,7 +69,7 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 All live on **this Mac** unless noted:
 
 - **Gumroad API** (read + write): `GUMROAD_ACCESS_TOKEN` in `~/kdeskaccountingtemplates/.env`
-- **MailerLite API**: token `kdesk-mac-sync` at `~/kdesk-analytics/mailerlite-token.txt`; group "Gumroad free downloaders" `187224670039180750`
+- **MailerLite API**: token `kdesk-mac-sync` at `~/kdesk-analytics/mailerlite-token.txt`; groups "Gumroad free downloaders" `197511890037901111` and "KDesk Accounting subscribers" `187224670039180750`; custom field `interest` (id `1461362`) tags RSU-calculator sign-ups (`fields[interest]=rsu-planner`). Automation email bodies are not readable/editable via API (UI or CDP only). Creating campaigns via API was blocked by the auto-mode classifier — draft copy lives in `marketing/email-sequences/`, Stephen sends.
 - **GSC + GA4**: refresh token at `~/kdesk-analytics/google-token.json` (read-only scopes on the `gws` Desktop client; both APIs enabled on GCP project `involuted-disk-489017-r3`). GA4 property `528583005`.
 - **Google Workspace** (`gws` CLI): authed as `santiagokdesk@gmail.com` — NOT smichels1@gmail.com
 - **Search Console**: verified by DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
@@ -124,7 +125,7 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 
 **The five streams:** (A) RSU withholding-gap calculator → $99–149 workbook (tax mechanics only — no personalized sell/hold) · (B) faceless YouTube at volume · (C) affiliate/referral layer (FinQuery Referral Partner, Cradle) · (D) expert networks (GLG, AlphaSights, Guidepoint …) · (E) $1,997 ASC 606 commission kit. Gated on validation: a QuickBooks/Xero app. Ladder: $2k → **$4,246** → $10k; kill criteria per stream in the plan; portfolio review **2026-12-01** (if total revenue is still $0, stop building).
 
-**Shipped 2026-09-04 evening (decisions 53–54):** YouTube Data API live (Stephen re-consented; APIs enabled); `scripts/video/youtube_publish.py` (no browser), `scripts/pull_youtube_snapshot.py` in the Monday job, `make_short.py --variant`; **12 new Shorts uploaded via the API — PRIVATE until flipped** (URLs in `marketing/video/*/shorts.json`); 17 tests (`uv run --with pytest pytest tests/`). First channel data: 206 views in ~48 h, 76% from YouTube search, Shorts ~4:1 over long-form.
+**Shipped 2026-09-04 evening (decisions 53–54):** YouTube Data API live (Stephen re-consented; APIs enabled); `scripts/video/youtube_publish.py` (no browser), `scripts/pull_youtube_snapshot.py` in the Monday job, `make_short.py --variant`; **12 new Shorts uploaded via the API — PRIVATE until flipped** (URLs in `marketing/video/*/shorts.json`); 17 tests (`uv run --with pytest pytest tests/`). First channel data: 206 views in ~48 h, 76% from YouTube search, Shorts ~4:1 over long-form. **Shipped 2026-09-05 (decision 55): the free RSU withholding-gap calculator at `/rsu-tax-calculator/`** — TDD'd tax core, 2026 table pinned to primary sources, second-agent fact-check FIX FIRST → all must-fixes applied, in the nav and homepage, sign-ups tagged `interest=rsu-planner`. Also drafted (not sent): the re-engagement email to the 14 skipped downloaders (`marketing/email-sequences/re-engage-2026-09.md`) and the affiliate applications (`marketing/affiliates/applications-2026-09.md`).
 
 **Waiting on Stephen:**
 1. **Flip the 12 new Shorts to public** — YouTube Studio → Content → Shorts → select the 12 private → Edit → Visibility → Public (~30 s). Repeat for API uploads until the audit passes.
@@ -133,8 +134,10 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 4. Read IBM's outside-activities / conflict-of-interest policy → join 3–4 expert networks (Stream D).
 5. VA 90% → 100% claim (+$1,083/mo tax-free, cuts the safety net 25%; do not touch the PTSD rating).
 6. Reply on `marketing/outreach/batch-2026-09-07.md`; Reddit account; LinkedIn #17; free sign-ups (Eloquens, Featured.com, Source of Sources, Qwoted). *Done 2026-09-04: OAuth consent, the Bill Hanna DM, the customer-discovery emails.*
+7. **Send the re-engagement email** to the 14 downloaders the nurture skipped — copy, recipients and merge fields in `marketing/email-sequences/re-engage-2026-09.md` (paste into a MailerLite campaign; API creation was blocked). **Submit the three affiliate applications** — `marketing/affiliates/applications-2026-09.md` (FinQuery Referral Partner first).
+8. Gumroad "What's your role?" checkout question — the API accepts `custom_fields[]` and silently drops them; add it in the Gumroad editor (or via the CDP pattern) on the free listings.
 
-**Next builds (Claude, in order):** Stream A free RSU calculator (`content/rsu-calculator/` on the proven 485-line `layouts/calculator/single.html` pattern) then the paid workbook · affiliate application copy for Stephen to submit · nurture leaks (enroll the 14 downloaders excluded by decision 35, port the product-specific `workflows.json` copy to MailerLite, add a Gumroad "What's your role?" custom field) · ASC 606 kit assembly (technical memo template, PBC package) · Shorts at ~5/week + an RSU walkthrough · execute repricing when the veto closes · product #6 (decision 50) only if it serves a stream.
+**Next builds (Claude, in order):** Stream A paid vest-by-vest RSU planner workbook (the free calculator is live) · an RSU Short/walkthrough (the pipeline needs a web-page scene renderer first) · ASC 606 kit assembly (technical memo template, PBC package) · Shorts at ~5/week · **execute repricing after the veto closes 2026-09-06 22:00 PT** (`gumroad_publish.py update`, decision 52) · port the product-specific `workflows.json` nurture copy into MailerLite via CDP · wire affiliate links + disclosure + `click_affiliate_outbound` once approvals arrive · product #6 (decision 50) only if it serves a stream.
 
 **Weekly cadence (mechanics unchanged, new scoreboard):** Monday launchd pulls GSC + GA4 + target queries + Gumroad **+ YouTube**; the scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent GAAP fact-check before publishing** (all four articles so far came back FIX FIRST). One LinkedIn draft per article; one outreach batch; nothing sends without Stephen.
 

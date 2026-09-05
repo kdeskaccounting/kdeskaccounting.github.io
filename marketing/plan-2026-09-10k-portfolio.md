@@ -90,6 +90,8 @@ Each is defined by its **distribution channel first**. Every one is a different 
 
 ### Stream A — The RSU tax-gap product · **the biggest find in this session**
 
+> **Status 2026-09-05:** the free calculator is **live at `/rsu-tax-calculator/`** (decision 55) — fact-checked, tested, in the nav. Next: the paid vest-by-vest planner workbook; an RSU Short once the pipeline can render web pages.
+
 **Channel:** SEO (winnable here, unlike ASC 842) + LLM citation + YouTube. **Audience is orders of magnitude larger than "controllers who need lease templates."**
 
 Verified market structure — it is **barbelled with nothing in the middle**:
