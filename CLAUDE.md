@@ -4,8 +4,8 @@
 
 ## Read first, every session
 
-1. **`marketing/roadmap-2026-09.md`** — the living plan: milestone triggers M0–M3, the 12-week calendar, the ranking program, guardrails. Its status table is updated every Monday. This supersedes `OPERATIONS_PLAN.md` (May 2026, historical).
-2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #50.
+1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
+2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #54 (#52 repricing has an open veto window to 2026-09-06 22:00 PT).
 3. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers.
 4. The **Currently working on** section below.
 
@@ -39,11 +39,11 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a C
 
 ## Marketing infrastructure (queues, not auto-posters)
 
-- `marketing/roadmap-2026-09.md` — **the plan**. Milestone triggers, 12-week calendar, ranking program, guardrails.
+- `marketing/plan-2026-09-10k-portfolio.md` — **the plan** ($10k/mo, five-stream portfolio, kill criteria). `marketing/roadmap-2026-09.md` — the superseded $300/mo roadmap; still the reference for the weekly cadence and guardrails.
 - `marketing/linkedin-queue/` — 3-line post drafts, one per article. Stephen pastes; #17 and #18 are queued. Never posted autonomously.
 - `marketing/outreach/` — `targets.md` (15 researched link targets, Bill Hanna at Controller Academy first), dated batch files, and the Bill Hanna note. **Nothing sends until Stephen replies with the numbers.**
 - `marketing/reddit-templates/` — comment templates plus `00-account-setup.md` (Stephen creates and ages the account; no links for three weeks; never link in r/Accounting).
-- `marketing/video/` — walkthrough specs, Shorts specs (`short:` blocks), YouTube URLs, plus `stephen-clips/` scripts for his monthly 60–90 s clip.
+- `marketing/video/` — walkthrough specs, Shorts specs (legacy `short:` block + named `shorts:` variants per `scenes.yaml`, titles in `shorts.json`), YouTube URLs (`youtube.json` / `short.json` / `shorts.json`), plus `stephen-clips/` scripts for his monthly 60–90 s clip.
 - `marketing/seo-tracking/` — append-only JSONL: GSC, GA4, Gumroad, MailerLite sync, and `target-query-positions.jsonl` (24 buying queries, logged weekly).
 - `marketing/product-6-research.md` — what to build next and why.
 
@@ -120,27 +120,25 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 
 ## Currently working on (resume here next session)
 
-**State as of 2026-09-04.** The build phase is done; this is now a weekly operating cadence driven by `marketing/roadmap-2026-09.md`.
+**State as of 2026-09-04 (evening).** Strategy pivoted (decision 51): the target is **$10,000/month**; the **$4,246/month safety net** (essential burn minus VA + Kaley income — the number that makes quitting the W-2 pressure-free) is the first milestone, **never the goal — Stephen rejected a plan that lowered the target.** Plan: `marketing/plan-2026-09-10k-portfolio.md`. Diagnosis: one distribution channel (Google, 1.07 clicks/day at position 28.9); the fix is more channels, not better SEO. ASC 842 software is off the table (LeaseGuru is free / $999 self-serve; the private-company wave was 2022). Lead cluster is now **ASC 606 + equity comp**.
 
-**Where the funnel actually is:** 0 full-price sales lifetime ($16.99 from pay-what-you-want), ~9 free downloads/month, ~8 organic sessions/day, 16 active email subscribers, 24 tracked buying queries with 2 on page 1. The measured page-1 ceiling on today's query set is ~$350–530/month, so ranking alone does not reach $300; cluster expansion and the free→paid nurture supply the rest.
+**The five streams:** (A) RSU withholding-gap calculator → $99–149 workbook (tax mechanics only — no personalized sell/hold) · (B) faceless YouTube at volume · (C) affiliate/referral layer (FinQuery Referral Partner, Cradle) · (D) expert networks (GLG, AlphaSights, Guidepoint …) · (E) $1,997 ASC 606 commission kit. Gated on validation: a QuickBooks/Xero app. Ladder: $2k → **$4,246** → $10k; kill criteria per stream in the plan; portfolio review **2026-12-01** (if total revenue is still $0, stop building).
 
-**Weekly cadence (Claude owns unless noted):**
-- **Monday:** the launchd job at 08:15 appends GSC + GA4 + target-query rows (and Gumroad on Mondays). Post a 5-line scoreboard to the vault daily note, update the roadmap status table, and state which triggers are live.
-- **One fact-checked article/week** from the 12-week calendar. **Always run a second-agent GAAP fact-check before publishing** — all four articles so far came back FIX FIRST with real citation or judgment errors.
-- **One site/product improvement/week** from the always-on backlog.
-- **One 3-line LinkedIn draft per article** in `marketing/linkedin-queue/` (Stephen pastes; #17 and #18 are queued).
-- **One outreach batch (~5)** in `marketing/outreach/`; nothing sends until Stephen replies with the numbers.
+**Shipped 2026-09-04 evening (decisions 53–54):** YouTube Data API live (Stephen re-consented; APIs enabled); `scripts/video/youtube_publish.py` (no browser), `scripts/pull_youtube_snapshot.py` in the Monday job, `make_short.py --variant`; **12 new Shorts uploaded via the API — PRIVATE until flipped** (URLs in `marketing/video/*/shorts.json`); 17 tests (`uv run --with pytest pytest tests/`). First channel data: 206 views in ~48 h, 76% from YouTube search, Shorts ~4:1 over long-form.
 
-**Waiting on Stephen (nothing else is blocked):**
-1. DM Bill Hanna at Controller Academy — draft ready in `marketing/outreach/controller-academy-bill-hanna.md`. Warm contact (former customer at Forter), ~340k YouTube subscribers, no ASC 842 or commission content on his blog. Highest-value link target by a distance.
-2. Reply "send 2, 3, 4, 5" (or a subset) on `marketing/outreach/batch-2026-09-07.md`.
-3. Create the Reddit account per `marketing/reddit-templates/00-account-setup.md`, then 2 comment pastes/week.
-4. Record clip #1: script at `marketing/video/stephen-clips/01-deferred-rent-gap.md`.
-5. Free sign-ups whose copy is written: Eloquens, Featured.com, Source of Sources, Qwoted.
+**Waiting on Stephen:**
+1. **Flip the 12 new Shorts to public** — YouTube Studio → Content → Shorts → select the 12 private → Edit → Visibility → Public (~30 s). Repeat for API uploads until the audit passes.
+2. **Submit the YouTube API Services compliance audit** (Google Support → "YouTube API Services – Audit and Quota Extension Form", project `involuted-disk-489017-r3`) — permanently lifts the forced-private restriction on API uploads.
+3. **Repricing veto (decision 52):** ASC 842 $249 / bundle $599 / ASC 606 $249 executes after **2026-09-06 22:00 PT** unless he objects.
+4. Read IBM's outside-activities / conflict-of-interest policy → join 3–4 expert networks (Stream D).
+5. VA 90% → 100% claim (+$1,083/mo tax-free, cuts the safety net 25%; do not touch the PTSD rating).
+6. Reply on `marketing/outreach/batch-2026-09-07.md`; Reddit account; LinkedIn #17; free sign-ups (Eloquens, Featured.com, Source of Sources, Qwoted). *Done 2026-09-04: OAuth consent, the Bill Hanna DM, the customer-discovery emails.*
 
-**Next builds, in order (`marketing/product-6-research.md`, decision 50):** Balance Sheet Reconciliation Pack $49 first — the free close checklist is our most-downloaded file and has no paid upgrade, so this converts traffic we already have. Then the Deferred Revenue Schedule Workbook $79 once its cluster proves demand (free-file probe scheduled for the week of 09-14). Both gated on the M2 trigger.
+**Next builds (Claude, in order):** Stream A free RSU calculator (`content/rsu-calculator/` on the proven 485-line `layouts/calculator/single.html` pattern) then the paid workbook · affiliate application copy for Stephen to submit · nurture leaks (enroll the 14 downloaders excluded by decision 35, port the product-specific `workflows.json` copy to MailerLite, add a Gumroad "What's your role?" custom field) · ASC 606 kit assembly (technical memo template, PBC package) · Shorts at ~5/week + an RSU walkthrough · execute repricing when the veto closes · product #6 (decision 50) only if it serves a stream.
 
-**Recent decision context:** 37–41 Phase C (GSC pull, ASC 842 pillar, six Shorts, playlist, native Gumroad bundle) · 42 GSC/GA4 OAuth live · 43, 45 title alignment · 44, 46, 49 the deferred-rent and two commission articles · 47 roadmap adopted · 48 Free-vs-Full comparison tables · 50 product #6 research.
+**Weekly cadence (mechanics unchanged, new scoreboard):** Monday launchd pulls GSC + GA4 + target queries + Gumroad **+ YouTube**; the scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent GAAP fact-check before publishing** (all four articles so far came back FIX FIRST). One LinkedIn draft per article; one outreach batch; nothing sends without Stephen.
+
+**Recent decision context:** 42 GSC/GA4 OAuth · 44, 46, 49 the three commission/deferred-rent articles · 47 roadmap (superseded) · 48 Free-vs-Full · 50 product #6 research · **51 portfolio pivot · 52 repricing (veto open) · 53 YouTube API + publisher + weekly pull · 54 first Shorts batch (12, private).**
 
 ## Hard gates (never bypass)
 
@@ -173,9 +171,11 @@ This project owns the funnel KPIs that roll into `~/CommandCenter/02-COO-Report.
 | Target queries on page 1 (of 24) | `target-query-positions.jsonl` | 2 | 5 by 10-31, 12 by 12-31 |
 | Referring domains | manual / outreach log | ~0 | 10 by 2026-12-01 |
 | Full-price sales / month | Gumroad API | 0 | 1 → 3 → 4+ |
+| YouTube subs · 28d views · Shorts share of views | `youtube-snapshots.jsonl` | 0 · 75 · 87% | 1,000 subs + 4,000 watch-hours (monetization threshold) |
+| Total recurring revenue, all streams | plan ladder | $0 | $2k → **$4,246 safety net** → $10k |
 
 **What is vanity and must not be reported:** raw GA4 sessions and users (Direct is heavily bot: 2-second sessions, ~10 % engagement), GA4 revenue ($0 — Gumroad sits outside GA4), and raw key-event counts.
 
-**Action triggers** are the milestone ladder in `marketing/roadmap-2026-09.md`. The two that need Stephen: a **business-domain download** (draft him a personal note — this is the blog→CAE handoff) and any **T2 pricing test**. Kill/pivot review is 2026-12-01 if there are 0 sales despite ≥ 40 downloads and ≥ 12 organic/day.
+**Action triggers** are the stream kill criteria and the $2k → $4,246 → $10k ladder in `marketing/plan-2026-09-10k-portfolio.md`. The ones that need Stephen: a **business-domain download** (draft him a personal note), any **T2 pricing change**, and the **2026-12-01 portfolio review** (stop building if total revenue across all streams is still $0).
 
 **Known gaps:** the blog→CAE handoff is still manual; MailerLite automation open/click rates are read by hand monthly; Gumroad's UPGRADE20 usage has no API export.

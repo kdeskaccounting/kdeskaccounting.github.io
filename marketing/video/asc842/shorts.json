@@ -1,10 +1,18 @@
 {
  "liability": {
   "title": "ASC 842 Lease Liability Calculation in Excel: PV of Payments, ROU Asset, Monthly Interest #Shorts",
-  "description": "Lease liability = present value of the remaining payments; ROU asset = liability + initial direct costs − incentives; interest = beginning liability × IBR ÷ 12, every month. Straight from the KDesk ASC 842 workbook.\nFull walkthrough + workbook: https://kdeskaccounting.com/templates/asc842/\nFree version: https://kdeskaccounting.gumroad.com/l/gljxc"
+  "description": "Lease liability = present value of the remaining payments; ROU asset = liability + initial direct costs \u2212 incentives; interest = beginning liability \u00d7 IBR \u00f7 12, every month. Straight from the KDesk ASC 842 workbook.\nFull walkthrough + workbook: https://kdeskaccounting.com/templates/asc842/\nFree version: https://kdeskaccounting.gumroad.com/l/gljxc",
+  "url": "https://youtube.com/shorts/n1BlUeme0k4",
+  "video_id": "n1BlUeme0k4",
+  "uploaded": "2026-09-04 22:21",
+  "via": "data-api"
  },
  "rollforward": {
   "title": "ASC 842 Lease Rollforward + Maturity Analysis in Excel (Footnote-Ready) #Shorts",
-  "description": "Opening + additions − reductions = closing, split current vs. non-current, plus the maturity analysis table your footnote needs — produced by the KDesk ASC 842 workbook.\nFull walkthrough + workbook: https://kdeskaccounting.com/templates/asc842/\nFree version: https://kdeskaccounting.gumroad.com/l/gljxc"
+  "description": "Opening + additions \u2212 reductions = closing, split current vs. non-current, plus the maturity analysis table your footnote needs \u2014 produced by the KDesk ASC 842 workbook.\nFull walkthrough + workbook: https://kdeskaccounting.com/templates/asc842/\nFree version: https://kdeskaccounting.gumroad.com/l/gljxc",
+  "url": "https://youtube.com/shorts/nHSki3m6fRI",
+  "video_id": "nHSki3m6fRI",
+  "uploaded": "2026-09-04 22:21",
+  "via": "data-api"
  }
 }

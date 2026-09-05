@@ -1,5 +1,7 @@
 # KDesk roadmap: $0 → $300/month (adopted 2026-09-03)
 
+> **Superseded 2026-09-04** by [`marketing/plan-2026-09-10k-portfolio.md`](plan-2026-09-10k-portfolio.md) (decision 51). Target is **$10,000/mo** via a five-stream portfolio; prices move **up** ($249 / $599), not down; lead cluster is ASC 606 + equity comp, not ASC 842. The weekly cadence, fact-check rule and guardrails below still apply where they don't conflict; the $300/mo ladder and the '$97 → $69' M0 trigger do not.
+
 Living document. Claude updates the status table every Monday from the automated pulls; the rest changes only by decision (logged in `decisions/decisions.jsonl`). Source plan: repo decision 47.
 
 ## Status (updated Mondays)
