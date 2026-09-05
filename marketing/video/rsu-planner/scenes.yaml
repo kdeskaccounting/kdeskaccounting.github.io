@@ -117,3 +117,16 @@ scenes:
       The workbook is one hundred forty-nine dollars, one time, no subscription. The free calculator at
       kdeskaccounting.com slash rsu-tax-calculator shows this year's gap in thirty seconds. Educational
       estimates, not tax advice — work with a qualified tax professional for decisions.
+
+# Named Short variants (make_short.py --variant NAME → <slug>-short-NAME.mp4); titles live in shorts.json
+shorts:
+  quarterly:
+    hook: "Four dates decide whether your RSU tax bill comes with a penalty"
+    scenes: [7, 8]
+    cta: "Free calculator → kdeskaccounting.com/rsu-tax-calculator"
+    ranges: {7: "B6:J10", 8: "B4:I9"}
+  vests:
+    hook: "What payroll actually withholds on each RSU vest"
+    scenes: [3, 4]
+    cta: "Free calculator → kdeskaccounting.com/rsu-tax-calculator"
+    ranges: {3: "A4:J16", 4: "K4:S16"}
