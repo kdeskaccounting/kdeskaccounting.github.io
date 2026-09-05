@@ -130,7 +130,7 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 **Waiting on Stephen:**
 1. **Flip the 12 new Shorts to public** — YouTube Studio → Content → Shorts → select the 12 private → Edit → Visibility → Public (~30 s). Repeat for API uploads until the audit passes.
 2. **Submit the YouTube API Services compliance audit** (Google Support → "YouTube API Services – Audit and Quota Extension Form", project `involuted-disk-489017-r3`) — permanently lifts the forced-private restriction on API uploads.
-3. **Repricing veto (decision 52):** ASC 842 $249 / bundle $599 / ASC 606 $249 executes after **2026-09-06 22:00 PT** unless he objects.
+3. **Repricing veto (decision 52):** ASC 842 $249 / bundle $599 / ASC 606 $249 executes after **2026-09-06 22:00 PT** unless he objects. **RSU Tax Planner veto (decision 56):** the $149 listing goes live, the page flips `draft: false`, and he flips the walkthrough (`-rfZDelJQMY`) and Short (`nvp8_qt5-4g`) public after **2026-09-07 08:00 PT** unless he objects — task #6.
 4. Read IBM's outside-activities / conflict-of-interest policy → join 3–4 expert networks (Stream D).
 5. VA 90% → 100% claim (+$1,083/mo tax-free, cuts the safety net 25%; do not touch the PTSD rating).
 6. Reply on `marketing/outreach/batch-2026-09-07.md`; Reddit account; LinkedIn #17; free sign-ups (Eloquens, Featured.com, Source of Sources, Qwoted). *Done 2026-09-04: OAuth consent, the Bill Hanna DM, the customer-discovery emails.*
@@ -141,7 +141,7 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 
 **Weekly cadence (mechanics unchanged, new scoreboard):** Monday launchd pulls GSC + GA4 + target queries + Gumroad **+ YouTube**; the scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent GAAP fact-check before publishing** (all four articles so far came back FIX FIRST). One LinkedIn draft per article; one outreach batch; nothing sends without Stephen.
 
-**Recent decision context:** 42 GSC/GA4 OAuth · 44, 46, 49 the three commission/deferred-rent articles · 47 roadmap (superseded) · 48 Free-vs-Full · 50 product #6 research · **51 portfolio pivot · 52 repricing (veto open) · 53 YouTube API + publisher + weekly pull · 54 first Shorts batch (12, private).**
+**Recent decision context:** 42 GSC/GA4 OAuth · 44, 46, 49 the three commission/deferred-rent articles · 47 roadmap (superseded) · 48 Free-vs-Full · 50 product #6 research · **51 portfolio pivot · 52 repricing (veto open) · 53 YouTube API + publisher + weekly pull · 54 first Shorts batch (12, private) · 55 RSU calculator live · 56 RSU Tax Planner $149 staged (veto open).**
 
 ## Hard gates (never bypass)
 
