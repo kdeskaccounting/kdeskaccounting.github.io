@@ -14,7 +14,7 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
 3. Site: `price:` in `content/templates/asc842/index.md` and `bundle/index.md` (+ `asc606` if repriced); "$97" /
    "$249" / "$79" mentions in those pages' FAQ and compare copy, `layouts/calculator/single.html` CTAs, and the
    homepage; `hugo --minify`; commit + push; verify live.
-4. Records: append decision #58 "repricing executed" (don't edit #52's line); CLAUDE.md "Currently at" + Stephen's
+4. Records: append a decision "repricing executed" with the NEXT free id (don't edit #52's line; #58 is the kit fact-check outcome); CLAUDE.md "Currently at" + Stephen's
    list item 3; vault daily note line.
 
 ## 2 · RSU Tax Planner publish — decision 56 · window closes Mon 2026-09-07 08:00 PT (task #6)
@@ -24,7 +24,7 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
    https://kdeskaccounting.com/templates/rsu-planner/ until 200.
 3. Homepage / templates list pick-up if not automatic; on `/rsu-tax-calculator/` add the product link to the CTA
    (keep the email capture).
-4. Decision #59 executed; CLAUDE.md; vault. Ask Stephen to flip `-rfZDelJQMY`, `nvp8_qt5-4g`, `PUNOPlq4s08`,
+4. Append a decision (next free id) "RSU Tax Planner published"; CLAUDE.md; vault. Ask Stephen to flip `-rfZDelJQMY`, `nvp8_qt5-4g`, `PUNOPlq4s08`,
    `dMEWoIS5DXw` public in Studio.
 
 ## 3 · ASC 340-40 Commission Kit publish — decision 57 · window closes Mon 2026-09-07 11:00 PT (task #7)
@@ -33,11 +33,11 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
 (`uv run --with pytest --with python-docx pytest tests/test_asc606_kit.py -q`), dist rebuilt
 (`uv run --with python-docx python templates/asc606-kit/build_kit.py`) and the zip re-attached
 (`python3 gumroad_files.py JDJrWvrxH8JMkQ2fbBKS2g== templates/asc606-kit/dist/ASC340-40_Commission_Kit_v1.zip`).
-Arithmetic was independently recomputed 2026-09-05: 33/33 figures reproduce.
+**Gate status 2026-09-05 15:40 PT: satisfied** — the independent review returned FIX FIRST, every must-fix and nice-to-have was applied (Kit v1.1, decision 58), 23 tests green, zip re-attached. Arithmetic independently recomputed: 33/33 figures reproduce. Only the veto window remains.
 1. `python3 gumroad_publish.py publish --id JDJrWvrxH8JMkQ2fbBKS2g==` (https://kdeskaccounting.gumroad.com/l/tngbwg).
 2. `draft: false` in `content/templates/asc606-kit/index.md`; cross-link the kit from the three commission posts
    and from `content/templates/asc606/index.md`; hugo build; commit + push; verify live.
-3. Decision #60 executed; CLAUDE.md; vault; plan Stream E status. Ask Stephen to flip `U16RwefK0Pc` and
+3. Append a decision (next free id) "kit published"; CLAUDE.md; vault; plan Stream E status. Ask Stephen to flip `U16RwefK0Pc` and
    `72PLil0VmQw` public.
 If the gate does not hold, do not publish — report what's outstanding.
 
