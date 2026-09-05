@@ -7,7 +7,8 @@
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
 2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #57. Open veto windows: **#52 repricing → 2026-09-06 22:00 PT**, **#56 RSU Tax Planner $149 → 2026-09-07 08:00 PT**, **#57 ASC 340-40 Commission Kit $1,997 → 2026-09-07 11:00 PT (also gated on its fact-check)**.
 3. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers.
-4. The **Currently working on** section below.
+4. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
+5. The **Currently working on** section below.
 
 ## What this is
 
