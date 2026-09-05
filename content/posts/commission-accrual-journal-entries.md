@@ -1,7 +1,7 @@
 ---
 title: "Commission Accrual Journal Entries: Monthly Accrual, Payout, True-Up, and the ASC 340-40 Capitalization Step"
 date: 2026-09-03
-lastmod: 2026-09-03
+lastmod: 2026-09-05
 description: "How to book sales commission accruals at month end: when a commission is earned, the accrued commissions entry, the payout and true-up entries, clawbacks, payroll taxes, and how the accrual interacts with capitalizing commissions under ASC 340-40. One worked month with every entry, plus the Excel schedule that reconciles the liability and the deferred commission asset."
 summary: "Commission accrual and commission capitalization are two different entries that most closes tangle together. One worked month shows the accrual when the commission is earned, the capitalization of the same dollars as a contract cost asset, the payout, the true-up when a deal falls through, and the monthly amortization, with the Excel schedule that ties all of it to the general ledger."
 tags: ["commission accrual", "accrued commissions", "journal entries", "ASC 340-40", "ASC 606", "sales compensation", "month-end close", "Excel template"]
@@ -123,7 +123,7 @@ Asset plus cumulative expense equals cash paid: 12,334.91 + 1,121.34 = 13,456.25
 
 ## The Excel Schedule
 
-The accrual and the asset need two linked schedules and one reconciliation. The layout below is the one the [ASC 606 Commission Capitalization Workbook](/templates/asc606/) uses; a hand-built version needs the same columns.
+The accrual and the asset need two linked schedules and one reconciliation. The layout below extends the [ASC 606 Commission Capitalization Workbook](/templates/asc606/): the workbook carries the deal register, the amortization waterfall and the asset rollforward (beginning + capitalized − amortized = ending, with a cancelled or clawed-back deal entered as a negative row in the month it happens); the payroll-tax column, the accrued-commissions rollforward and the separate write-off line shown here live in a companion schedule kept alongside it. A hand-built version needs all of these columns.
 
 **Commission register** (one row per deal): deal ID, rep, customer, signature date, first-year ACV, rate, commission, payroll tax, capitalized amount (commission plus tax when the capitalize flag is on), capitalize flag (incremental and over one year), amortization months, status (active, cancelled, clawed back), month earned, month paid, month reversed. Keep a parallel rollforward for the payroll-tax component, or the schedule will not tie to the accrued payroll taxes account the entries above book.
 
