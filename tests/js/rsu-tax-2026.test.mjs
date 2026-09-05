@@ -6,7 +6,7 @@ import { TABLE_2026, SUPPLEMENTAL_FLAT, SUPPLEMENTAL_HIGH, SUPPLEMENTAL_HIGH_THR
 
 test("2026 standard deductions (Rev. Proc. 2025-32)", () => {
   assert.equal(TABLE_2026.year, 2026);
-  assert.deepEqual(TABLE_2026.standardDeduction, { single: 16100, mfj: 32200, hoh: 24150 });
+  assert.deepEqual(TABLE_2026.standardDeduction, { single: 16100, mfj: 32200 });   // HoH/MFS brackets not verified → not offered
 });
 
 test("2026 single brackets", () => {
@@ -24,10 +24,15 @@ test("2026 payroll constants (Publication 15, 2026)", () => {
   assert.equal(SUPPLEMENTAL_HIGH, 0.37);
   assert.equal(SUPPLEMENTAL_HIGH_THRESHOLD, 1000000);
   assert.equal(SS_WAGE_BASE_2026, 184500);
-  assert.deepEqual(TABLE_2026.addlMedicareThreshold, { single: 200000, mfj: 250000, hoh: 200000 });
+  assert.deepEqual(TABLE_2026.addlMedicareThreshold, { single: 200000, mfj: 250000 });
 });
 
 test("sanity: a single filer with $300k taxable owes the sum of the brackets", () => {
   // 1,240 + 4,560 + 12,166 + 23,058 + 17,424 + 35% × (300,000 − 256,225) = 15,321.25
   assert.equal(bracketTax(300000, TABLE_2026.brackets.single), 73769.25);
+});
+
+test("the table only declares filing statuses it fully supports (no half-populated keys)", () => {
+  assert.deepEqual(Object.keys(TABLE_2026.standardDeduction).sort(), Object.keys(TABLE_2026.brackets).sort());
+  assert.deepEqual(Object.keys(TABLE_2026.addlMedicareThreshold).sort(), Object.keys(TABLE_2026.brackets).sort());
 });

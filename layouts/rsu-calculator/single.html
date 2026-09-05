@@ -1,0 +1,252 @@
+{{ define "main" }}
+<style>
+  .calc-wrap { max-width: 980px; margin: 0 auto; padding: 18px 16px 72px; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .calc-hero { text-align: center; padding: 36px 24px 30px; margin-bottom: 22px; background: radial-gradient(circle at top left, var(--kd-ltblue), transparent 30%), linear-gradient(135deg, var(--kd-ltblue), var(--kd-yellow)); border: 1px solid var(--kd-border); border-radius: 24px; box-shadow: var(--kd-shadow-lg); }
+  .calc-hero h1 { font-size: clamp(1.7rem, 3.6vw, 2.5rem); margin-bottom: 10px; color: var(--kd-navy); letter-spacing: -0.03em; }
+  .calc-hero p { color: var(--kd-muted); font-size: 1.05rem; max-width: 680px; margin: 0 auto; line-height: 1.7; }
+  .calc-eyebrow { display: inline-block; margin-bottom: 14px; padding: 6px 12px; border-radius: 999px; background: var(--entry); color: var(--kd-navy); font-size: 0.76rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .calc-panel { background: var(--entry); border: 1px solid var(--kd-border); border-radius: 22px; padding: 28px; box-shadow: var(--kd-shadow-lg); }
+  .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; margin-bottom: 8px; }
+  @media (max-width: 560px) { .calc-grid { grid-template-columns: 1fr; } }
+  .calc-field label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--kd-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .calc-field label small { font-weight: 400; text-transform: none; letter-spacing: 0; }
+  .calc-field input, .calc-field select { width: 100%; padding: 12px 14px; border: 1px solid var(--kd-border); border-radius: 10px; font-size: 1rem; background: var(--kd-bg-light); color: var(--kd-text); box-sizing: border-box; }
+  .calc-field input:focus, .calc-field select:focus { outline: none; border-color: var(--kd-blue); box-shadow: 0 0 0 4px rgba(46,117,182,0.12); background: var(--entry); }
+  .calc-help { font-size: 0.8rem; color: var(--kd-muted); margin-top: 5px; line-height: 1.45; }
+  .calc-optional { margin: 6px 0 22px; padding: 16px 18px 4px; border: 1px dashed var(--kd-border); border-radius: 14px; }
+  .calc-optional summary { cursor: pointer; font-weight: 600; color: var(--kd-navy); margin-bottom: 14px; }
+  .calc-check { display: flex; align-items: center; gap: 10px; font-size: 0.92rem; color: var(--kd-text); }
+  .calc-check input { width: auto; }
+  .calc-btn { display: inline-block; background: var(--kd-blue); color: #fff; border: none; padding: 12px 32px; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; box-shadow: 0 10px 24px rgba(46,117,182,0.24); }
+  .calc-btn:hover { background: var(--kd-blue-dk); transform: translateY(-1px); }
+  .calc-err { color: #b3261e; font-size: 0.9rem; margin-top: 10px; min-height: 1.2em; }
+  .calc-results { margin-top: 28px; display: none; }
+  .calc-results.show { display: block; }
+  .kpi-head { border-radius: 16px; padding: 22px 24px; margin-bottom: 18px; border: 1px solid var(--kd-border); background: linear-gradient(180deg, var(--kd-ltblue), var(--entry)); }
+  .kpi-head .kpi-val { font-size: 2.2rem; font-weight: 800; color: var(--kd-navy); letter-spacing: -0.02em; }
+  .kpi-head .kpi-val.bad { color: #b3261e; }
+  .kpi-head .kpi-val.good { color: #1b7f4b; }
+  .kpi-head .kpi-lbl { color: var(--kd-muted); margin-top: 4px; font-size: 0.95rem; }
+  .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 26px; }
+  .kpi-card { background: linear-gradient(180deg, var(--kd-ltblue), var(--entry)); border: 1px solid var(--kd-border); border-top: 3px solid var(--kd-blue); border-radius: 12px; padding: 16px; }
+  .kpi-card .kpi-val { font-size: 1.45rem; font-weight: 700; color: var(--kd-navy); }
+  .kpi-card .kpi-lbl { font-size: 0.8rem; color: var(--kd-muted); margin-top: 4px; }
+  .calc-table-wrap { overflow-x: auto; margin-bottom: 8px; }
+  .calc-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .calc-table th { background: var(--kd-navy); color: var(--entry); padding: 10px 12px; text-align: right; font-weight: 600; white-space: nowrap; }
+  .calc-table th:first-child, .calc-table td:first-child { text-align: left; }
+  .calc-table td { padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--kd-border); color: var(--kd-text); }
+  .calc-table tr:nth-child(even) td { background: var(--kd-bg-light); }
+  .calc-table tfoot td { font-weight: 700; border-top: 2px solid var(--kd-blue); background: none; }
+  .calc-block { border: 1px solid var(--kd-border); border-left: 4px solid var(--kd-blue); border-radius: 0 12px 12px 0; padding: 16px 20px; margin-top: 18px; background: var(--kd-bg-light); }
+  .calc-block h3 { margin: 0 0 8px; font-size: 1.02rem; color: var(--kd-navy); }
+  .calc-block p, .calc-block li { color: var(--kd-text); font-size: 0.93rem; line-height: 1.6; margin: 0 0 6px; }
+  .note { font-size: 0.82rem; color: var(--kd-muted); margin-top: 10px; line-height: 1.5; }
+  .calc-cta { background: linear-gradient(135deg, var(--kd-ltblue), var(--kd-yellow)); border: 1px solid var(--kd-border); border-left: 4px solid var(--kd-blue); border-radius: 0 12px 12px 0; padding: 20px 24px; margin-top: 28px; }
+  .calc-cta strong { display: block; font-size: 1.05rem; margin-bottom: 6px; color: var(--kd-navy); }
+  .calc-cta p { color: var(--kd-muted); margin: 0 0 14px; font-size: 0.95rem; }
+  .calc-cta form { display: flex; gap: 10px; flex-wrap: wrap; }
+  .calc-cta input[type=email] { flex: 1 1 240px; padding: 11px 14px; border: 1px solid var(--kd-border); border-radius: 10px; font-size: 1rem; }
+  .calc-cta button { background: var(--kd-navy); color: var(--entry); border: none; padding: 11px 22px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .calc-prose { max-width: 760px; margin: 44px auto 0; line-height: 1.75; color: var(--kd-text); }
+  .calc-prose h2 { color: var(--kd-navy); margin-top: 36px; font-size: 1.45rem; letter-spacing: -0.01em; }
+  .calc-prose h3 { color: var(--kd-navy); margin-top: 26px; font-size: 1.12rem; }
+  .calc-prose table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 14px 0; }
+  .calc-prose th, .calc-prose td { padding: 8px 10px; border-bottom: 1px solid var(--kd-border); text-align: right; }
+  .calc-prose th:first-child, .calc-prose td:first-child { text-align: left; }
+  .calc-prose th { background: var(--kd-bg-light); color: var(--kd-navy); }
+  .calc-disclaimer { margin-top: 36px; padding: 16px 18px; border: 1px solid var(--kd-border); border-radius: 12px; background: var(--kd-bg-light); font-size: 0.86rem; color: var(--kd-muted); line-height: 1.6; }
+  @media (max-width: 700px) { .calc-panel { padding: 22px 18px; } .kpi-head .kpi-val { font-size: 1.8rem; } }
+</style>
+
+<div class="calc-wrap">
+  <div class="calc-hero">
+    <div class="calc-eyebrow">Free · Tax year 2026 · Runs in your browser</div>
+    <h1>RSU Tax Calculator: the April shortfall from 22% withholding</h1>
+    <p>Most employers withhold a flat 22% on vested RSUs. Stacked on top of a salary, the same dollars are usually taxed at 24%, 32%, 35% or 37%. This estimates the federal shortfall, the payment that would generally reach the federal safe harbor, and the state gap — nothing is sent anywhere.</p>
+  </div>
+
+  <div class="calc-panel">
+    <div class="calc-grid">
+      <div class="calc-field">
+        <label for="rsu-status">Filing status</label>
+        <select id="rsu-status"><option value="single">Single</option><option value="mfj">Married filing jointly</option></select>
+        <div class="calc-help">Head of household and married filing separately: not yet — their brackets and thresholds differ.</div>
+      </div>
+      <div class="calc-field">
+        <label for="rsu-salary">Base salary, this year ($)</label>
+        <input type="number" id="rsu-salary" placeholder="e.g. 180000" min="0" step="1000" inputmode="numeric">
+        <div class="calc-help">Regular wages before any RSU income. Include a cash bonus only if it is withheld like salary.</div>
+      </div>
+      <div class="calc-field">
+        <label for="rsu-income">RSU income vesting this year ($)</label>
+        <input type="number" id="rsu-income" placeholder="e.g. 120000" min="0" step="1000" inputmode="numeric">
+        <div class="calc-help">Shares vesting × share price on each vest date, for every vest expected in the calendar year. This is what lands on your W-2.</div>
+      </div>
+      <div class="calc-field">
+        <label for="rsu-pretax">Pre-tax deductions ($) <small>(optional)</small></label>
+        <input type="number" id="rsu-pretax" placeholder="e.g. 24500" min="0" step="500" inputmode="numeric" value="0">
+        <div class="calc-help">Traditional 401(k), HSA, pre-tax premiums. Reduces taxable wages.</div>
+      </div>
+    </div>
+
+    <details class="calc-optional">
+      <summary>State tax, itemizing, prior-year tax, supplemental wages over $1M (optional)</summary>
+      <div class="calc-grid">
+        <div class="calc-field">
+          <label for="rsu-state-supp">State supplemental withholding rate (%)</label>
+          <input type="number" id="rsu-state-supp" placeholder="e.g. 10.23" min="0" max="20" step="0.01" value="0">
+          <div class="calc-help">The flat rate your state applies to bonuses and stock compensation (California's stock-option and bonus rate is 10.23%). Leave 0 in a state with no income tax.</div>
+        </div>
+        <div class="calc-field">
+          <label for="rsu-state-marg">Your state marginal rate (%)</label>
+          <input type="number" id="rsu-state-marg" placeholder="e.g. 11.3" min="0" max="20" step="0.1" value="0">
+          <div class="calc-help">The state bracket your top dollars fall in. The state gap = (marginal − supplemental) × RSU income.</div>
+        </div>
+        <div class="calc-field">
+          <label for="rsu-itemized">Itemized deductions ($)</label>
+          <input type="number" id="rsu-itemized" placeholder="leave blank to use the standard deduction" min="0" step="500">
+          <div class="calc-help">Used only if higher than the 2026 standard deduction ($16,100 single / $32,200 joint).</div>
+        </div>
+        <div class="calc-field">
+          <label for="rsu-prior-tax">Prior-year total federal tax ($)</label>
+          <input type="number" id="rsu-prior-tax" placeholder="Form 1040, line 24" min="0" step="100">
+          <label class="calc-check" style="margin-top:8px"><input type="checkbox" id="rsu-prior-150k"> Prior-year AGI was over $150,000 (110% rule)</label>
+        </div>
+        <div class="calc-field">
+          <label for="rsu-supp-ytd">Supplemental wages already paid this year ($)</label>
+          <input type="number" id="rsu-supp-ytd" placeholder="bonuses + earlier vests" min="0" step="1000" value="0">
+          <div class="calc-help">Only matters near the $1,000,000 supplemental-wage line, where the rate becomes 37%.</div>
+        </div>
+      </div>
+    </details>
+
+    <button class="calc-btn" id="rsu-go" type="button">Estimate my shortfall</button>
+    <div class="calc-err" id="rsu-err" aria-live="polite"></div>
+
+    <div id="rsu-results" class="calc-results" aria-live="polite">
+      <div class="kpi-head"><div class="kpi-val" id="rsu-headline"></div><div class="kpi-lbl" id="rsu-headline-lbl"></div></div>
+      <div class="kpi-row" id="rsu-kpis"></div>
+      <div class="calc-table-wrap"><table class="calc-table" id="rsu-table"></table></div>
+      <p class="note" id="rsu-table-note"></p>
+      <div class="calc-block" id="rsu-sh"></div>
+      <div class="calc-block" id="rsu-med" style="display:none"></div>
+      <div class="calc-block" id="rsu-assume"></div>
+
+      <div class="calc-cta">
+        <strong>Want this for every grant and every year?</strong>
+        <p>A vest-by-vest planner is in the works: all your grants, quarterly estimated-payment amounts, W-4 additional-withholding equivalents, and the $1M cliff — in Excel. Leave your email and you'll get it the day it ships, plus the free KDesk Excel toolkit now.</p>
+        <form class="ml-block-form" action="https://assets.mailerlite.com/jsonp/2340006/forms/187224873250063752/subscribe" data-code="" method="post" target="_blank"
+              onsubmit="if(window.gtag){gtag('event','email_signup',{location:'rsu_calculator',page:location.pathname});}">
+          <input type="email" name="fields[email]" placeholder="you@company.com" autocomplete="email" required aria-label="Email address">
+          <input type="hidden" name="fields[interest]" value="rsu-planner">
+          <input type="hidden" name="ml-submit" value="1"><input type="hidden" name="anticsrf" value="true">
+          <button type="submit">Notify me</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="calc-prose">
+    <h2>Why the April bill happens</h2>
+    <p>When RSUs vest, the value of the shares is ordinary wage income. Your employer has to withhold on it, and because a vest is a "supplemental wage" rather than a regular paycheck, most payroll systems use the IRS optional flat rate: <strong>22%</strong>. That rate is the same whether you earn $90,000 or $400,000.</p>
+    <p>Your actual tax on those dollars is not flat. Vests stack on top of salary, so they are taxed in your top brackets — for tax year 2026, 24% starts at $105,700 of taxable income for a single filer, 32% at $201,775, 35% at $256,225 and 37% at $640,600 (joint thresholds are double, except that the 37% bracket starts at $768,700). The gap between the flat rate withheld and the marginal rate owed becomes the balance due in April.</p>
+    <h3>A worked example</h3>
+    <p>Single filer, $180,000 salary, $120,000 of RSUs vesting in 2026, standard deduction, no other income. Taxable income is $283,900. The RSU slice is taxed partly at 24%, mostly at 32%, and the top $27,675 at 35% — <strong>$36,200 of federal tax on $120,000 of vests, an effective 30.2%</strong>. Payroll withheld 22%, or $26,400. The shortfall is <strong>about $9,800</strong>, before state tax.</p>
+    <table>
+      <thead><tr><th>Bracket</th><th>RSU dollars taxed there</th><th>Tax</th></tr></thead>
+      <tbody><tr><td>24%</td><td>$37,875</td><td>$9,090</td></tr><tr><td>32%</td><td>$54,450</td><td>$17,424</td></tr><tr><td>35%</td><td>$27,675</td><td>$9,686</td></tr></tbody>
+      <tfoot><tr><td>Total on the RSU slice</td><td>$120,000</td><td>$36,200</td></tr><tr><td>Withheld at 22%</td><td></td><td>$26,400</td></tr><tr><td>Shortfall</td><td></td><td>$9,800</td></tr></tfoot>
+    </table>
+    <p>Change the salary to $120,000 and the vests to $30,000 and the same mechanics produce a shortfall of about $564 — the gap scales with how far the vests reach into the higher brackets, not just with their size.</p>
+
+    <h2>Sell-to-cover does not close the gap</h2>
+    <p>Sell-to-cover (or net settlement) sells enough shares at vest to fund the <em>withholding</em> — the 22% federal flat rate, Social Security up to the wage base, Medicare, and any state supplemental rate. It is a way to pay the withholding without writing a check. It does not change how much withholding is taken, and it does not compute your marginal rate. If your marginal rate is above 22%, the shortfall is identical whether you sold shares to cover or paid the withholding in cash.</p>
+
+    <h2>The $1 million line</h2>
+    <p>Once an employee's supplemental wages for the calendar year exceed $1,000,000, the excess must be withheld at 37% rather than 22% (IRS Publication 15). For most people this never applies; for a large vest late in the year it can flip the direction of the gap.</p>
+
+    <h2>Safe harbor: the rule that avoids the penalty</h2>
+    <p>Owing a balance in April is not itself a penalty. The underpayment penalty applies when withholding plus timely estimated payments fall short of a safe harbor. The federal rule: total payments of at least <strong>90% of the current year's tax</strong>, or <strong>100% of last year's tax</strong> (<strong>110%</strong> if last year's adjusted gross income was over $150,000), generally avoid the penalty. Withholding is treated as paid evenly through the year unless you show when it was actually withheld; estimated payments are due April 15, June 15, September 15 and January 15, and the penalty is computed like interest on each installment that fell short, so a large vest in December costs less in penalty than the same vest in January. There is also no penalty at all when the balance due after withholding is under $1,000. The calculator shows the 90% test, and the prior-year alternative if you enter last year's total tax.</p>
+    <p>Two mechanisms exist for getting there. Estimated payments (Form 1040-ES) are made directly. Alternatively, Form W-4 Step 4(c) lets an employee add a fixed extra amount of federal withholding to each regular paycheck, which has the administrative advantage of counting as withholding rather than as an estimated payment. Which is appropriate depends on facts this tool does not see.</p>
+
+    <h2>State tax</h2>
+    <p>States with an income tax usually have their own flat supplemental rate, and the same mechanics apply. California withholds a flat 10.23% on stock-option and bonus wages (6.6% on other supplemental wages) while its top bracket is 12.3% (plus the 1% mental health services tax over $1 million), so a California vest can carry a state gap on top of the federal one. Washington, Texas, Florida, Nevada and the other no-income-tax states have no state gap at all. Enter both rates in the optional section to include it.</p>
+
+    <h2>What this calculator does not do</h2>
+    <ul>
+      <li>It assumes your employer's regular withholding matches the tax on your salary alone, using the standard deduction (a standard Form W-4 with no extra withholding) — the default that creates the gap. If you add extra withholding, or your employer let you elect a higher rate on vests, the real shortfall is smaller by that amount. If you itemize, the itemized figure lowers the year's tax here but not the assumed withholding, unless your W-4 Step 4(b) already reflects it.</li>
+      <li>It ignores other income (interest, dividends, a spouse's wages if you enter only one salary), credits, the Alternative Minimum Tax, ESPP and stock options. It models RSUs only.</li>
+      <li>It shows Social Security and Additional Medicare as information; they are normally withheld correctly by payroll, with one exception — the 0.9% Additional Medicare Tax is withheld above $200,000 of wages regardless of filing status, while joint filers owe it above $250,000 combined. The Medicare figures treat the pre-tax field as 401(k)-type deferrals, which are still Medicare wages; Section 125 premiums and HSA contributions are not, so those slightly overstate it. The safe-harbor test here uses federal income tax only — Additional Medicare Tax and its withholding are left out and largely offset.</li>
+      <li>It does not tell you whether to sell, hold or cover. That is a decision about securities, and it depends on things a withholding calculator cannot know.</li>
+    </ul>
+
+    <div class="calc-disclaimer">
+      <strong>Educational estimate, not advice.</strong> This tool performs withholding arithmetic on compensation using tax-year-2026 federal parameters (IRS Rev. Proc. 2025-32 and Publication 15). It is not tax, legal or investment advice, it does not consider your full situation, and it may be wrong for yours. For decisions about estimated payments, withholding elections or your shares, work with a qualified tax professional. Nothing you enter leaves your browser. Built by KDesk Accounting.
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { computeGap, TABLE_2026 } from "/js/rsu-tax.js";
+const $ = (id) => document.getElementById(id);
+const num = (id) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : 0; };
+const money = (n) => (n < 0 ? "−" : "") + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const money2 = (n) => (n < 0 ? "−" : "") + "$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const pct = (r) => (r * 100).toFixed(1) + "%";
+const kpi = (v, l) => `<div class="kpi-card"><div class="kpi-val">${v}</div><div class="kpi-lbl">${l}</div></div>`;
+
+$("rsu-go").addEventListener("click", () => {
+  const err = $("rsu-err"); err.textContent = "";
+  const salary = num("rsu-salary"), rsu = num("rsu-income");
+  if (rsu <= 0) { err.textContent = "Enter the RSU income vesting this year."; return; }
+  if (salary < 0) { err.textContent = "Salary can't be negative."; return; }
+  const priorRaw = $("rsu-prior-tax").value;
+  const r = computeGap({
+    filingStatus: $("rsu-status").value, salary, rsuIncome: rsu, pretaxDeductions: num("rsu-pretax"), itemized: num("rsu-itemized"),
+    stateSupplementalRate: num("rsu-state-supp") / 100, stateMarginalRate: num("rsu-state-marg") / 100,
+    priorYearTax: priorRaw === "" ? null : num("rsu-prior-tax"), priorYearAgiOver150k: $("rsu-prior-150k").checked,
+    priorSupplementalYtd: num("rsu-supp-ytd"),
+  }, TABLE_2026);
+
+  const head = $("rsu-headline"), lbl = $("rsu-headline-lbl");
+  if (r.totalGap > 0) { head.className = "kpi-val bad"; head.textContent = money(r.totalGap); lbl.textContent = "estimated shortfall in April — federal" + (r.stateGap ? " + state" : "") + ", before credits and other income"; }
+  else { head.className = "kpi-val good"; head.textContent = money(-r.totalGap); lbl.textContent = "estimated over-withholding — on these inputs, the 22% flat rate exceeds the marginal rate on your vests"; }
+
+  $("rsu-kpis").innerHTML =
+    kpi(money(r.federalTaxOnRsu), "federal tax on your RSU income") +
+    kpi(pct(r.effectiveMarginalOnRsu), "effective rate on the RSU slice") +
+    kpi(money(r.rsuWithheld), r.rsuWithheld > rsu * 0.22 + 0.5 ? "withheld (22%, 37% over $1M)" : "withheld at the 22% flat rate") +
+    kpi(money(r.federalGap), "federal gap") +
+    (r.stateGap ? kpi(money(r.stateGap), "state gap") : "");
+
+  let rows = "<thead><tr><th>Bracket</th><th>RSU dollars taxed there</th><th>Tax</th></tr></thead><tbody>";
+  for (const b of r.bracketRows) rows += `<tr><td>${pct(b.rate).replace(".0%", "%")}</td><td>${money(b.amount)}</td><td>${money2(b.amount * b.rate)}</td></tr>`;
+  rows += `</tbody><tfoot><tr><td>Total on the RSU slice</td><td>${money(rsu)}</td><td>${money2(r.federalTaxOnRsu)}</td></tr>`;
+  rows += `<tr><td>Withheld by payroll</td><td></td><td>${money2(r.rsuWithheld)}</td></tr><tr><td>Federal shortfall</td><td></td><td>${money2(r.federalGap)}</td></tr></tfoot>`;
+  $("rsu-table").innerHTML = rows;
+  $("rsu-table-note").textContent = `Taxable income ${money(r.taxableIncome)} after a ${money(r.deduction)} deduction${num("rsu-pretax") ? " and pre-tax deductions" : ""}; total federal income tax ${money2(r.federalTaxTotal)}; salary withholding assumed to cover ${money2(r.salaryWithheldAssumed)}.`;
+
+  const sh = r.safeHarbor;
+  let shHtml = `<h3>Safe harbor</h3><p>90% of this year's estimated tax is <strong>${money2(sh.ninetyPct)}</strong>. Withholding on these inputs totals <strong>${money2(r.withheldTotal)}</strong>.`;
+  if (sh.priorYearPct != null) shHtml += ` The prior-year alternative (${$("rsu-prior-150k").checked ? "110%" : "100%"} of last year's tax) is <strong>${money2(sh.priorYearPct)}</strong>, so the lower target is <strong>${money2(sh.required)}</strong>.`;
+  shHtml += sh.requiredPayments > 0
+    ? ` The target exceeds the assumed withholding by about <strong>${money2(sh.requiredPayments)}</strong>.</p>`
+    : ` On these inputs, withholding alone would meet the test; the remaining ${money(Math.max(0, r.totalGap))} is a balance due in April.</p>`;
+  shHtml += `<p class="note">The penalty rules also depend on timing within the year and on income this tool doesn't see. Estimated payments are due April 15, June 15, September 15 and January 15.</p>`;
+  $("rsu-sh").innerHTML = shHtml;
+
+  const m = r.addlMedicare, med = $("rsu-med");
+  if (m.owed || m.withheld) {
+    med.style.display = "";
+    med.innerHTML = `<h3>Additional Medicare Tax (0.9%)</h3><p>Owed on wages over ${money(TABLE_2026.addlMedicareThreshold[r.filingStatus])}: <strong>${money2(m.owed)}</strong>. Payroll withholds it on wages over $200,000 regardless of filing status: <strong>${money2(m.withheld)}</strong>. ${m.gap > 0 ? `Shortfall <strong>${money2(m.gap)}</strong>.` : m.gap < 0 ? `Over-withheld by <strong>${money2(-m.gap)}</strong> — it comes back on the return.` : "No gap."}</p>`;
+  } else med.style.display = "none";
+
+  $("rsu-assume").innerHTML = `<h3>Assumptions</h3><ul><li>Tax year ${r.tableYear} federal brackets and standard deduction (IRS Rev. Proc. 2025-32); no credits, no other income, no AMT.</li><li>Regular-wage withholding covers the tax on salary alone using the standard deduction (standard W-4, no extra withholding, no elected higher rate on vests).</li><li>Safe-harbor test uses federal income tax only (Additional Medicare Tax and its withholding excluded); no $1,000 de minimis or installment-timing adjustments.</li><li>RSU income withheld at the 22% supplemental flat rate, 37% on supplemental wages over $1,000,000 (Publication 15, 2026).</li><li>State gap = (state marginal − state supplemental) × RSU income, using the rates you entered.</li></ul>`;
+
+  $("rsu-results").classList.add("show");
+  if (window.gtag) { try { gtag("event", "rsu_calc_run", { filing_status: r.filingStatus, gap_bucket: r.totalGap <= 0 ? "none" : r.totalGap < 2000 ? "lt2k" : r.totalGap < 10000 ? "2k-10k" : "gt10k" }); } catch (e) {} }
+  $("rsu-results").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+</script>
+{{ end }}

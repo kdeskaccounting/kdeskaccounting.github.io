@@ -149,6 +149,10 @@ document.addEventListener('DOMContentLoaded',function(){
     else if (a.pathname === '/calculator/' || /\/calculator\/?$/.test(a.pathname || '')) {
       fire('open_calculator', { source_page: page });
     }
+    // RSU calculator entry (Stream A lead magnet)
+    else if (/\/rsu-tax-calculator\/?$/.test(a.pathname || '')) {
+      fire('open_rsu_calculator', { source_page: page });
+    }
     // Internal template page click — buying-intent signal
     else if (/^\/templates\//.test(a.pathname || '')) {
       fire('view_template_page', { template_path: a.pathname, source_page: page });

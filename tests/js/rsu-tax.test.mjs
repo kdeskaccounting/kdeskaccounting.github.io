@@ -93,3 +93,12 @@ test("computeGap rounds money to cents", () => {
     assert.equal(r[k], Math.round(r[k] * 100) / 100, k);
   }
 });
+
+test("itemized deductions lower the year's tax but not the assumed salary withholding (a standard W-4 doesn't see them)", () => {
+  const r = T.computeGap({ filingStatus: "single", salary: 50000, rsuIncome: 20000, itemized: 15000 }, TABLE);
+  assert.equal(r.deduction, 15000);
+  assert.equal(r.taxableIncome, 55000);
+  assert.equal(r.federalTaxTotal, 10500);            // 1,000 + 8,000 + 30% × 5,000
+  assert.equal(r.salaryWithheldAssumed, 7000);       // still tax on 50k − 10k STANDARD deduction
+  assert.equal(r.federalGap, -900);                  // 10,500 − 7,000 − 4,400: over-withheld on these inputs
+});

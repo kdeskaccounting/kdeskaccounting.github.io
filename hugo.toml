@@ -69,6 +69,11 @@ theme = "PaperMod"
     url = "/calculator/"
     weight = 20
   [[menu.main]]
+    identifier = "rsu"
+    name = "RSU Tax"
+    url = "/rsu-tax-calculator/"
+    weight = 25
+  [[menu.main]]
     identifier = "blog"
     name = "Blog"
     url = "/posts/"

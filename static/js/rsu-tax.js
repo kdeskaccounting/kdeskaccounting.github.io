@@ -14,14 +14,14 @@ export const ADDL_MEDICARE_WITHHOLDING_START = 200_000; // employers withhold ab
 export const TABLE_2026 = {
   year: 2026,
   source: "IRS IR-2025-103 / Rev. Proc. 2025-32; IRS Publication 15 (2026)",
-  standardDeduction: { single: 16_100, mfj: 32_200, hoh: 24_150 },
+  standardDeduction: { single: 16_100, mfj: 32_200 },   // HoH / MFS omitted until their brackets are verified
   brackets: {
     single: [{ upTo: 12_400, rate: 0.10 }, { upTo: 50_400, rate: 0.12 }, { upTo: 105_700, rate: 0.22 }, { upTo: 201_775, rate: 0.24 },
              { upTo: 256_225, rate: 0.32 }, { upTo: 640_600, rate: 0.35 }, { upTo: Infinity, rate: 0.37 }],
     mfj:    [{ upTo: 24_800, rate: 0.10 }, { upTo: 100_800, rate: 0.12 }, { upTo: 211_400, rate: 0.22 }, { upTo: 403_550, rate: 0.24 },
              { upTo: 512_450, rate: 0.32 }, { upTo: 768_700, rate: 0.35 }, { upTo: Infinity, rate: 0.37 }],
   },
-  addlMedicareThreshold: { single: 200_000, mfj: 250_000, hoh: 200_000 },
+  addlMedicareThreshold: { single: 200_000, mfj: 250_000 },
 };
 
 const round2 = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
@@ -77,7 +77,7 @@ export function computeGap(inp, table) {
   const salary = inp.salary || 0, rsu = inp.rsuIncome || 0, wages = salary + rsu;
 
   const taxableIncome = Math.max(0, round2(wages - pretax - deduction));
-  const taxableSalaryOnly = Math.max(0, round2(salary - pretax - deduction));
+  const taxableSalaryOnly = Math.max(0, round2(salary - pretax - table.standardDeduction[fs])); // a standard W-4 withholds against the standard deduction, not an itemized figure
   const federalTaxTotal = bracketTax(taxableIncome, brackets);
   const salaryWithheldAssumed = bracketTax(taxableSalaryOnly, brackets);
   const rsuWithheld = supplementalWithholding(rsu, inp.priorSupplementalYtd || 0);
