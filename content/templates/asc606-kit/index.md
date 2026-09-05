@@ -13,10 +13,10 @@ price: 1997
 buy_url: "https://kdeskaccounting.gumroad.com/l/tngbwg"
 free_url: "/posts/how-to-capitalize-sales-commissions-asc-606/"
 free_label: "Read the free guide first"
-video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc606.mp4"
-video_poster: "/images/products/asc606-poster.png"
-video_caption: "The included workbook's 4-minute walkthrough — 50 deals, three amortization bases, JE Generator, rollforward, reconciliation."
-youtube_url: "https://youtu.be/eckfdjmyiwo"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc606-kit.mp4"
+video_poster: "/images/products/asc606-kit-poster.png"
+video_caption: "Watch the 5-minute implementation walkthrough — where each of the six documents plugs into the workbook."
+youtube_url: "https://youtu.be/U16RwefK0Pc"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "technical accounting memo", "audit", "controller"]
 compare:
   free_name: "Workbook alone"
