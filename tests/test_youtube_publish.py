@@ -55,3 +55,43 @@ def test_is_quota_error_recognises_youtube_quota_and_upload_limit_reasons():
     assert yp.is_quota_error(Exception('<HttpError 403 "quotaExceeded">')) is True
     assert yp.is_quota_error(Exception('reason: uploadLimitExceeded')) is True
     assert yp.is_quota_error(Exception("boom")) is False
+
+
+class _Exec:
+    def __init__(self, fn): self._fn = fn
+    def execute(self): return self._fn()
+
+
+class _FakeYT:
+    """Minimal stand-in for the Data API client: upload succeeds, thumbnails.set raises, playlist insert records."""
+    def __init__(self): self.playlist_calls = []
+    def videos(self):
+        yt = self
+        class V:
+            def insert(self, **kw):
+                class Req:
+                    def next_chunk(self): return None, {"id": "VID123"}
+                return Req()
+        return V()
+    def thumbnails(self):
+        class T:
+            def set(self, **kw): return _Exec(lambda: (_ for _ in ()).throw(Exception('<HttpError 403 "forbidden": custom video thumbnails')))
+        return T()
+    def playlistItems(self):
+        yt = self
+        class P:
+            def insert(self, **kw): yt.playlist_calls.append(kw["body"]["snippet"]["resourceId"]["videoId"]); return _Exec(lambda: {})
+        return P()
+
+
+def test_run_records_the_url_even_when_the_thumbnail_step_is_forbidden(tmp_path, monkeypatch, capsys):
+    mp4 = tmp_path / "x.mp4"; mp4.write_bytes(b"0" * 10); thumb = tmp_path / "t.png"; thumb.write_bytes(b"0")
+    rec_path = tmp_path / "youtube.json"; rec = {}
+    job = dict(mp4=mp4, body=yp.video_body("t", "d", []), thumb=thumb, playlist="PL1", rec_path=rec_path, rec=rec, key=None, url_fmt="https://youtu.be/{}")
+    monkeypatch.setattr(yp, "upload_video", lambda yt, m, b: "VID123")
+    fake = _FakeYT()
+    assert yp.run(job, dry_run=False, yt=fake) == 0
+    saved = __import__("json").loads(rec_path.read_text())
+    assert saved["url"] == "https://youtu.be/VID123"                 # the upload is never lost
+    assert fake.playlist_calls == ["VID123"]                         # later optional steps still run
+    assert "thumbnail" in capsys.readouterr().err.lower()            # and the failure is reported, not swallowed silently

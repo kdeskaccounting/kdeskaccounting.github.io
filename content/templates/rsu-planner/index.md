@@ -15,6 +15,7 @@ free_url: "/rsu-tax-calculator/"
 free_label: "Use the free calculator first"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/rsu-planner.mp4"
 video_poster: "/images/products/rsu-planner-poster.png"
+youtube_url: "https://youtu.be/-rfZDelJQMY"
 video_caption: "Watch the 4-minute walkthrough — every tab, the sample grants, no login."
 tags: ["RSU", "equity compensation", "tax planning", "withholding", "estimated taxes", "Excel template", "personal finance"]
 compare:

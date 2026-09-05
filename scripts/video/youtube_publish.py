@@ -157,7 +157,7 @@ def short_job(slug: str, variant: str | None, privacy: str):
                 thumb=None, playlist=None, rec_path=rec_path, rec=rec, store=store, key=key, url_fmt="https://youtube.com/shorts/{}")
 
 
-def run(job: dict, dry_run: bool) -> int:
+def run(job: dict, dry_run: bool, yt=None) -> int:
     if not needs_upload(job["rec"]):
         print(f"already published: {job['rec']['url']}"); return 0
     print(f"{job['mp4'].name}: {job['body']['snippet']['title']}  [{job['body']['status']['privacyStatus']}]")
@@ -165,15 +165,20 @@ def run(job: dict, dry_run: bool) -> int:
         print("  (dry-run) exists:", job["mp4"].exists(), "| thumb:", job["thumb"], "| playlist:", job["playlist"])
         print("  description:\n   ", job["body"]["snippet"]["description"].replace("\n", "\n    ")[:600]); return 0
     if not job["mp4"].exists(): raise SystemExit(f"missing {job['mp4']} — render it first")
-    yt = _service()
+    yt = yt or _service()
     try:
         vid = upload_video(yt, job["mp4"], job["body"])
-        if job["thumb"] and job["thumb"].exists(): set_thumbnail(yt, vid, job["thumb"])
-        if job["playlist"]: add_to_playlist(yt, vid, job["playlist"])
     except Exception as e:  # noqa: BLE001
         if is_quota_error(e):
             print("YouTube quota exhausted — re-run tomorrow; nothing recorded.", file=sys.stderr); return 3
         raise
+    # The upload is the irreversible step: from here on, optional steps may fail but the record must be written.
+    for step, fn in (("thumbnail", lambda: set_thumbnail(yt, vid, job["thumb"]) if job["thumb"] and job["thumb"].exists() else None),
+                     ("playlist", lambda: add_to_playlist(yt, vid, job["playlist"]) if job["playlist"] else None)):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001 — e.g. thumbnails.set 403 when the channel lacks API custom-thumbnail permission
+            print(f"  warning: {step} step failed ({str(e)[:160]}); video kept, continuing", file=sys.stderr)
     url = job["url_fmt"].format(vid)
     job["rec"].update({"url": url, "video_id": vid, "uploaded": time.strftime("%Y-%m-%d %H:%M"), "via": "data-api"})
     if job.get("store") is not None and job["key"] is not None: job["store"][job["key"]] = job["rec"]; payload = job["store"]
