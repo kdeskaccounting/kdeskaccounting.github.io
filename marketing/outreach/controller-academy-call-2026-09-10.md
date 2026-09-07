@@ -47,3 +47,38 @@ Be useful to his audience first; the rest follows. Nothing on the call is a sale
 - Whatever he picked, delivered in his format; reciprocal links added only after Stephen confirms (endorsement).
 - Affiliate: set up in Gumroad's Affiliates page (UI — Stephen or CDP) at the percentage agreed; send Bill his link.
 - Log the outcome in `marketing/outreach/targets.md` and a decision (T2: partner outreach) in `decisions/decisions.jsonl`.
+
+## Links for Bill (all private until Stephen flips them; the six product walkthroughs are public)
+
+- Walkthrough — asc606: https://youtu.be/eckfdjmyiwo
+- Walkthrough — asc606-kit: https://youtu.be/U16RwefK0Pc
+- Walkthrough — asc842: https://youtu.be/bfCMoceDcso
+- Walkthrough — fixed-assets: https://youtu.be/I-VAym73C-M
+- Walkthrough — month-end-close: https://youtu.be/F0wbwXL8-go
+- Walkthrough — rsu-planner: https://youtu.be/-rfZDelJQMY
+- Walkthrough — runway: https://youtu.be/G0CbfPkmgTY
+- Walkthrough — saas-metrics: https://youtu.be/janK2YXfmFU
+- Short — asc606: https://youtube.com/shorts/2N5v5RvGqtQ
+- Short — asc606-kit: https://youtube.com/shorts/72PLil0VmQw
+- Short — asc842: https://youtube.com/shorts/OrgGKSkFHoY
+- Short — fixed-assets: https://youtube.com/shorts/nDzAXFAQx9w
+- Short — month-end-close: https://youtube.com/shorts/_HGdzesXHbs
+- Short — rsu-planner: https://youtube.com/shorts/nvp8_qt5-4g
+- Short — runway: https://youtube.com/shorts/JqeRSLmf0-o
+- Short — saas-metrics: https://youtube.com/shorts/KlTjikY8Xyo
+- Short — asc606/amortization: https://youtube.com/shorts/5mno0wdFHXI
+- Short — asc606/je: https://youtube.com/shorts/nXAHQVXVEPI
+- Short — asc842/liability: https://youtube.com/shorts/n1BlUeme0k4
+- Short — asc842/rollforward: https://youtube.com/shorts/nHSki3m6fRI
+- Short — fixed-assets/depreciation: https://youtube.com/shorts/eLAI97eDlMA
+- Short — fixed-assets/je: https://youtube.com/shorts/GvGLLFTrzrs
+- Short — month-end-close/calendar: https://youtube.com/shorts/ZayKp_nZRHc
+- Short — month-end-close/je-tracker: https://youtube.com/shorts/8dU8mc-oO4Y
+- Short — rsu-planner/quarterly: https://youtube.com/shorts/PUNOPlq4s08
+- Short — rsu-planner/vests: https://youtube.com/shorts/dMEWoIS5DXw
+- Short — runway/burn: https://youtube.com/shorts/92ktdEbtVsg
+- Short — runway/growth: https://youtube.com/shorts/E65ygGXAzD4
+- Short — saas-metrics/mrr: https://youtube.com/shorts/xyZ8D2kyzoo
+- Short — saas-metrics/ltv-cac: https://youtube.com/shorts/rKZVOaUdWOI
+- Playlist: https://www.youtube.com/playlist?list=PLCJQ3Ua6AT-k
+- Guest post draft: `marketing/outreach/guest-post-controller-academy-asc842.md` (fact-check pending)
