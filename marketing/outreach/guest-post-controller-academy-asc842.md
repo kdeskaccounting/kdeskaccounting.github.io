@@ -28,7 +28,7 @@ Three elections matter for most private companies. The **short-term lease** elec
 
 **The good accountant's approach.** Start with the present value. Thirty-six payments of $5,000 discounted at 5.0 percent per year — 0.42 percent per month — is a lease liability of **$166,828.51**. With no prepaid rent, initial direct costs or incentives, the ROU asset at commencement is the same **$166,828.51**. The single monthly lease cost is total payments of $180,000.00 divided by 36, or **$5,000.00** — the payment itself, because there is nothing else to spread.
 
-Month one, then, has three moving parts. Interest accretion on the liability is $166,828.51 × 0.42% = **$695.12**. The payment of $5,000.00 covers that interest and reduces the liability by the remaining **$4,304.88**, leaving **$162,523.63**. And the ROU asset amortizes by the straight-line cost less the interest, **$4,304.88**, to **$162,523.63** — so the two balances decline at different speeds and converge to zero together at month 36.
+Month one, then, has three moving parts. Interest accretion on the liability is $166,828.51 × 0.42% = **$695.12**. The payment of $5,000.00 covers that interest and reduces the liability by the remaining **$4,304.88**, leaving **$162,523.63**. And the ROU asset amortizes by the straight-line cost less the interest, **$4,304.88**, to **$162,523.63** — in this simple case the same amount as the principal reduction, so the two balances decline in step and reach zero together at month 36. Add initial direct costs, prepaid rent or an incentive and they separate, which is where hand-built schedules usually go wrong.
 
 The month-one entry for an operating lease is:
 
@@ -49,7 +49,7 @@ The first three months of the schedule:
 | 2 | 162,523.63 | 677.18 | 4,322.82 | 158,200.81 | 162,523.63 | 4,322.82 | 158,200.81 |
 | 3 | 158,200.81 | 659.17 | 4,340.83 | 153,859.98 | 158,200.81 | 4,340.83 | 153,859.98 |
 
-Two properties of this table are worth checking on any lease schedule you inherit. First, interest falls every month because the liability falls; if a schedule shows level interest, it is amortizing the wrong way. Second, the ROU asset stays above the liability throughout an operating lease with no incentives — the gap is the cumulative difference between straight-line cost and interest — and that gap is what an auditor traces when the two balances are disclosed.
+Two properties of this table are worth checking on any lease schedule you inherit. First, interest falls every month because the liability falls; if a schedule shows level interest, it is amortizing the wrong way. Second, with level payments and no initial direct costs or incentives, the ROU asset equals the liability every month; a schedule where they differ under those facts has an error. Once initial direct costs, prepaid rent, incentives or uneven payments enter, the two balances diverge by a predictable amount — the cumulative difference between the straight-line cost and the interest accretion — and that difference is what an auditor traces when the two balances are disclosed.
 
 ## Tying Leases Into the Month-End Close
 
