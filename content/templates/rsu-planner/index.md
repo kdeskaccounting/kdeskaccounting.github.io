@@ -2,9 +2,9 @@
 title: "RSU Tax Planner — Excel Workbook for Vest-by-Vest Withholding Gaps"
 description: "Excel workbook that lays out every RSU grant and vest for 2026–2030: what payroll withholds at 22%, what the same dollars are taxed at your marginal rate, the gap, the federal safe-harbor test, and equal quarterly installments. Built on IRS Rev. Proc. 2025-32 and Publication 15 (2026). No macros, no subscription."
 summary: "Every grant, every vest, five years — the April shortfall before April, the safe-harbor amount, and what it would take per quarter or per paycheck to reach it. Tax mechanics on compensation, not advice."
-draft: true
+draft: false
 date: 2026-09-05
-lastmod: 2026-09-05
+lastmod: 2026-09-07
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true

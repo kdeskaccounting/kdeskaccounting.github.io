@@ -48,6 +48,8 @@
   .calc-cta form { display: flex; gap: 10px; flex-wrap: wrap; }
   .calc-cta input[type=email] { flex: 1 1 240px; padding: 11px 14px; border: 1px solid var(--kd-border); border-radius: 10px; font-size: 1rem; }
   .calc-cta button { background: var(--kd-navy); color: var(--entry); border: none; padding: 11px 22px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+  .calc-cta a.calc-cta-btn { display: inline-block; background: var(--kd-navy); color: var(--entry) !important; padding: 11px 24px; border-radius: 8px; font-weight: 600; text-decoration: none; }
+  .calc-cta a.calc-cta-btn:hover { background: var(--kd-blue-dk); }
   .calc-prose { max-width: 760px; margin: 44px auto 0; line-height: 1.75; color: var(--kd-text); }
   .calc-prose h2 { color: var(--kd-navy); margin-top: 36px; font-size: 1.45rem; letter-spacing: -0.01em; }
   .calc-prose h3 { color: var(--kd-navy); margin-top: 26px; font-size: 1.12rem; }
@@ -135,7 +137,9 @@
 
       <div class="calc-cta">
         <strong>Want this for every grant and every year?</strong>
-        <p>A vest-by-vest planner is in the works: all your grants, quarterly estimated-payment amounts, W-4 additional-withholding equivalents, and the $1M cliff — in Excel. Leave your email and you'll get it the day it ships, plus the free KDesk Excel toolkit now.</p>
+        <p>The <a href="/templates/rsu-planner/">RSU Tax Planner workbook</a> lays out every vest through 2030 — the gap on each vest, the safe-harbor amount as four equal quarterly installments with due dates, a per-paycheck W-4 equivalent, shares sold to cover, and the $1M line — in Excel, $149 one-time.</p>
+        <p><a class="calc-cta-btn" href="/templates/rsu-planner/">See the workbook ($149) →</a></p>
+        <p style="margin-top:16px">Or take the free KDesk Excel toolkit and occasional updates by email:</p>
         <form class="ml-block-form" action="https://assets.mailerlite.com/jsonp/2340006/forms/187224873250063752/subscribe" data-code="" method="post" target="_blank"
               onsubmit="if(window.gtag){gtag('event','email_signup',{location:'rsu_calculator',page:location.pathname});}">
           <input type="email" name="fields[email]" placeholder="you@company.com" autocomplete="email" required aria-label="Email address">
