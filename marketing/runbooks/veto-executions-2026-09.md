@@ -24,7 +24,8 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
    https://kdeskaccounting.com/templates/rsu-planner/ until 200.
 3. Homepage / templates list pick-up if not automatic; on `/rsu-tax-calculator/` add the product link to the CTA
    (keep the email capture).
-4. Append a decision (next free id) "RSU Tax Planner published"; CLAUDE.md; vault. Ask Stephen to flip `-rfZDelJQMY`, `nvp8_qt5-4g`, `PUNOPlq4s08`,
+4. Create review code **HANNAREVIEW** (100% off, max 3) on the planner: `POST /v2/products/n5PlxijnuNvTLMOLryYCUw==/offer_codes` with `name=HANNAREVIEW&amount_off=100&offer_type=percent&max_purchase_count=3` (Bill Hanna, Controller Academy — call Thu 09-10).
+5. Append a decision (next free id) "RSU Tax Planner published"; CLAUDE.md; vault. Ask Stephen to flip `-rfZDelJQMY`, `nvp8_qt5-4g`, `PUNOPlq4s08`,
    `dMEWoIS5DXw` public in Studio.
 
 ## 3 · ASC 340-40 Commission Kit publish — decision 57 · window closes Mon 2026-09-07 11:00 PT (task #7)
@@ -37,7 +38,8 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
 1. `python3 gumroad_publish.py publish --id JDJrWvrxH8JMkQ2fbBKS2g==` (https://kdeskaccounting.gumroad.com/l/tngbwg).
 2. `draft: false` in `content/templates/asc606-kit/index.md`; cross-link the kit from the three commission posts
    and from `content/templates/asc606/index.md`; hugo build; commit + push; verify live.
-3. Append a decision (next free id) "kit published"; CLAUDE.md; vault; plan Stream E status. Ask Stephen to flip `U16RwefK0Pc` and
+3. Create review code **HANNAREVIEW** on the kit the same way (`POST /v2/products/JDJrWvrxH8JMkQ2fbBKS2g==/offer_codes`, 100%, max 3) so Bill can open it before Thursday.
+4. Append a decision (next free id) "kit published"; CLAUDE.md; vault; plan Stream E status. Ask Stephen to flip `U16RwefK0Pc` and
    `72PLil0VmQw` public.
 If the gate does not hold, do not publish — report what's outstanding.
 
