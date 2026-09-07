@@ -2,7 +2,7 @@
 title: "ASC 842 Journal Entries: Operating and Finance Lease Examples"
 date: 2026-03-11
 product: asc842
-lastmod: 2026-09-03
+lastmod: 2026-09-06
 description: "ASC 842 journal entries with real numbers — initial recognition, monthly operating lease expense, monthly finance lease (depreciation + interest), and termination. Side-by-side debit/credit examples for both lease types."
 summary: "ASC 842 journal entries trip up even experienced controllers. The initial recognition entry, the monthly operating lease expense, and the finance lease split between depreciation and interest all follow specific patterns. Here's an ASC 842 lease accounting example with every entry you need, with real numbers."
 tags: ["ASC 842", "lease accounting", "journal entries", "operating lease", "finance lease", "Excel template", "GAAP"]
@@ -54,21 +54,21 @@ When a lease commences, you recognize the lease liability and ROU asset simultan
 
 > 5-year office lease. Monthly payment: $5,000. IBR: 5%. No IDC, no incentives.
 >
-> Lease liability = PV(5%/12, 60, $5,000) = **$265,391**
-> ROU asset = $265,391 + $0 − $0 = **$265,391**
+> Lease liability = PV(5%/12, 60, $5,000) = **$264,954**
+> ROU asset = $264,954 + $0 − $0 = **$264,954**
 
 ### Entry at commencement
 
 ```
-DR  Right-of-Use Asset          265,391
-    CR  Lease Liability                    265,391
+DR  Right-of-Use Asset          264,954
+    CR  Lease Liability                    264,954
 ```
 
 If there were prepaid rent or initial direct costs:
 
 ```
-DR  Right-of-Use Asset          267,391
-    CR  Lease Liability                    265,391
+DR  Right-of-Use Asset          266,954
+    CR  Lease Liability                    264,954
     CR  Cash / Prepaid Rent                 2,000
 ```
 
@@ -88,20 +88,20 @@ Let's work through Month 1 of our example:
 
 | Item | Month 1 |
 |------|---------|
-| Beginning liability | $265,391 |
-| Interest (5%/12 × $265,391) | $1,106 |
+| Beginning liability | $264,954 |
+| Interest (5%/12 × $264,954) | $1,104 |
 | Cash payment | $5,000 |
-| Principal reduction | $3,894 |
-| Ending liability | $261,497 |
+| Principal reduction | $3,896 |
+| Ending liability | $261,058 |
 | Lease expense (straight-line) | $5,000 |
-| ROU asset amortization (plug) | $3,894 |
+| ROU asset amortization (plug) | $3,896 |
 
 ### Month 1 entry
 
 ```
 DR  Lease Expense               5,000
-DR  Lease Liability             3,894
-    CR  Right-of-Use Asset                3,894
+DR  Lease Liability             3,896
+    CR  Right-of-Use Asset                3,896
     CR  Cash                              5,000
 ```
 
@@ -117,14 +117,14 @@ Using a similar example:
 
 > 4-year equipment lease. Monthly payment: $2,500. IBR: 7%.
 >
-> Lease liability = PV(7%/12, 48, $2,500) = **$106,785**
-> ROU asset = $106,785
+> Lease liability = PV(7%/12, 48, $2,500) = **$104,401**
+> ROU asset = $104,401
 
 ### Month 1 — interest accrual
 
 ```
-DR  Interest Expense            623        (106,785 × 7%/12)
-    CR  Lease Liability                        623
+DR  Interest Expense            609        (104,401 × 7%/12)
+    CR  Lease Liability                        609
 ```
 
 ### Month 1 — cash payment
@@ -137,13 +137,13 @@ DR  Lease Liability             2,500
 ### Month 1 — depreciation
 
 ```
-DR  Depreciation Expense        2,225      (106,785 ÷ 48 months)
-    CR  Accumulated Depreciation              2,225
+DR  Depreciation Expense        2,175      (104,401 ÷ 48 months)
+    CR  Accumulated Depreciation              2,175
 ```
 
-Total Month 1 expense: **$623 interest + $2,225 depreciation = $2,848**
+Total Month 1 expense: **$609 interest + $2,175 depreciation = $2,784**
 
-By Month 48, interest expense will be near $0 and total expense will be just $2,225 — noticeably lower than early periods.
+By Month 48, interest expense will be near $0 and total expense will be just $2,175 — noticeably lower than early periods.
 
 ---
 
