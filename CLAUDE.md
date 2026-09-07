@@ -5,14 +5,14 @@
 ## Read first, every session
 
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
-2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #60 (Bill Hanna partnership in progress — call Thu 2026-09-10 AM ET; guest post reviewed and ready). Open veto windows: **#52 repricing → 2026-09-06 22:00 PT**, **#56 RSU Tax Planner $149 → 2026-09-07 08:00 PT**, **#57 ASC 340-40 Commission Kit $1,997 → 2026-09-07 11:00 PT (fact-check gate satisfied — decision 58, Kit v1.1)**.
+2. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at #61 (Bill Hanna partnership in progress — call Thu 2026-09-10 AM ET; guest post reviewed and ready). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#56 RSU Tax Planner $149 → 2026-09-07 08:00 PT**, **#57 ASC 340-40 Commission Kit $1,997 → 2026-09-07 11:00 PT (fact-check gate satisfied — decision 58, Kit v1.1)**.
 3. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers.
 4. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
 5. The **Currently working on** section below.
 
 ## What this is
 
-A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a CPA (10+ years sales-comp accounting, ex-CaptivateIQ). The site sells Excel templates on Gumroad ($49-97 each) and feeds an email list that compounds into the bigger 2026 plays (CAE → tax practice).
+A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a CPA (10+ years sales-comp accounting, ex-CaptivateIQ). The site sells Excel templates on Gumroad ($49–249 each; $599 bundle; a $149 RSU planner and a $1,997 commission kit staged) and feeds an email list that compounds into the bigger 2026 plays (CAE → tax practice).
 
 ## Architecture
 
@@ -110,7 +110,7 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
 
 - **Gumroad API** (read + write): token in `~/kdeskaccountingtemplates/.env` (`GUMROAD_ACCESS_TOKEN`). CLI: `python3 ~/kdeskaccountingtemplates/gumroad_publish.py list|sales`. Weekly money-metric pull: `python3 scripts/pull_gumroad_snapshot.py` → `marketing/seo-tracking/gumroad-snapshots.jsonl`. Note: the paid ASC 606 product (`mwmwpe`) is live but does NOT appear in the API product list.
-- **Offer code `UPGRADE20`** (20% off, universal) exists on Gumroad since 2026-09-01 — for follow-up emails only, never on the site.
+- **Offer code `UPGRADE20`** (20% off, universal) exists on Gumroad since 2026-09-01 — for follow-up emails only, never on the site. **`HANNAREVIEW`** (100% off, 3 uses) on the ASC 842 workbook for Bill Hanna (2026-09-06). **The paid ASC 606 listing's API id is `SDeZYs5lEMPdbBtb9kL4lg==`** (hidden from `GET /products`; recovered from the editor page via CDP).
 - **Hugo** is installed via Homebrew (`hugo --minify` works here). Free/paid workbook sources + Gumroad copy live in `~/kdeskaccountingtemplates/templates/<slug>/`.
 - **MailerLite token / dist/ binaries / Cloudflare tokens are on the Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`) — unreachable 2026-09-01. Without it or a connected Chrome, MailerLite state can't be read or changed from here.
 - **GSC/GA4 API pull is LIVE (2026-09-02).** Refresh token at `~/kdesk-analytics/google-token.json` (read-only Search Console + Analytics scopes on the `gws` Desktop client; both APIs enabled on GCP project `involuted-disk-489017-r3`). Manual run: `KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py`. The Monday block of `~/kdesk-analytics/kdesk-daily.sh` (launchd `com.kdesk.daily-sync`, 08:15) runs it and commits both snapshot files. If the token is ever revoked: `uv run scripts/setup_seo_oauth.py ~/.config/gws/client_secret.json` (Stephen signs in as santiagokdesk).
@@ -131,7 +131,7 @@ uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant lia
 **Waiting on Stephen:**
 1. **Flip the 12 new Shorts to public** — YouTube Studio → Content → Shorts → select the 12 private → Edit → Visibility → Public (~30 s). Repeat for API uploads until the audit passes.
 2. **Submit the YouTube API Services compliance audit** (Google Support → "YouTube API Services – Audit and Quota Extension Form", project `involuted-disk-489017-r3`) — permanently lifts the forced-private restriction on API uploads.
-3. **Repricing veto (decision 52):** ASC 842 $249 / bundle $599 / ASC 606 $249 executes after **2026-09-06 22:00 PT** unless he objects. **RSU Tax Planner veto (decision 56):** the $149 listing goes live, the page flips `draft: false`, and he flips the walkthrough (`-rfZDelJQMY`) and Short (`nvp8_qt5-4g`) public after **2026-09-07 08:00 PT** unless he objects — task #6. **Commission Kit veto (decision 57):** the $1,997 listing goes live and its page publishes after **2026-09-07 11:00 PT** unless he objects — and only once the six documents' fact-check has passed (task #7).
+3. ~~Repricing veto (decision 52)~~ **Executed 2026-09-06 22:20 PT (decision 61): ASC 842 $249, ASC 606 $249, bundle $599 (list $693).** **RSU Tax Planner veto (decision 56):** the $149 listing goes live, the page flips `draft: false`, and he flips the walkthrough (`-rfZDelJQMY`) and Short (`nvp8_qt5-4g`) public after **2026-09-07 08:00 PT** unless he objects — task #6. **Commission Kit veto (decision 57):** the $1,997 listing goes live and its page publishes after **2026-09-07 11:00 PT** unless he objects — and only once the six documents' fact-check has passed (task #7).
 4. Read IBM's outside-activities / conflict-of-interest policy → join 3–4 expert networks (Stream D).
 5. VA 90% → 100% claim (+$1,083/mo tax-free, cuts the safety net 25%; do not touch the PTSD rating).
 6. Reply on `marketing/outreach/batch-2026-09-07.md`; Reddit account; LinkedIn #17; free sign-ups (Eloquens, Featured.com, Source of Sources, Qwoted). *Done 2026-09-04: OAuth consent, the Bill Hanna DM, the customer-discovery emails.*
