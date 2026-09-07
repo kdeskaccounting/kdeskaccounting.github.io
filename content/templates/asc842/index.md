@@ -3,7 +3,7 @@ title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-
 description: "ASC 842 implementation in Excel: a free 3-lease template and the full audit-ready workbook for controllers. Handles 20 leases, operating and finance lease types, monthly amortization schedules, journal entries, rollforward, and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, period journal entries, balance sheet rollforward, and disclosure table — in a single audit-ready Excel file."
 date: 2026-03-16
-lastmod: 2026-09-06
+lastmod: 2026-09-07
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/gljxc"
 free_label: "Try free 3-lease version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc842.mp4"
 video_poster: "/images/products/asc842-poster.png"
-youtube_url: "https://youtu.be/bfCMoceDcso"
+youtube_url: "https://youtu.be/5lkrHbWlb4c"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
 compare:
   free_name: "Free 3-lease version"
@@ -86,21 +86,21 @@ Confirms the schedule ties to $0 variance every period. If the workbook has an e
 
 To make the mechanics concrete: a 36-month office lease at $5,000/month, 6% IBR, no initial direct costs or incentives.
 
-**Opening lease liability** = PV(6%/12, 36, 5000) = **$164,029**
+**Opening lease liability** = PV(6%/12, 36, 5000) = **$164,355**
 
-**ROU asset** = $164,029 (equal to liability when no IDC or incentives)
+**ROU asset** = $164,355 (equal to liability when no IDC or incentives)
 
 **Month 1 amortization schedule:**
 
 | Column | Month 1 |
 |--------|---------|
-| Beginning liability | $164,029 |
-| Interest accrual (6%/12 × $164,029) | $820 |
+| Beginning liability | $164,355 |
+| Interest accrual (6%/12 × $164,355) | $822 |
 | Cash payment | $5,000 |
-| Principal reduction | $4,180 |
-| Ending liability | $159,849 |
-| ROU asset amortization | $4,180 |
-| Ending ROU balance | $159,849 |
+| Principal reduction | $4,178 |
+| Ending liability | $160,177 |
+| ROU asset amortization | $4,178 |
+| Ending ROU balance | $160,177 |
 
 **JE Generator output for Month 1:**
 
@@ -121,17 +121,17 @@ Finance leases use a different income statement treatment: straight-line depreci
 
 Example: $2,500/month equipment lease, 48 months, 7% IBR.
 
-- Opening liability = PV(7%/12, 48, 2500) = $106,785
-- Monthly depreciation = $106,785 ÷ 48 = $2,225
-- Month 1 interest = $106,785 × 7%/12 = $623
+- Opening liability = PV(7%/12, 48, 2500) = $104,401
+- Monthly depreciation = $104,401 ÷ 48 = $2,175
+- Month 1 interest = $104,401 × 7%/12 = $609
 
 Month 1 JE Generator output:
 
 ```
-DR  Depreciation Expense        2,225
-DR  Interest Expense              623
+DR  Depreciation Expense        2,175
+DR  Interest Expense              609
 DR  Lease Liability             1,877
-    CR  Accumulated Depreciation          2,225
+    CR  Accumulated Depreciation          2,175
     CR  Cash                              2,500
 ```
 

@@ -2,7 +2,7 @@
 title: "ASC 606 Commission Capitalization Excel Template"
 description: "Audit-ready Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
 summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single audit-ready Excel file."
-lastmod: 2026-09-06
+lastmod: 2026-09-07
 date: 2026-03-16
 author: "KDesk Accounting"
 ShowToc: true
@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
 free_label: "Try free 5-deal version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc606.mp4"
 video_poster: "/images/products/asc606-poster.png"
-youtube_url: "https://youtu.be/eckfdjmyiwo"
+youtube_url: "https://youtu.be/qS52iaaD51U"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
 compare:
   free_name: "Free 5-deal version"
@@ -44,7 +44,7 @@ faq:
     a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
-If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math correctly and produces audit-ready output. **$79, one-time purchase. No subscription. No macros.**
+If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math correctly and produces audit-ready output. **$249, one-time purchase. No subscription. No macros.**
 
 [Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
