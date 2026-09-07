@@ -1,10 +1,10 @@
 ---
 title: "Excel Accounting Templates for SaaS Startups"
 description: "Audit-ready Excel templates for controllers and finance managers at SaaS startups. ASC 606 commission capitalization, ASC 842 lease accounting, fixed asset rollforward, SaaS metrics, startup runway modeling, and a free month-end close workbook."
-summary: "Six purpose-built Excel workbooks for technical accounting and financial operations at SaaS startups — five paid, one free. No macros, no subscription, no software contract. Every paid workbook has a free reduced-capacity version you can try first."
+summary: "Seven purpose-built Excel workbooks for technical accounting, financial operations and equity-comp planning — six paid, one free. No macros, no subscription, no software contract. Every paid workbook has a free reduced-capacity version you can try first."
 ---
 
-Six Excel workbooks built for controllers and finance managers at Series A–C SaaS companies.
+Seven Excel workbooks built for controllers and finance managers at Series A–C SaaS companies — plus one for the equity-compensated employees they work with.
 
 Each template is purpose-built for one workflow. No generic spreadsheet packs. Every workbook ships formula-complete with sample data, protected formula cells, and yellow input zones — and every paid workbook has a free, reduced-capacity version so you can see the mechanics on your own data before you buy.
 
@@ -27,6 +27,9 @@ MRR, ARR, Net New MRR, gross churn, NRR, ARPA, CAC, LTV, LTV:CAC, CAC payback, a
 
 ### [Startup Runway Calculator](/templates/runway/) — $49
 12 to 48-month cash flow forecast with Base, Optimistic, and Pessimistic scenario modeling. KPI dashboard, five input tabs, annual growth rates, and frequency logic per line item. Free 12-month version available.
+
+### [RSU Tax Planner](/templates/rsu-planner/) — $149
+Every RSU grant and vest through 2030: the gap between the 22% payroll withholds and your marginal rate, per vest and per year; the federal safe-harbor amount as four equal quarterly installments; a per-paycheck W-4 equivalent; shares sold to cover; the $1M supplemental line. Personal-finance companion to the free [RSU tax calculator](/rsu-tax-calculator/).
 
 ### [Month-End Close Checklist + Tie-Out Workbook](/templates/month-end-close/) — Free
 42-task close calendar across 5 phases, 18 subledger-to-GL reconciliations with materiality flag, 50-row JE tracker, and a printable sign-off page. Pay what you want, $0 minimum.
