@@ -3,12 +3,12 @@ title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-
 description: "ASC 842 implementation in Excel: a free 3-lease template and the full audit-ready workbook for controllers. Handles 20 leases, operating and finance lease types, monthly amortization schedules, journal entries, rollforward, and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, period journal entries, balance sheet rollforward, and disclosure table — in a single audit-ready Excel file."
 date: 2026-03-16
-lastmod: 2026-09-03
+lastmod: 2026-09-06
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 1
-price: 97
+price: 249
 buy_url: "https://kdeskaccounting.gumroad.com/l/phxigq"
 free_url: "https://kdeskaccounting.gumroad.com/l/gljxc"
 free_label: "Try free 3-lease version"
@@ -44,7 +44,7 @@ faq:
 
 If you're implementing ASC 842 for the first time, or your current spreadsheet breaks every time a lease changes, this workbook handles the math correctly and produces audit-ready output. **$97, one-time purchase. No subscription. No macros.**
 
-[Get the Workbook ($97) →](https://kdeskaccounting.gumroad.com/l/phxigq)
+[Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/phxigq)
 
 ---
 
@@ -171,13 +171,13 @@ This workbook is designed for companies with up to 20 leases. If you have 50–1
 | Excel version | 2016, 365, Mac (no macros) |
 | File format | .xlsx |
 | Formula protection | Locked formula cells, unlocked input cells |
-| Price | $97 one-time |
+| Price | $249 one-time |
 
 ---
 
 ## Get the Workbook
 
-[**Get the Workbook ($97) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
+[**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 
 Not ready to buy? [Try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) — the Setup, Lease Data and Lease Schedule tabs for 3 leases and 36 months, so you can check the math on your own leases. The JE Generator, rollforward, disclosure table and reconciliation are in the full workbook (see the comparison above).
 

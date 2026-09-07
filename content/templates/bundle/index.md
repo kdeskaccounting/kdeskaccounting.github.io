@@ -1,14 +1,14 @@
 ---
 title: "SaaS Controller Bundle — All Five KDesk Excel Workbooks"
-description: "All five KDesk workbooks in one purchase for $249 instead of $371: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
-summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $249 instead of $371, plus the close checklist that ties them together."
+description: "All five KDesk workbooks in one purchase for $599 instead of $693: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
+summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $249 instead of $693, plus the close checklist that ties them together."
 date: 2026-09-01
-lastmod: 2026-09-02
+lastmod: 2026-09-06
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 0
-price: 249
+price: 599
 buy_url: "https://kdeskaccounting.gumroad.com/l/saas-controller-bundle"
 free_url: "/templates/"
 free_label: "See the individual workbooks"
@@ -17,7 +17,7 @@ faq:
   - q: "What exactly is in the bundle?"
     a: "Six .xlsx files: the ASC 842 Lease Accounting Workbook (20 leases), the ASC 606 Commission Accrual Workbook (50 deals), the Fixed Asset Rollforward Workbook (50 assets), the SaaS Metrics & ARR Dashboard (24 months), the Startup Runway Calculator (48 months), and the Month-End Close Checklist + Tie-Out Workbook. They are the same files sold individually."
   - q: "How much do I save?"
-    a: "Bought separately the five paid workbooks are $371 ($97 + $79 + $79 + $67 + $49). The bundle is $249, a $122 saving, one-time, no subscription."
+    a: "Bought separately the five paid workbooks are $693 ($249 + $249 + $79 + $67 + $49). The bundle is $249, a $94 saving, one-time, no subscription."
   - q: "Do I get updates?"
     a: "Yes. Gumroad keeps the download link live, and when a workbook gets a version update the new file is added to the same purchase."
   - q: "Can I buy one now and upgrade to the bundle later?"
@@ -26,9 +26,9 @@ faq:
     a: "Yes. Every workbook is pure Excel formulas — no VBA macros, no Windows-only features. Excel 2016, Excel 365, and Excel for Mac."
 ---
 
-If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — audit-ready, formula-complete, reconciled to $0 — in one purchase. **$249 one-time instead of $371. No subscription. No macros.**
+If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — audit-ready, formula-complete, reconciled to $0 — in one purchase. **$249 one-time instead of $693. No subscription. No macros.**
 
-[Get the Bundle ($249) →](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
+[Get the Bundle ($599) →](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
 
 ---
 
@@ -36,13 +36,13 @@ If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast 
 
 | Workbook | What it does | Sold alone |
 |---|---|---|
-| [ASC 842 Lease Accounting Workbook](/templates/asc842/) | 20 leases, operating and finance, 120-month schedules, JE Generator, rollforward, disclosure maturity table, reconciliation | $97 |
-| [ASC 606 Commission Accrual Workbook](/templates/asc606/) | 50 deals, three amortization bases, 60-month waterfall, JE Generator, deferred asset rollforward, reconciliation | $79 |
+| [ASC 842 Lease Accounting Workbook](/templates/asc842/) | 20 leases, operating and finance, 120-month schedules, JE Generator, rollforward, disclosure maturity table, reconciliation | $249 |
+| [ASC 606 Commission Accrual Workbook](/templates/asc606/) | 50 deals, three amortization bases, 60-month waterfall, JE Generator, deferred asset rollforward, reconciliation | $249 |
 | [Fixed Asset Rollforward Workbook](/templates/fixed-assets/) | 50 assets, four depreciation methods, JE presets for QuickBooks / NetSuite / Sage / Xero, disposal log, five-way reconciliation | $79 |
 | [SaaS Metrics & ARR Dashboard](/templates/saas-metrics/) | 24 months, MRR / ARR / NRR / churn / CAC / LTV / payback / Magic Number, board-ready dashboard | $67 |
 | [Startup Runway Calculator](/templates/runway/) | 12 to 48-month cash forecast, Base / Optimistic / Pessimistic scenarios, runway and cash-zero date | $49 |
 | [Month-End Close Checklist + Tie-Out](/templates/month-end-close/) | 42-task close calendar, 18 reconciliations, JE tracker, sign-off page — the scaffolding that holds the other five together | Free |
-| **Bundle** | | **$249** |
+| **Bundle** | | **$599** |
 
 Each product page has a four-minute walkthrough video of the workbook, tab by tab, on its real sample data.
 
@@ -72,7 +72,7 @@ The workbooks are standalone Excel files with capacity limits (20 leases, 50 dea
 
 ## Get the Bundle
 
-[**Get the Bundle ($249) →**](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
+[**Get the Bundle ($599) →**](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
 
 Not sure yet? Every workbook has a free version with the inputs and the schedule — start with the one that hurts most at your close: [ASC 842](/templates/asc842/), [ASC 606](/templates/asc606/), [fixed assets](/templates/fixed-assets/), [SaaS metrics](/templates/saas-metrics/), or [runway](/templates/runway/).
 
@@ -84,7 +84,7 @@ Not sure yet? Every workbook has a free version with the inputs and the schedule
 Six .xlsx files: the ASC 842 Lease Accounting Workbook (20 leases), the ASC 606 Commission Accrual Workbook (50 deals), the Fixed Asset Rollforward Workbook (50 assets), the SaaS Metrics & ARR Dashboard (24 months), the Startup Runway Calculator (48 months), and the Month-End Close Checklist + Tie-Out Workbook. They are the same files sold individually.
 
 **How much do I save?**
-Bought separately the five paid workbooks are $371. The bundle is $249, a $122 saving, one-time, no subscription.
+Bought separately the five paid workbooks are $693. The bundle is $599, a $94 saving, one-time, no subscription.
 
 **Do I get updates?**
 Yes. Gumroad keeps the download link live, and when a workbook gets a version update the new file is added to the same purchase.

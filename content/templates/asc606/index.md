@@ -2,13 +2,13 @@
 title: "ASC 606 Commission Capitalization Excel Template"
 description: "Audit-ready Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
 summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single audit-ready Excel file."
-lastmod: 2026-09-03
+lastmod: 2026-09-06
 date: 2026-03-16
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
 weight: 2
-price: 79
+price: 249
 buy_url: "https://kdeskaccounting.gumroad.com/l/mwmwpe"
 free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
 free_label: "Try free 5-deal version"
@@ -46,7 +46,7 @@ faq:
 
 If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math correctly and produces audit-ready output. **$79, one-time purchase. No subscription. No macros.**
 
-[Get the Workbook ($79) →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
+[Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
 ---
 
@@ -162,13 +162,13 @@ This workbook handles the commission cost side of ASC 606 (ASC 340-40) — the a
 | Excel version | 2016, 365, Mac (no macros) |
 | File format | .xlsx |
 | Formula protection | Locked formula cells, unlocked input cells |
-| Price | $79 one-time |
+| Price | $249 one-time |
 
 ---
 
 ## Get the Workbook
 
-[**Get the Workbook ($79) →**](https://kdeskaccounting.gumroad.com/l/mwmwpe)
+[**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
 Not ready to buy? [Try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) — the Setup, Commission Data and Amortization Schedule tabs for 5 deals and 24 months, so you can check the waterfall on your own deals. The JE Generator, rollforward, reconciliation and dashboard are in the full workbook (see the comparison above).
 

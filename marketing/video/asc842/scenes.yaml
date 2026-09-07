@@ -11,7 +11,7 @@ presets:
 cover:
   standard: ASC 842
   name: Lease Accounting Workbook
-  price: "$97"
+  price: "$249"
   free_label: Free 3-lease version
   checks:
     - 20 leases · 120-month schedules
@@ -32,7 +32,7 @@ scenes:
   - kind: title
     heading: ASC 842 Lease Accounting Workbook
     sub: 20 leases · operating and finance · 120-month schedules · journal entries · rollforward · reconciliation that ties to $0
-    badge: EXCEL TEMPLATE · $97 ONE-TIME
+    badge: EXCEL TEMPLATE · $249 ONE-TIME
     narration: >
       This is the KDesk ASC 842 lease accounting workbook. Twenty leases, operating and finance,
       one hundred twenty month amortization schedules, a journal entry generator, a balance sheet
@@ -159,7 +159,7 @@ scenes:
       - 20 leases, 120-month schedules, JE Generator, Rollforward, Reconciliation
       - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
       - Free 3-lease version with the inputs and schedule to test on your own leases
-    price: "$97 one-time"
+    price: "$249 one-time"
     url: kdeskaccounting.com/templates/asc842
     narration: >
       The full workbook is ninety-seven dollars, one time, no subscription. There is a free three-lease

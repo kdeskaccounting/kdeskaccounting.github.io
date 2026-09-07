@@ -10,7 +10,7 @@ presets:
 cover:
   standard: ASC 606
   name: Commission Accrual Workbook
-  price: "$79"
+  price: "$249"
   free_label: Free 5-deal version
   checks:
     - 50 deals · 60-month waterfall
@@ -31,7 +31,7 @@ scenes:
   - kind: title
     heading: ASC 606 Commission Accrual Workbook
     sub: 50 deals · three amortization bases · 60-month waterfall · journal entries · rollforward · reconciliation that ties to $0
-    badge: EXCEL TEMPLATE · $79 ONE-TIME
+    badge: EXCEL TEMPLATE · $249 ONE-TIME
     narration: >
       This is the KDesk ASC 606 commission accrual workbook. Fifty deals, three amortization bases —
       contract term, estimated benefit period, and the practical expedient — a sixty-month amortization
@@ -130,7 +130,7 @@ scenes:
       - 50 deals, 60-month waterfall, JE Generator, Rollforward, Reconciliation
       - Excel 2016+, Microsoft 365, and Excel for Mac — no macros
       - Free 5-deal version with the inputs and the schedule to test on your own deals
-    price: "$79 one-time"
+    price: "$249 one-time"
     url: kdeskaccounting.com/templates/asc606
     narration: >
       The full workbook is seventy-nine dollars, one time, no subscription. There is a free five-deal
