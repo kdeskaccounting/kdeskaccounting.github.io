@@ -17,7 +17,7 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
 4. Records: append a decision "repricing executed" with the NEXT free id (don't edit #52's line; #58 is the kit fact-check outcome); CLAUDE.md "Currently at" + Stephen's
    list item 3; vault daily note line.
 
-## 2 · RSU Tax Planner publish — decision 56 · window closes Mon 2026-09-07 08:00 PT (task #6)
+## 2 · RSU Tax Planner publish — decision 56 · **EXECUTED 2026-09-07 08:30 PT (decision 63)**
 1. `cd ~/kdeskaccountingtemplates && python3 gumroad_publish.py publish --id n5PlxijnuNvTLMOLryYCUw==`; confirm
    `published: true` at https://kdeskaccounting.gumroad.com/l/dqqhk.
 2. `draft: false` in `content/templates/rsu-planner/index.md`; hugo build; commit + push; curl
@@ -35,7 +35,7 @@ step is an approved decision whose 48-hour veto window has closed unless he obje
 (`uv run --with python-docx python templates/asc606-kit/build_kit.py`) and the zip re-attached
 (`python3 gumroad_files.py JDJrWvrxH8JMkQ2fbBKS2g== templates/asc606-kit/dist/ASC340-40_Commission_Kit_v1.zip`).
 **Gate status 2026-09-05 15:40 PT: satisfied** — the independent review returned FIX FIRST, every must-fix and nice-to-have was applied (Kit v1.1, decision 58), 23 tests green, zip re-attached. Arithmetic independently recomputed: 33/33 figures reproduce. Only the veto window remains.
-1. `python3 gumroad_publish.py publish --id JDJrWvrxH8JMkQ2fbBKS2g==` (https://kdeskaccounting.gumroad.com/l/tngbwg).
+1. Publish with the enable endpoint — `curl -X PUT https://api.gumroad.com/v2/products/JDJrWvrxH8JMkQ2fbBKS2g==/enable --data-urlencode access_token=$TOKEN` — then re-read `published` (the `gumroad_publish.py publish` command printed success without publishing on 2026-09-07). Listing: https://kdeskaccounting.gumroad.com/l/tngbwg.
 2. `draft: false` in `content/templates/asc606-kit/index.md`; cross-link the kit from the three commission posts
    and from `content/templates/asc606/index.md`; hugo build; commit + push; verify live.
 3. Create review code **HANNAREVIEW** on the kit the same way (`POST /v2/products/JDJrWvrxH8JMkQ2fbBKS2g==/offer_codes`, 100%, max 3) so Bill can open it before Thursday.
