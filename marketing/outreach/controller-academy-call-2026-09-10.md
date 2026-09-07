@@ -40,7 +40,7 @@ Be useful to his audience first; the rest follows. Nothing on the call is a sale
 
 ## Before the call (Claude, by Wednesday)
 - Send Bill full copies: review code **HANNAREVIEW** (100% off, 3 uses) on the ASC 842 workbook now; codes for the commission kit and RSU planner created when they go live Monday (runbook §2/§3) — or attach the files directly.
-- Draft the ASC 842 guest post so Stephen can say "it's already written" if Bill leans that way.
+- ~~Draft the ASC 842 guest post~~ **Done** — reviewed; Google Doc linked below. Stephen can say "it's already written" and share the Doc after the call.
 - Cut a Short from the ASC 842 walkthrough that Bill could reuse, and list the six walkthroughs with links.
 
 ## After the call (Claude, within a week)
@@ -81,4 +81,4 @@ Be useful to his audience first; the rest follows. Nothing on the call is a sale
 - Short — saas-metrics/mrr: https://youtube.com/shorts/xyZ8D2kyzoo
 - Short — saas-metrics/ltv-cac: https://youtube.com/shorts/rKZVOaUdWOI
 - Playlist: https://www.youtube.com/playlist?list=PLCJQ3Ua6AT-k
-- Guest post draft: `marketing/outreach/guest-post-controller-academy-asc842.md` (fact-check pending)
+- Guest post — **reviewed and ready to forward** (independent GAAP review applied, decision 60): Google Doc https://docs.google.com/document/d/1Ic85XE7MXBrH2XGtq9qUpwOBg0Qu3F2GKJGGsYceXcc/edit · source `marketing/outreach/guest-post-controller-academy-asc842.md`
