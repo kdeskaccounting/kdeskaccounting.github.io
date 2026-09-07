@@ -45,3 +45,9 @@ Excluded after checking: Controllers Council directory ($1,000 listing), vendor 
 | Date | Target | Action | Result |
 |---|---|---|---|
 | | | | |
+
+## Log
+
+| Date | Target | Action | Outcome |
+|---|---|---|---|
+| 2026-09-04 | Bill Hanna / Controller Academy | Stephen sent the personal DM (`controller-academy-bill-hanna.md`) | **2026-09-06: Bill replied yes** — "happy to explore this further… chat on Thursday if you are free, AM EST. What are the next steps?" Call Thu 2026-09-10 AM ET; brief in `controller-academy-call-2026-09-10.md`; review code HANNAREVIEW issued |
