@@ -39,7 +39,15 @@ Be useful to his audience first; the rest follows. Nothing on the call is a sale
 - Don't promise Bill's audience a discount before Stephen has set the percentage.
 
 ## Before the call (Claude, by Wednesday)
-- Send Bill full copies: review code **HANNAREVIEW** (100% off, 3 uses) on the ASC 842 workbook now; codes for the commission kit and RSU planner created when they go live Monday (runbook §2/§3) — or attach the files directly.
+- ~~Send Bill full copies~~ **Done 2026-09-10 (decision 64): HANNAREVIEW (100% off, 3 uses) now works on ALL EIGHT paid products.** Redeem URLs:
+  - Commission Kit $1,997 — https://kdeskaccounting.gumroad.com/l/tngbwg/HANNAREVIEW
+  - SaaS Controller Bundle $599 — https://kdeskaccounting.gumroad.com/l/saas-controller-bundle/HANNAREVIEW
+  - ASC 842 Workbook $249 — https://kdeskaccounting.gumroad.com/l/phxigq/HANNAREVIEW
+  - ASC 606 Workbook $249 — https://kdeskaccounting.gumroad.com/l/mwmwpe/HANNAREVIEW
+  - RSU Tax Planner $149 — https://kdeskaccounting.gumroad.com/l/dqqhk/HANNAREVIEW
+  - Fixed Asset Register $79 — https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward/HANNAREVIEW
+  - SaaS Metrics Dashboard $67 — https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard/HANNAREVIEW
+  - Startup Runway Calculator $49 — https://kdeskaccounting.gumroad.com/l/runway-calculator/HANNAREVIEW
 - ~~Draft the ASC 842 guest post~~ **Done** — reviewed; Google Doc linked below. Stephen can say "it's already written" and share the Doc after the call.
 - Cut a Short from the ASC 842 walkthrough that Bill could reuse, and list the six walkthroughs with links.
 
