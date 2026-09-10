@@ -1,7 +1,7 @@
 ---
 title: "Commission Accrual Journal Entries: Monthly Accrual, Payout, True-Up, and the ASC 340-40 Capitalization Step"
 date: 2026-09-03
-lastmod: 2026-09-05
+lastmod: 2026-09-10
 description: "How to book sales commission accruals at month end: when a commission is earned, the accrued commissions entry, the payout and true-up entries, clawbacks, payroll taxes, and how the accrual interacts with capitalizing commissions under ASC 340-40. One worked month with every entry, plus the Excel schedule that reconciles the liability and the deferred commission asset."
 summary: "Commission accrual and commission capitalization are two different entries that most closes tangle together. One worked month shows the accrual when the commission is earned, the capitalization of the same dollars as a contract cost asset, the payout, the true-up when a deal falls through, and the monthly amortization, with the Excel schedule that ties all of it to the general ledger."
 tags: ["commission accrual", "accrued commissions", "journal entries", "ASC 340-40", "ASC 606", "sales compensation", "month-end close", "Excel template"]
@@ -171,6 +171,8 @@ Keep the accrual and the asset in the same workbook. An auditor who can trace on
 - **Ignoring payroll taxes.** The accrual and the asset are both understated by the employer tax rate if the tax is left to payroll.
 - **Amortizing over the contract term when renewals are expected.** The period is the expected benefit period, which is longer than the initial term when renewals are likely and renewal commissions are not commensurate (ASC 340-40-35-1; ASU 2014-09 paragraph BC309; TRG Agenda Refs 23 and 57).
 - **No estimate documentation for attainment-based plans.** An accrual at an assumed attainment rate is an estimate; the auditor needs the rate, the basis, and the true-up history.
+
+**Need the documentation behind the workbook?** The [ASC 340-40 Commission Capitalization Kit](/templates/asc606-kit/) adds a technical accounting memo template with a completed example, an amortization-basis decision framework, a clawback and reversal policy, a month-end close procedure and an auditor PBC package — editable DOCX and PDF — plus the workbook itself.
 
 ## Related Guides
 

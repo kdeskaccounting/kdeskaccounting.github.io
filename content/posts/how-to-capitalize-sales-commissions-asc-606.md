@@ -1,7 +1,7 @@
 ---
 title: "How to Capitalize Sales Commissions Under ASC 606 (With Excel Walkthrough)"
 date: 2026-03-10
-lastmod: 2026-09-03
+lastmod: 2026-09-10
 description: "Step-by-step guide to capitalizing and amortizing sales commissions under ASC 606 and ASC 340-40. Which costs qualify, the practical expedient, contract term vs. expected customer life, journal entries, the rollforward your auditor asks for, and a practical Excel approach."
 summary: "Most finance teams know they need to capitalize commissions under ASC 606 — but deciding which costs qualify, picking the amortization period, and building the actual schedule is where things break down. Here's a step-by-step walkthrough with worked numbers, journal entries, and a practical Excel approach."
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "revenue recognition", "SaaS accounting", "Excel template"]
@@ -208,6 +208,8 @@ Employer payroll taxes and similar fringe costs incurred only because the commis
 
 **What is the journal entry to capitalize a sales commission?**
 Debit Deferred Commission Asset (or Capitalized Contract Costs) and credit Accrued Commissions or Cash for the commission earned. Each month, debit Commission Expense and credit Deferred Commission Asset for that period's amortization.
+
+**Need the documentation behind the workbook?** The [ASC 340-40 Commission Capitalization Kit](/templates/asc606-kit/) adds a technical accounting memo template with a completed example, an amortization-basis decision framework, a clawback and reversal policy, a month-end close procedure and an auditor PBC package — editable DOCX and PDF — plus the workbook itself.
 
 ## Related Guides
 

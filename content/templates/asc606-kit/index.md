@@ -2,9 +2,9 @@
 title: "ASC 340-40 Commission Capitalization Kit — Memo Template, Policies and Auditor PBC Package"
 description: "The documentation auditors ask for on capitalized sales commissions: a technical accounting memorandum template with a completed example, an amortization-basis decision framework, a clawback and reversal policy with journal entries, a month-end close procedure, and an auditor PBC package with a disclosure footnote template — plus the ASC 606 Commission Accrual Workbook. Editable DOCX and PDF."
 summary: "Everything a controller has to document to capitalize commissions under ASC 340-40 and survive the audit, built to match the workbook and drawn from the fact-checked guides on this site. Templates for the company's own analysis, not advice."
-draft: true
+draft: false
 date: 2026-09-05
-lastmod: 2026-09-05
+lastmod: 2026-09-10
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true

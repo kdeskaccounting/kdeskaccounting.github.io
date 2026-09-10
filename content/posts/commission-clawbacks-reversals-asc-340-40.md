@@ -1,7 +1,7 @@
 ---
 title: "Commission Clawbacks and Reversals Under ASC 340-40: Journal Entries When a Deal Churns, Downgrades, or Was Miscalculated"
 date: 2026-09-03
-lastmod: 2026-09-03
+lastmod: 2026-09-10
 description: "How to account for sales commission clawbacks and reversals under ASC 340-40: full and partial clawbacks after a customer cancels, the impairment test when a deal downgrades, what happens to the capitalized commission asset and the amortization already taken, payroll taxes you cannot recover, correcting a miscalculated commission, and the Excel register that keeps the rollforward tied."
 summary: "A clawback touches three balances at once: the rep's payout, the deferred commission asset, and the amortization already expensed. One paid-and-amortizing commission is worked through a full clawback, a 50% clawback, a no-clawback cancellation, and a downgrade, with the ASC 340-40 impairment test and the entries for each."
 tags: ["commission clawback", "ASC 340-40", "ASC 606", "sales commissions", "journal entries", "impairment", "deferred commissions", "Excel template"]
@@ -132,6 +132,8 @@ The check that catches a missed clawback: for every row with a status month, the
 - **Impairing on every downgrade.** Run the ASC 340-40-35-3 test; most downgrades pass it.
 - **Reversing an impairment when the customer returns.** Not permitted under 340-40-35-6; the new contract earns its own commission.
 - **Fixing a miscalculation in the original month.** It is an error, not an estimate; correct it in the period found when immaterial, and restate only when it is material.
+
+**Need the documentation behind the workbook?** The [ASC 340-40 Commission Capitalization Kit](/templates/asc606-kit/) adds a technical accounting memo template with a completed example, an amortization-basis decision framework, a clawback and reversal policy, a month-end close procedure and an auditor PBC package — editable DOCX and PDF — plus the workbook itself.
 
 ## Related Guides
 

@@ -2,7 +2,7 @@
 title: "ASC 606 Commission Capitalization Excel Template"
 description: "Audit-ready Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
 summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single audit-ready Excel file."
-lastmod: 2026-09-07
+lastmod: 2026-09-10
 date: 2026-03-16
 author: "KDesk Accounting"
 ShowToc: true
@@ -193,3 +193,7 @@ Contract Term amortizes over the stated contract length. Estimated Benefit Perio
 
 **What if I have more than 50 deals?**
 Email [hello@kdeskaccounting.com](mailto:hello@kdeskaccounting.com) — we can discuss a custom build.
+
+## Adopting ASC 340-40 for the first time, or facing an audit?
+
+The [ASC 340-40 Commission Capitalization Kit](/templates/asc606-kit/) ($1,997) bundles this workbook with the documentation auditors ask for: a technical accounting memo template and completed example, an amortization-basis decision framework, a clawback and reversal policy, a month-end close procedure, and an auditor PBC package with a disclosure footnote template.
