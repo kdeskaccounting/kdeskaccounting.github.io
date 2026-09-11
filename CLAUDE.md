@@ -71,6 +71,7 @@ All live on **this Mac** unless noted:
 
 - **Gumroad API** (read + write): `GUMROAD_ACCESS_TOKEN` in `~/kdeskaccountingtemplates/.env`
 - **MailerLite API**: token `kdesk-mac-sync` at `~/kdesk-analytics/mailerlite-token.txt`; groups "Gumroad free downloaders" `197511890037901111` and "KDesk Accounting subscribers" `187224670039180750`; custom field `interest` (id `1461362`) tags RSU-calculator sign-ups (`fields[interest]=rsu-planner`). Automation email bodies are not readable/editable via API (UI or CDP only). Creating campaigns via API was blocked by the auto-mode classifier — draft copy lives in `marketing/email-sequences/`, Stephen sends.
+- **Bing Webmaster**: API key at `~/kdesk-analytics/bing-api-key.txt` (Stephen creates it: bing.com/webmasters → import from GSC → Settings → API Access). **Bing is the bigger search channel** — 2026-09-11 GA4 14d: bing/organic 105 sessions / 50 engaged vs google/organic 29 / 13. GSC is Google-only, so the scoreboard was blind to it.
 - **GSC + GA4**: refresh token at `~/kdesk-analytics/google-token.json` (read-only scopes on the `gws` Desktop client; both APIs enabled on GCP project `involuted-disk-489017-r3`). GA4 property `528583005`.
 - **Google Workspace** (`gws` CLI): authed as `santiagokdesk@gmail.com` — NOT smichels1@gmail.com
 - **Search Console**: verified by DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
@@ -101,6 +102,7 @@ KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py   # GSC + GA4 + targ
 python3 scripts/pull_gumroad_snapshot.py                       # downloads, sales, revenue
 uv run scripts/model_page1_revenue.py                          # page-1 revenue ceiling (quarterly)
 uv run scripts/pull_youtube_snapshot.py --print                # YouTube views, Shorts vs long-form, 28d analytics (Mondays)
+uv run scripts/pull_bing_snapshot.py --print                    # Bing clicks/impressions/queries (Mondays; needs ~/kdesk-analytics/bing-api-key.txt)
 
 # Publish to YouTube via the Data API (lands PRIVATE until the GCP project passes YouTube's API audit — flip in Studio)
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --variant liability   # render a named Short
