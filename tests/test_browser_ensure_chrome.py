@@ -50,3 +50,29 @@ def test_ensure_raises_a_named_error_when_chrome_never_comes_up():
         ec.ensure(9222, probe_fn=lambda port, timeout=2.0: None, launch_fn=lambda: None,
                   sleep_fn=lambda s: None, tries=3)
     assert "9222" in str(e.value)
+
+
+# --- Global constraint: every script has a --dry-run that performs zero writes. For
+# ensure_chrome that means reporting the probe and the argv it WOULD launch, launching
+# nothing - so Stephen can see what it would do without a second Chrome appearing.
+
+def test_dry_run_lines_report_a_running_chrome_and_launch_nothing():
+    launched = []
+    lines = ec.dry_run_lines(9222, probe_fn=lambda port, timeout=2.0: {"Browser": "Chrome/141"},
+                             launch_fn=lambda: launched.append(1))
+    text = "\n".join(lines)
+    assert launched == []
+    assert "(dry-run)" in text
+    assert "Chrome/141" in text
+    assert "9222" in text
+
+
+def test_dry_run_lines_show_the_argv_it_would_launch_when_nothing_answers():
+    launched = []
+    lines = ec.dry_run_lines(9222, probe_fn=lambda port, timeout=2.0: None,
+                             launch_fn=lambda: launched.append(1))
+    text = "\n".join(lines)
+    assert launched == []
+    assert "--remote-debugging-port=9222" in text
+    assert "/Applications/Google Chrome.app" in text
+    assert "would launch" in text.lower()

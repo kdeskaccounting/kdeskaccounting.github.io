@@ -19,7 +19,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from browser import selectors_gumroad as S  # noqa: E402
 from browser import session  # noqa: E402
 
-W = json.load(open(REPO / "marketing/email-sequences/workflows.json"))
+W = json.loads((REPO / "marketing/email-sequences/workflows.json").read_text(encoding="utf-8"))
 PRODUCT = {
     "asc842": "ASC 842 Lease Accounting Workbook — Free Excel Template (3-Lease Version)",
     "asc606": "ASC 606 Commission Accrual Workbook — Free Excel Template (5-Deal Version)",
@@ -44,10 +44,6 @@ JS_STATE = (
     " return {subj:s.value.slice(0,16), delay:n.querySelector('input[placeholder=\"0\"]').value,"
     " body:(ce?ce.innerText:'').trim().length}})")
 DELAY_LABELS = ("0 days after purchase", "3 days after purchase", "7 days after purchase")
-
-
-def alerts(pg):
-    return [a for a in pg.locator(S.ALERTS).all_inner_texts() if a.strip()][:2]
 
 
 def block(pg, i):
@@ -100,6 +96,24 @@ def product_mismatches(live_names) -> list:
     return [(slug, name) for slug, name in sorted(PRODUCT.items()) if name not in live]
 
 
+def mismatch_lines(live_names, slugs=None) -> list:
+    """One named PRODUCT MISMATCH line per stale entry; empty when every name is live.
+
+    Runs before any write, not just under --check: a stale name makes build() retype the
+    product filter and click an option that no longer exists.
+    """
+    names = list(live_names)
+    if not names:
+        return [f"{'products':<13} PRODUCT MISMATCH could not read any listing name from "
+                f"{S.PRODUCTS_URL} — cannot verify PRODUCT, so refusing to guess"]
+    wanted = set(slugs) if slugs is not None else None
+    return [f"{slug:<13} PRODUCT MISMATCH {name!r} is not one of the {len(names)} live "
+            f"Gumroad listings — fix PRODUCT['{slug}'] and re-capture "
+            f"tests/fixtures/gumroad_product_names.json"
+            for slug, name in product_mismatches(names)
+            if wanted is None or slug in wanted]
+
+
 def live_product_names(pg) -> list:
     """Read-only: the listing names currently on the Gumroad products page."""
     goto(pg, S.PRODUCTS_URL)
@@ -120,10 +134,31 @@ def workflow_links_js() -> str:
             f".replace(/\\s+/g,' ').slice(0,120)}}))")
 
 
+class WorkflowScrapeError(RuntimeError):
+    """The workflow list rendered, but its names could not be read.
+
+    Distinct from "there are no workflows": rows exist, so the markup drifted. Treating
+    that as an empty list is what makes build() create duplicates of workflows that are
+    already there, so it is raised rather than returned.
+    """
+
+
+def check_scrape_sane(rows) -> list:
+    """Pass the scraped rows through, or refuse when every one of them is nameless."""
+    if rows and not any((r.get("text") or "").strip() for r in rows):
+        raise WorkflowScrapeError(
+            f"read {len(rows)} workflow rows from {S.WORKFLOWS_URL} but every one had an "
+            f"empty name, so no workflow can be recognised. Gumroad's list markup has "
+            f"changed: fix selectors_gumroad.WORKFLOW_ROW_CONTAINER. Refusing to continue, "
+            f"because treating this as 'no workflows exist' would create a duplicate of "
+            f"every workflow.")
+    return rows
+
+
 def existing(pg):
     goto(pg, S.WORKFLOWS_URL)
     pg.wait_for_selector(S.WORKFLOW_LINKS, state="attached", timeout=30_000)
-    return pg.evaluate(workflow_links_js())
+    return check_scrape_sane(pg.evaluate(workflow_links_js()))
 
 
 def body_contains_js() -> str:
@@ -159,34 +194,49 @@ def read_state(pg, slug):
     return {"wf": wf, "filter_ok": filter_ok,
             "emails": sum(1 for e in W[slug] if e["subject"] in text),
             "delays": sum(1 for d in DELAY_LABELS if d in text),
-            "published": pg.get_by_role("button", name="Unpublish").count() > 0}
+            "published": pg.get_by_role("button", name=S.WORKFLOW_UNPUBLISH_BUTTON).count() > 0}
 
 
 def save(pg):
     from playwright.sync_api import expect
-    with pg.expect_response(lambda r: "/workflows/" in r.url and r.request.method in ("PUT", "POST"),
-                            timeout=60_000):
+    with pg.expect_response(
+            lambda r: S.SAVE_RESPONSE_WORKFLOWS in r.url and r.request.method in ("PUT", "POST"),
+            timeout=60_000):
         pg.get_by_role("button", name=S.SAVE_BUTTON).first.click(force=True)
     expect(pg.locator(S.ALERTS).first).to_be_visible(timeout=30_000)
+
+
+def delete_all_emails(pg, expect_fn, tries: int = 8) -> int:
+    """Remove every existing email block; returns how many were deleted.
+
+    The count is captured BEFORE the click - re-reading it afterwards raced the deletion
+    and compared against a number that had already dropped, so the assertion passed
+    whatever happened. The confirmation button is waited for rather than probed with
+    count(), which reads 0 while the dialog is still animating in and silently skips it.
+    """
+    deleted = 0
+    for _ in range(tries):
+        buttons = pg.locator(S.WORKFLOW_DELETE_BUTTON)
+        before = buttons.count()
+        if not before:
+            break
+        buttons.first.click(force=True)
+        confirm = pg.get_by_role("button", name=S.WORKFLOW_CONFIRM_DELETE).first
+        expect_fn(confirm).to_be_visible(timeout=15_000)
+        confirm.click(force=True)
+        expect_fn(pg.locator(S.WORKFLOW_DELETE_BUTTON)).to_have_count(before - 1, timeout=15_000)
+        deleted += 1
+    return deleted
 
 
 def apply_emails(pg, slug):
     from playwright.sync_api import expect
     emails = W[slug]
-    for _ in range(8):
-        d = pg.locator("button[aria-label='Delete']")
-        if not d.count():
-            break
-        d.first.click(force=True)
-        confirm = pg.get_by_role("button", name="Yes, delete")
-        if confirm.count():
-            confirm.first.click(force=True)
-        expect(pg.locator("button[aria-label='Delete']")).to_have_count(
-            max(0, d.count() - 1), timeout=15_000)
-    pg.get_by_role("button", name="Create email").first.click(force=True)
+    delete_all_emails(pg, expect)
+    pg.get_by_role("button", name=S.WORKFLOW_CREATE_EMAIL).first.click(force=True)
     expect(pg.locator(S.WORKFLOW_SUBJECT_INPUT)).to_have_count(1, timeout=30_000)
     for n in (2, 3):
-        pg.get_by_role("button", name="Add email").last.click(force=True)
+        pg.get_by_role("button", name=S.WORKFLOW_ADD_EMAIL).last.click(force=True)
         expect(pg.locator(S.WORKFLOW_SUBJECT_INPUT)).to_have_count(n, timeout=30_000)
     for i, e in enumerate(emails):
         s, blk = block(pg, i)
@@ -194,7 +244,8 @@ def apply_emails(pg, slug):
         delay.click()
         pg.keyboard.press("Meta+A")
         pg.keyboard.type(str(e["delay_days"]))
-        blk.locator("select").first.select_option(label="days after purchase")
+        blk.locator(S.WORKFLOW_DELAY_UNIT_SELECT).first.select_option(
+            label=S.WORKFLOW_DELAY_UNIT_LABEL)
         s.click()
         s.fill(e["subject"])
         type_body(pg, blk, e["body"])
@@ -215,15 +266,23 @@ def build(pg, slug, check_only=False):
     if state["wf"] is None:
         goto(pg, S.WORKFLOW_NEW_URL)
         pg.locator(S.WORKFLOW_NAME_INPUT).fill(NAME[slug])
-        pg.get_by_text("Purchase", exact=True).first.click()
+        pg.get_by_text(S.WORKFLOW_TRIGGER_PURCHASE, exact=True).first.click()
         pg.locator(S.WORKFLOW_BOUGHT_INPUT).click()
         pg.keyboard.type(PRODUCT[slug][:24])
         option = pg.get_by_text(PRODUCT[slug], exact=True).first
         expect(option).to_be_visible(timeout=15_000)
         option.click()
         with pg.expect_navigation(timeout=60_000):
-            pg.get_by_role("button", name="Save and continue").first.click(force=True)
+            pg.get_by_role("button", name=S.WORKFLOW_SAVE_CONTINUE).first.click(force=True)
         state = read_state(pg, slug)
+    if state["wf"] is None:
+        # Never format a URL with "None". If the workflow still cannot be found after the
+        # create branch ran, something is wrong upstream and another pass would create yet
+        # another duplicate.
+        raise WorkflowScrapeError(
+            f"workflow for {slug!r} could not be found after creating it — refusing to "
+            f"continue, because re-running this branch would create another duplicate. "
+            f"Check {S.WORKFLOWS_URL} by hand.")
     if not state["filter_ok"]:
         goto(pg, S.WORKFLOW_EDIT_URL.format(wf=state["wf"]))
         pg.locator(S.WORKFLOW_BOUGHT_INPUT).click()
@@ -239,8 +298,8 @@ def build(pg, slug, check_only=False):
         state = read_state(pg, slug)
     if state["emails"] == 3 and state["delays"] == 3 and state["filter_ok"] and not state["published"]:
         goto(pg, S.WORKFLOW_EMAILS_URL.format(wf=state["wf"]))
-        with pg.expect_response(lambda r: "/workflows/" in r.url, timeout=60_000):
-            pg.get_by_role("button", name="Publish").first.click(force=True)
+        with pg.expect_response(lambda r: S.SAVE_RESPONSE_WORKFLOWS in r.url, timeout=60_000):
+            pg.get_by_role("button", name=S.WORKFLOW_PUBLISH_BUTTON).first.click(force=True)
         state = read_state(pg, slug)
     return (f"wf={str(state['wf'])[:10]} filter={state['filter_ok']} "
             f"emails={state['emails']}/3 delays={state['delays']}/3 published={state['published']}")
@@ -260,42 +319,35 @@ def main() -> int:
         return 0
     rc = 0
     with session.open_page("gumroad-workflows", repo=REPO) as pg:
-        if a.check:
-            # Name every stale PRODUCT entry instead of letting it show up as a silent
-            # filter=False. Read-only: the products page is only ever read.
-            names = live_product_names(pg)
-            if not names:
-                rc = 1
-                print(f"{'products':<13} PRODUCT MISMATCH could not read any listing name from "
-                      f"{S.PRODUCTS_URL} — cannot verify PRODUCT; treating as unverified",
-                      flush=True)
-            else:
-                for slug, name in product_mismatches(names):
-                    if a.only and slug != a.only:
-                        continue
-                    rc = 1
-                    print(f"{slug:<13} PRODUCT MISMATCH {name!r} is not one of the "
-                          f"{len(names)} live Gumroad listings — fix PRODUCT['{slug}'] and "
-                          f"re-capture tests/fixtures/gumroad_product_names.json", flush=True)
+        # Verify PRODUCT against the live listings before anything is written. Read-only.
+        stale = mismatch_lines(live_product_names(pg), slugs)
+        for line in stale:
+            print(line, flush=True)
+        if stale:
+            rc = 1
+            if not a.check:
+                # A write run stops here: build() would retype a filter from a name that
+                # no longer exists. --check keeps going, because reporting state is the
+                # whole point of the canary.
+                print("aborted before any write — fix PRODUCT, then re-run", flush=True)
+                return rc
         for slug in slugs:
             try:
-                print(f"{slug:<13} {build(pg, slug, check_only=a.check)}", flush=True)
+                print(session.redact_secrets(f"{slug:<13} {build(pg, slug, check_only=a.check)}"),
+                      flush=True)
             except Exception as exc:  # noqa: BLE001
                 rc = 1
-                shot = session.trace_dir(REPO, f"gumroad-workflows-fail-{slug}") / "fail.png"
-                pg.screenshot(path=str(shot))
-                card = session.write_queue_card(
-                    REPO, "manual", f"gumroad-workflow-{slug}",
-                    session.queue_card_markdown(
-                        kind="gumroad-workflow",
-                        title=f"Finish the free→paid workflow for {slug} in the Gumroad editor",
-                        why=f"gumroad_workflows_ui.py failed: {str(exc)[:300]}\n\nScreenshot: {shot}",
-                        steps=[f"Open {S.WORKFLOWS_URL}",
-                               f"Open or create '{NAME[slug]}' filtered to '{PRODUCT[slug]}'",
-                               "Paste the three emails from marketing/email-sequences/workflows.json "
-                               f"under key '{slug}' with delays 0/3/7 days after purchase",
-                               "Save changes, then Publish"]))
-                print(f"{slug:<13} FAILED {str(exc)[:120]} -> {card.relative_to(REPO)}", flush=True)
+                card = session.fail_card(
+                    REPO, pg, kind="gumroad-workflow", slug=slug, run_name="gumroad-workflows",
+                    title=f"Finish the free→paid workflow for {slug} in the Gumroad editor",
+                    detail=f"gumroad_workflows_ui.py failed: {str(exc)[:300]}",
+                    steps=[f"Open {S.WORKFLOWS_URL}",
+                           f"Open or create '{NAME[slug]}' filtered to '{PRODUCT[slug]}'",
+                           "Paste the three emails from marketing/email-sequences/workflows.json "
+                           f"under key '{slug}' with delays 0/3/7 days after purchase",
+                           "Save changes, then Publish"])
+                print(f"{slug:<13} FAILED {session.redact_secrets(str(exc))[:120]} "
+                      f"-> {card.relative_to(REPO)}", flush=True)
     return rc
 
 

@@ -50,6 +50,11 @@ def token() -> str:
     raise SystemExit(f"No GUMROAD_ACCESS_TOKEN in {env}")
 
 
+def cover_tile_count_js() -> str:
+    """JS predicate: has a new cover tile appeared since there were `n` of them?"""
+    return f"n => document.querySelectorAll({S.COVER_TABS!r}).length > n"
+
+
 def open_editor(pg, slug: str):
     from playwright.sync_api import expect
     pg.goto(S.EDITOR_URL.format(slug=slug), wait_until="domcontentloaded", timeout=60_000)
@@ -85,7 +90,7 @@ def do_listing(pg, slug: str, cover_png: str, thumb_png: str):
     before = tiles.count()
     if cov.locator(S.ADD_COVER_BUTTON).count():
         cov.locator(S.ADD_COVER_BUTTON).first.click()
-        dialog = pg.locator("[role=dialog]")
+        dialog = pg.locator(S.DIALOG)
         expect(dialog).to_be_visible(timeout=15_000)
         dialog.locator("button", has_text=S.UPLOAD_BUTTON_TEXT).first.click()
     else:
@@ -94,12 +99,10 @@ def do_listing(pg, slug: str, cover_png: str, thumb_png: str):
     handle = pg.evaluate_handle("() => window.__fi[window.__fi.length-1]")
     element = handle.as_element()
     if element is None:
-        raise RuntimeError("no file input created by 'Upload images or videos'")
+        raise RuntimeError(f"no file input created by {S.UPLOAD_BUTTON_TEXT!r}")
     element.set_input_files(str(IMG / cover_png))
     pg.keyboard.press("Escape")
-    pg.wait_for_function("n => document.querySelectorAll("
-                         "\"[role=tablist][aria-label='Product covers'] [role=tab]\").length > n",
-                         arg=before, timeout=120_000)
+    pg.wait_for_function(cover_tile_count_js(), arg=before, timeout=120_000)
     if before > 0:  # drag the new (last) tile to the front so it becomes the main cover
         src = tiles.nth(tiles.count() - 1).bounding_box()
         dst = tiles.nth(0).bounding_box()
@@ -116,22 +119,30 @@ def do_listing(pg, slug: str, cover_png: str, thumb_png: str):
     rm = th.locator(S.THUMBNAIL_REMOVE_BUTTON)
     if rm.count():
         rm.first.click()
-        expect(th.locator("img")).to_have_count(0, timeout=15_000)
+        expect(th.locator(S.IMAGE)).to_have_count(0, timeout=15_000)
     th.locator(S.FILE_INPUT).first.set_input_files(str(IMG / thumb_png))
-    expect(th.locator("img").first).to_be_visible(timeout=120_000)
-    with pg.expect_response(lambda r: "/products/" in r.url and r.request.method in ("PUT", "POST"),
-                            timeout=60_000):
+    expect(th.locator(S.IMAGE).first).to_be_visible(timeout=120_000)
+    with pg.expect_response(
+            lambda r: S.SAVE_RESPONSE_PRODUCTS in r.url and r.request.method in ("PUT", "POST"),
+            timeout=60_000):
         pg.get_by_role("button", name=S.SAVE_BUTTON).first.click()
     alerts = [a for a in pg.locator(S.ALERTS).all_inner_texts() if a.strip()][:2]
     return before, alerts
 
 
 def verify_via_api(pid: str | None) -> str:
+    """Confirm through the API that Gumroad kept the cover and thumbnail.
+
+    The token goes in an Authorization header, never a query param: a failed request
+    raises with the full URL in its message, and that message is written into a queue card
+    under marketing/publish-queue/ — which git tracks.
+    """
     if not pid:
         return ""
     import requests
     g = requests.get(f"https://api.gumroad.com/v2/products/{pid}",
-                     params={"access_token": token()}, timeout=30).json()["product"]
+                     headers={"Authorization": f"Bearer {token()}"},
+                     timeout=30).json()["product"]
     covers = g.get("covers") or []
     return (f"covers={len(covers)} "
             f"main_is_new={(covers[0].get('id') if covers else None) == g.get('main_cover_id')} "
@@ -156,26 +167,25 @@ def main() -> int:
         for slug, (cover, thumb, pid) in targets:
             try:
                 if a.check:
-                    print(f"{slug:<10} CHECK {check_listing(pg, slug)}", flush=True)
+                    print(session.redact_secrets(f"{slug:<10} CHECK {check_listing(pg, slug)}"), flush=True)
                     continue
                 before, alerts = do_listing(pg, slug, cover, thumb)
-                print(f"{slug:<10} ok  old_covers={before} {verify_via_api(pid)} {alerts}", flush=True)
+                print(session.redact_secrets(
+                    f"{slug:<10} ok  old_covers={before} {verify_via_api(pid)} {alerts}"),
+                    flush=True)
             except Exception as exc:  # noqa: BLE001 — one retry max, then a queue card (rule 7)
                 rc = 1
-                shot = session.trace_dir(REPO, f"gumroad-covers-fail-{slug}") / "fail.png"
-                pg.screenshot(path=str(shot))
-                card = session.write_queue_card(
-                    REPO, "manual", f"gumroad-cover-{slug}",
-                    session.queue_card_markdown(
-                        kind="gumroad-cover",
-                        title=f"Set the cover and thumbnail on Gumroad listing {slug} by hand",
-                        why=f"gumroad_covers_ui.py failed: {str(exc)[:300]}\n\nScreenshot: {shot}",
-                        steps=[f"Open {S.EDITOR_URL.format(slug=slug)}",
-                               f"Cover → Upload images or videos → static/images/products/{cover}",
-                               "Drag the new tile to the first position",
-                               f"Thumbnail → replace with static/images/products/{thumb}",
-                               "Save changes"]))
-                print(f"{slug:<10} FAILED {str(exc)[:120]} -> {card.relative_to(REPO)}", flush=True)
+                card = session.fail_card(
+                    REPO, pg, kind="gumroad-cover", slug=slug, run_name="gumroad-covers",
+                    title=f"Set the cover and thumbnail on Gumroad listing {slug} by hand",
+                    detail=f"gumroad_covers_ui.py failed: {str(exc)[:300]}",
+                    steps=[f"Open {S.EDITOR_URL.format(slug=slug)}",
+                           f"Cover → {S.UPLOAD_BUTTON_TEXT} → static/images/products/{cover}",
+                           "Drag the new tile to the first position",
+                           f"Thumbnail → replace with static/images/products/{thumb}",
+                           S.SAVE_BUTTON])
+                print(f"{slug:<10} FAILED {session.redact_secrets(str(exc))[:120]} "
+                      f"-> {card.relative_to(REPO)}", flush=True)
     return rc
 
 

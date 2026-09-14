@@ -26,6 +26,8 @@ THUMBNAIL_REMOVE_BUTTON = "button[aria-label='Remove']"
 FILE_INPUT = "input[type=file]"
 SAVE_BUTTON = "Save changes"
 ALERTS = "[role=alert],[role=status]"
+DIALOG = "[role=dialog]"
+IMAGE = "img"
 
 # Products list: one row per listing, the listing name on the first line of its first
 # non-empty cell (the rest of that cell is the public kdeskaccounting.gumroad.com/l/… URL).
@@ -44,6 +46,19 @@ WORKFLOW_DELAY_INPUT = "input[placeholder='0']"
 WORKFLOW_BODY_EDITOR = "[contenteditable=true]"
 WORKFLOW_BLOCK_FOR_SUBJECT = "xpath=ancestor::*[.//input[@placeholder='0']][1]"
 
-# The response whose completion means "Gumroad persisted it" (spec Chrome rule 6:
+# Accessible names of the workflow editor's buttons, and the delay-unit control.
+WORKFLOW_DELETE_BUTTON = "button[aria-label='Delete']"
+WORKFLOW_CONFIRM_DELETE = "Yes, delete"
+WORKFLOW_CREATE_EMAIL = "Create email"
+WORKFLOW_ADD_EMAIL = "Add email"
+WORKFLOW_PUBLISH_BUTTON = "Publish"
+WORKFLOW_UNPUBLISH_BUTTON = "Unpublish"
+WORKFLOW_SAVE_CONTINUE = "Save and continue"
+WORKFLOW_TRIGGER_PURCHASE = "Purchase"
+WORKFLOW_DELAY_UNIT_SELECT = "select"
+WORKFLOW_DELAY_UNIT_LABEL = "days after purchase"
+
+# The URL fragment whose response means "Gumroad persisted it" (spec Chrome rule 6:
 # wait_for_response instead of a sleep).
-SAVE_RESPONSE_FRAGMENTS = ("/products/", "/workflows/")
+SAVE_RESPONSE_PRODUCTS = "/products/"
+SAVE_RESPONSE_WORKFLOWS = "/workflows/"

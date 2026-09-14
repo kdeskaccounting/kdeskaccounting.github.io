@@ -113,3 +113,104 @@ def test_alternate_hosts_are_an_explicit_allow_list_not_a_suffix_match():
                          "https://evilgumroad.com/products")
     assert s.ok is False
     assert "unexpected" in s.detail
+
+
+# --- Secret redaction. gumroad_covers_ui.verify_via_api used to pass the Gumroad token as
+# a URL query param; urllib3 puts the full URL in its exception text, and that text is
+# written verbatim into marketing/publish-queue/manual/ - which is NOT gitignored. One
+# network blip would have committed the token. Nothing reaches a card, a ledger entry,
+# stdout or a screenshot path without going through redact_secrets() first.
+
+def test_redact_secrets_masks_an_access_token_query_param():
+    out = session.redact_secrets("HTTPSConnectionPool ... /v2/products/x?access_token=abc123 (Caused by ...)")
+    assert "access_token=***" in out
+    assert "abc123" not in out
+
+
+def test_redact_secrets_masks_a_known_literal_token_anywhere_in_the_text():
+    out = session.redact_secrets("boom: tok_live_SECRET99 leaked", secrets={"tok_live_SECRET99"})
+    assert "tok_live_SECRET99" not in out
+    assert "***" in out
+
+
+def test_redact_secrets_masks_a_bearer_header_echoed_into_an_error():
+    out = session.redact_secrets("headers={'Authorization': 'Bearer abc123'}")
+    assert "abc123" not in out
+
+
+def test_redact_secrets_masks_every_occurrence_and_is_idempotent():
+    once = session.redact_secrets("a?access_token=AAA&b access_token=BBB")
+    assert "AAA" not in once and "BBB" not in once
+    assert session.redact_secrets(once) == once
+
+
+def test_redact_secrets_handles_empty_and_non_string_input():
+    assert session.redact_secrets("") == ""
+    assert session.redact_secrets(None) == ""
+    assert "123" in session.redact_secrets(123) or session.redact_secrets(123) == "123"
+
+
+def test_redact_secrets_ignores_a_blank_or_tiny_secret_so_it_cannot_mask_everything():
+    # a short/empty secret would otherwise turn the whole message into asterisks
+    out = session.redact_secrets("a real message", secrets={"", " ", "a"})
+    assert out == "a real message"
+
+
+def test_known_secrets_never_raises_even_when_the_token_files_are_absent(tmp_path, monkeypatch):
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    session.known_secrets.cache_clear()
+    assert isinstance(session.known_secrets(), frozenset)
+    session.known_secrets.cache_clear()
+
+
+# --- fail_card(): the one place a driver failure becomes a queue card, so redaction has a
+# single choke point instead of being re-implemented in each driver.
+
+class _FakePage:
+    def __init__(self, fail=False):
+        self.shots = []
+        self._fail = fail
+
+    def screenshot(self, path):
+        if self._fail:
+            raise RuntimeError("page is closed")
+        self.shots.append(path)
+
+
+def test_fail_card_writes_a_card_with_the_secret_masked(tmp_path):
+    pg = _FakePage()
+    card = session.fail_card(
+        tmp_path, pg, kind="gumroad-cover", slug="phxigq",
+        title="Set the cover by hand",
+        detail="requests failed: /v2/products/x?access_token=abc123",
+        steps=["Open the editor"], run_name="gumroad-covers")
+    text = card.read_text()
+    assert "access_token=***" in text
+    assert "abc123" not in text
+    assert card.parent == tmp_path / "marketing" / "publish-queue" / "manual"
+    assert "gumroad-cover-phxigq" in card.name
+
+
+def test_fail_card_takes_a_screenshot_under_the_run_folder(tmp_path):
+    pg = _FakePage()
+    session.fail_card(tmp_path, pg, kind="gumroad-workflow", slug="asc842", title="t",
+                      detail="d", steps=["s"], run_name="gumroad-workflows")
+    assert len(pg.shots) == 1
+    assert pg.shots[0].endswith("fail.png")
+    assert "gumroad-workflows-fail-asc842" in pg.shots[0]
+
+
+def test_fail_card_still_writes_the_card_when_the_screenshot_fails(tmp_path):
+    card = session.fail_card(tmp_path, _FakePage(fail=True), kind="gumroad-workflow",
+                             slug="asc842", title="t", detail="the real failure",
+                             steps=["s"], run_name="gumroad-workflows")
+    assert "the real failure" in card.read_text()
+
+
+def test_fail_card_masks_a_secret_that_appears_in_the_steps_or_title(tmp_path):
+    card = session.fail_card(
+        tmp_path, _FakePage(), kind="gumroad-cover", slug="x",
+        title="token access_token=abc123", detail="d",
+        steps=["curl 'https://api.gumroad.com/v2/products?access_token=abc123'"],
+        run_name="gumroad-covers")
+    assert "abc123" not in card.read_text()

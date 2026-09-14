@@ -18,7 +18,9 @@ import argparse
 import contextlib
 import dataclasses
 import datetime as dt
+import functools
 import pathlib
+import re
 import sys
 import urllib.parse
 
@@ -73,6 +75,59 @@ def classify(site: str, requested_url: str, final_url: str) -> SiteStatus:
                       f"logged in — {cfg.anchor_description} reachable at {got.path}")
 
 
+# Anything shaped like a credential in a URL, a header, or a key=value pair. The exception
+# text from a failed HTTPS call embeds the full URL, so a token passed as a query param
+# would otherwise land verbatim in a queue card under marketing/publish-queue/ - which is
+# tracked by git. Redaction is belt-and-braces: drivers also send tokens as headers.
+_SECRET_PARAM = re.compile(
+    r"\b(access_token|refresh_token|api_key|apikey|password|secret|token|key)=[^&\s\"'<>]+",
+    re.IGNORECASE)
+_BEARER = re.compile(r"\b(Bearer)\s+[^\s\"'<>]+", re.IGNORECASE)
+# Shorter than this and a "secret" would mask ordinary words; a real token is far longer.
+_MIN_SECRET_LEN = 8
+
+
+@functools.lru_cache(maxsize=1)
+def known_secrets() -> frozenset:
+    """Literal token values on this machine, so they can be masked wherever they surface.
+
+    Never raises and never logs: a missing or unreadable token file just means there is
+    one less literal to mask. The values are held in memory only, never written anywhere.
+    """
+    found: set[str] = set()
+    home = pathlib.Path.home()
+    env_file = home / "kdeskaccountingtemplates" / ".env"
+    try:
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.lstrip().startswith("#"):
+                found.add(line.split("=", 1)[1].strip().strip("\"'"))
+    except OSError:
+        pass
+    for plain in (home / "kdesk-analytics" / "mailerlite-token.txt",
+                  home / "kdesk-analytics" / "bing-api-key.txt"):
+        try:
+            found.add(plain.read_text(encoding="utf-8").strip())
+        except OSError:
+            pass
+    return frozenset(s for s in found if len(s) >= _MIN_SECRET_LEN)
+
+
+def redact_secrets(text, *, secrets=None) -> str:
+    """Mask credentials in `text` before it reaches a card, the ledger, stdout or a path.
+
+    Masks known literal token values plus anything shaped like `access_token=…` or
+    `Bearer …`. Idempotent, so it is safe to apply more than once.
+    """
+    if text is None:
+        return ""
+    out = str(text)
+    for secret in (known_secrets() if secrets is None else secrets):
+        if secret and len(str(secret).strip()) >= _MIN_SECRET_LEN:
+            out = out.replace(str(secret), "***")
+    out = _SECRET_PARAM.sub(r"\1=***", out)
+    return _BEARER.sub(r"\1 ***", out)
+
+
 def queue_card_markdown(kind: str, title: str, why: str, steps: list[str],
                         now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now().astimezone()
@@ -108,6 +163,31 @@ def trace_dir(repo: pathlib.Path, name: str, now: dt.datetime | None = None) -> 
 
 def trace_path(directory: pathlib.Path) -> pathlib.Path:
     return pathlib.Path(directory) / "trace.zip"
+
+
+def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, detail: str,
+              steps: list[str], run_name: str) -> pathlib.Path:
+    """Turn a driver failure into a screenshot plus a paste-ready queue card.
+
+    The single place a failure becomes a card, so redaction happens once rather than being
+    re-implemented (and eventually forgotten) in each driver. Everything that lands on
+    disk - the card body, the title, the steps and the screenshot path - is masked first.
+    A screenshot failure never hides the original error.
+    """
+    safe_slug = redact_secrets(slug).replace("/", "-")
+    out = trace_dir(repo, f"{run_name}-fail-{safe_slug}")
+    shot = out / "fail.png"
+    try:
+        page.screenshot(path=str(shot))
+        where = f"\n\nScreenshot: {redact_secrets(shot)}"
+    except Exception:  # noqa: BLE001 - a dead page must not mask the real failure
+        where = "\n\n(no screenshot: the page was not available)"
+    body = queue_card_markdown(
+        kind=kind,
+        title=redact_secrets(title),
+        why=redact_secrets(detail) + where,
+        steps=[redact_secrets(s) for s in steps])
+    return write_queue_card(repo, "manual", f"{kind}-{safe_slug}", body)
 
 
 @contextlib.contextmanager
@@ -150,23 +230,25 @@ def check(site: str, *, page=None) -> SiteStatus:
 def report(status: SiteStatus, *, repo: pathlib.Path = REPO, dry_run: bool = False) -> int:
     """Print one line; on failure write a queue card and a ledger entry. Returns an exit code."""
     mark = "OK  " if status.ok else "FAIL"
-    print(f"{mark} {status.site:<11} {status.detail}")
+    print(f"{mark} {status.site:<11} {redact_secrets(status.detail)}")
     if status.ok or dry_run:
         return 0 if status.ok else 1
     cfg = SITES[status.site]
     body = queue_card_markdown(
         kind="login",
         title=f"Log in to {status.site} in the debug Chrome",
-        why=(f"`python3 scripts/browser/session.py --check {status.site}` requested "
-             f"{status.requested_url} and landed on {status.final_url}."),
+        why=redact_secrets(
+            f"`python3 scripts/browser/session.py --check {status.site}` requested "
+            f"{status.requested_url} and landed on {status.final_url}."),
         steps=["Run: python3 scripts/browser/ensure_chrome.py",
                f"In the window that opens, sign in to {status.site} "
                f"({cfg.dashboard_url}) — the profile keeps the session afterwards",
                f"Re-run: python3 scripts/browser/session.py --check {status.site}"])
     card = write_queue_card(repo, "manual", f"login-{status.site}", body)
     ledger.append(
-        action=(f"Browser preflight failed for {status.site}: {status.detail}. "
-                f"Wrote the manual queue card {card.relative_to(repo)}; no driver ran."),
+        action=redact_secrets(
+            f"Browser preflight failed for {status.site}: {status.detail}. "
+            f"Wrote the manual queue card {card.relative_to(repo)}; no driver ran."),
         tier=0, status="executed",
         reasoning="Fail closed rather than retry blindly (spec Chrome rule 3).",
         files=[str(card.relative_to(repo))])

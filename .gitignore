@@ -25,3 +25,6 @@ scripts/browser/runs/
 
 # Queued video assets are linked/copied from the build dir, never committed
 marketing/publish-queue/**/*.mp4
+
+# Advisory lock sidecar written by scripts/ledger.py (local only, never source)
+decisions/decisions.jsonl.lock

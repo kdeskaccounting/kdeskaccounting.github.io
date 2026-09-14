@@ -62,10 +62,34 @@ def ensure(port: int = 9222, *, probe_fn=None, launch_fn=None, sleep_fn=None, tr
         f"Try manually: {' '.join(chrome_argv(PROFILE_DIR, port))}")
 
 
+def dry_run_lines(port: int = 9222, *, probe_fn=None, launch_fn=None,
+                  profile: pathlib.Path = PROFILE_DIR) -> list[str]:
+    """What --dry-run prints: the probe result and the argv it would launch.
+
+    Probing is a read; launching is the write, and --dry-run never does it. `launch_fn` is
+    accepted only so a test can prove it is never called.
+    """
+    probe_fn = probe_fn or probe
+    info = probe_fn(port)
+    if info:
+        return [f"(dry-run) debug Chrome already answering on :{port} — "
+                f"{info.get('Browser', '?')} (profile {profile})",
+                "(dry-run) would launch nothing"]
+    return [f"(dry-run) nothing answering on :{port}",
+            f"(dry-run) would launch: {' '.join(chrome_argv(profile, port))}",
+            f"(dry-run) would create the profile dir if missing: {profile}"]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Ensure the debug Chrome is running.")
     ap.add_argument("--port", type=int, default=9222)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="report the probe and the argv it would launch; launch nothing")
     a = ap.parse_args()
+    if a.dry_run:
+        for line in dry_run_lines(a.port):
+            print(line)
+        return 0
     info = ensure(a.port)
     print(f"debug Chrome up on :{a.port} — {info.get('Browser', '?')} (profile {PROFILE_DIR})")
     return 0
