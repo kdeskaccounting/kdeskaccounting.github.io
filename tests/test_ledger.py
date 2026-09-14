@@ -1,6 +1,10 @@
 """scripts/ledger.py — the append-only decision log every autonomous action writes to."""
 import datetime as dt
+import fcntl
 import json
+import threading
+
+import pytest
 
 import ledger
 
@@ -83,6 +87,51 @@ def test_append_accepts_pending_veto_status_and_round_trips_it(tmp_path):
     assert saved["status"] == "pending_veto"
     assert saved["veto_window_close"] == "2026-09-16T12:00:00-0700"
     assert ledger.entries(p)[0]["status"] == "pending_veto"
+
+
+def test_entries_and_append_raise_ledger_error_naming_the_bad_line(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    good = {"id": 1, "ts": "t", "tier": 0, "status": "executed", "action": "a",
+            "reasoning": "r", "files": [], "veto_window_close": None, "stephen_reviewed": False}
+    p.write_text(
+        json.dumps(good) + "\n"
+        + json.dumps({**good, "id": 2}) + "\n"
+        + "not valid json\n"
+    )
+    with pytest.raises(ledger.LedgerError) as exc_info:
+        ledger.entries(p)
+    assert str(p) in str(exc_info.value)
+    assert ":3:" in str(exc_info.value)
+
+    with pytest.raises(ledger.LedgerError) as exc_info2:
+        ledger.append("x", 0, "executed", "r", [], path=p)
+    assert ":3:" in str(exc_info2.value)
+
+
+def test_append_blocks_while_the_sidecar_lock_is_held_by_another_fd(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    _write(p, [{"id": 5, "ts": "t", "tier": 0, "status": "executed", "action": "a",
+                "reasoning": "r", "files": [], "veto_window_close": None,
+                "stephen_reviewed": False}])
+    lock_path = p.with_name(p.name + ".lock")
+    lock_fh = open(lock_path, "a+")
+    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+
+    result: dict = {}
+
+    def do_append():
+        result["row"] = ledger.append("blocked until unlocked", 0, "executed", "r", [], path=p)
+
+    t = threading.Thread(target=do_append)
+    t.start()
+    t.join(timeout=0.3)
+    assert t.is_alive(), "append() must block while the sidecar lock is held elsewhere"
+
+    fcntl.flock(lock_fh.fileno(), fcntl.LOCK_UN)
+    lock_fh.close()
+    t.join(timeout=2)
+    assert not t.is_alive(), "append() must complete once the lock is released"
+    assert result["row"]["id"] == 6
 
 
 def test_find_and_veto_close_read_a_specific_entry(tmp_path):

@@ -2,7 +2,8 @@
 """Append-only decision ledger for KDesk autonomous actions.
 
 Every live side effect in this repo writes exactly one line to decisions/decisions.jsonl.
-Schema (fixed, matching entries 1-68): id, ts, tier, status, action, reasoning, files,
+Schema (fixed, matching entries 1-68; status also covers pending_veto, used by entries
+69-70 for T2 act-with-veto-window actions): id, ts, tier, status, action, reasoning, files,
 veto_window_close, stephen_reviewed.
 
   python3 scripts/ledger.py --tail 5
@@ -12,7 +13,9 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import datetime as dt
+import fcntl
 import json
 import pathlib
 
@@ -22,8 +25,33 @@ TIERS = (0, 1, 2, 3)
 STATUSES = ("executed", "in_progress", "planned", "pending_veto", "vetoed")
 
 
+class LedgerError(ValueError):
+    """Raised when a ledger file contains a line that is not valid JSON.
+
+    This is an audit log: a malformed line is never silently skipped.
+    """
+
+
 def _path(path: pathlib.Path | None) -> pathlib.Path:
     return pathlib.Path(path) if path is not None else DEFAULT_PATH
+
+
+@contextlib.contextmanager
+def _locked(path: pathlib.Path):
+    """Hold an exclusive advisory lock on `<path>.lock` for the duration of the block.
+
+    Guards the read-last-id + write-line sequence in append() so two concurrent
+    processes/threads can never compute the same next id. Creates the sidecar lock
+    file (and the ledger's parent directory) if missing. Stdlib-only (fcntl).
+    """
+    lock_path = path.with_name(path.name + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
 def _norm_files(value: object) -> list[str]:
@@ -46,10 +74,13 @@ def entries(path: pathlib.Path | None = None) -> list[dict]:
     if not p.exists():
         return []
     rows: list[dict] = []
-    for line in p.read_text(encoding="utf-8").splitlines():
+    for lineno, line in enumerate(p.read_text(encoding="utf-8").splitlines(), start=1):
         if not line.strip():
             continue
-        row = json.loads(line)
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise LedgerError(f"{p}:{lineno}: not valid JSON") from exc
         row["files"] = _norm_files(row.get("files"))
         rows.append(row)
     return rows
@@ -79,12 +110,12 @@ def append(action: str, tier: int, status: str, reasoning: str, files: list[str]
         raise ValueError("action must not be empty")
     p = _path(path)
     stamp = (now or dt.datetime.now().astimezone()).strftime("%Y-%m-%dT%H:%M:%S%z")
-    row = {"id": last_id(p) + 1, "ts": stamp, "tier": int(tier), "status": status,
-           "action": action, "reasoning": reasoning, "files": [str(f) for f in files],
-           "veto_window_close": veto_window_close, "stephen_reviewed": False}
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row) + "\n")
+    with _locked(p):
+        row = {"id": last_id(p) + 1, "ts": stamp, "tier": int(tier), "status": status,
+               "action": action, "reasoning": reasoning, "files": [str(f) for f in files],
+               "veto_window_close": veto_window_close, "stephen_reviewed": False}
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
     return row
 
 
