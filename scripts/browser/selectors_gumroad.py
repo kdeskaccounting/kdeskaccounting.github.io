@@ -5,6 +5,7 @@ locators; the XPath below exists because Gumroad's cover and thumbnail panels ha
 stable role or test id.
 """
 
+PRODUCTS_URL = "https://app.gumroad.com/products"
 EDITOR_URL = "https://app.gumroad.com/products/{slug}/edit"
 WORKFLOWS_URL = "https://app.gumroad.com/workflows"
 WORKFLOW_NEW_URL = "https://app.gumroad.com/workflows/new"
@@ -25,6 +26,10 @@ THUMBNAIL_REMOVE_BUTTON = "button[aria-label='Remove']"
 FILE_INPUT = "input[type=file]"
 SAVE_BUTTON = "Save changes"
 ALERTS = "[role=alert],[role=status]"
+
+# Products list: one row per listing, the listing name on the first line of its first
+# non-empty cell (the rest of that cell is the public kdeskaccounting.gumroad.com/l/… URL).
+PRODUCT_ROWS = "table tbody tr"
 
 WORKFLOW_LINKS = 'a[href*="/workflows/"][href$="/edit"]'
 # The container whose innerText carries a workflow's name. Gumroad renders one <table> per

@@ -80,3 +80,57 @@ def test_body_contains_js_is_a_predicate_over_the_rendered_body_text():
 def test_body_contains_js_tolerates_a_body_that_is_not_there_yet():
     js = wf.body_contains_js()
     assert "?." in js or "||" in js, "must not throw before the body exists"
+
+
+# --- PRODUCT must only name listings that actually exist on Gumroad. Verified live
+# 2026-09-14: PRODUCT["fixed-assets"] still said "Free 5-Asset Fixed Asset Depreciation
+# Workbook (Excel)" while the listing had been renamed to "Free Fixed Asset Register +
+# Depreciation Schedule (Excel, 5 Assets)", so --check reported filter=False forever and a
+# live run would have retyped a filter that was already correct, clicking an option that no
+# longer exists. tests/fixtures/gumroad_product_names.json is the captured listing set;
+# re-capture it and update PRODUCT in the same commit whenever Stephen renames a listing.
+
+import json
+import pathlib
+
+FIXTURE = pathlib.Path(__file__).resolve().parent / "fixtures" / "gumroad_product_names.json"
+
+
+def _live_names() -> set:
+    return set(json.loads(FIXTURE.read_text(encoding="utf-8"))["names"])
+
+
+def test_the_fixture_captures_the_current_listing_names():
+    data = json.loads(FIXTURE.read_text(encoding="utf-8"))
+    assert data["captured"] == "2026-09-14"
+    assert len(data["names"]) == 14
+    assert "Free Fixed Asset Register + Depreciation Schedule (Excel, 5 Assets)" in data["names"]
+
+
+def test_every_product_name_is_a_current_gumroad_listing():
+    assert wf.product_mismatches(_live_names()) == []
+
+
+def test_fixed_assets_points_at_the_renamed_listing():
+    assert wf.PRODUCT["fixed-assets"] == (
+        "Free Fixed Asset Register + Depreciation Schedule (Excel, 5 Assets)")
+    # the stale 2026-09 name must not come back
+    assert "5-Asset Fixed Asset Depreciation" not in wf.PRODUCT["fixed-assets"]
+
+
+def test_product_mismatches_names_the_offending_slug_and_value():
+    stale = {n for n in _live_names() if n != wf.PRODUCT["fixed-assets"]}
+    assert wf.product_mismatches(stale) == [
+        ("fixed-assets", "Free Fixed Asset Register + Depreciation Schedule (Excel, 5 Assets)")]
+
+
+def test_product_mismatches_reports_every_slug_when_the_scrape_returns_nothing():
+    assert len(wf.product_mismatches(set())) == len(wf.PRODUCT)
+
+
+def test_product_names_js_reads_the_listing_name_from_each_row():
+    js = wf.product_names_js()
+    assert js.startswith("() =>")
+    assert "table tbody tr" in js
+    assert "split('\\n')[0]" in js
+    assert _balanced(js, "{", "}") and _balanced(js, "(", ")")

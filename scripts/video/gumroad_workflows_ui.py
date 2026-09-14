@@ -23,7 +23,9 @@ W = json.load(open(REPO / "marketing/email-sequences/workflows.json"))
 PRODUCT = {
     "asc842": "ASC 842 Lease Accounting Workbook — Free Excel Template (3-Lease Version)",
     "asc606": "ASC 606 Commission Accrual Workbook — Free Excel Template (5-Deal Version)",
-    "fixed-assets": "Free 5-Asset Fixed Asset Depreciation Workbook (Excel)",
+    # Renamed on Gumroad; the old "Free 5-Asset Fixed Asset Depreciation Workbook (Excel)"
+    # no longer exists. Kept in step with tests/fixtures/gumroad_product_names.json.
+    "fixed-assets": "Free Fixed Asset Register + Depreciation Schedule (Excel, 5 Assets)",
     "saas-metrics": "SaaS Metrics & ARR Dashboard — FREE 6-Month Excel Template",
     "runway": "Startup Runway Calculator — Free Excel Template (12-Month)",
 }
@@ -72,6 +74,37 @@ def goto(pg, url):
         session.report(status, repo=REPO)
         raise SystemExit(f"gumroad preflight: {status.detail}")
     expect(pg.locator("body")).to_be_visible(timeout=30_000)
+
+
+def product_names_js() -> str:
+    """JS that reads every listing name off the products table.
+
+    The name is the first line of the row's first non-empty cell; the remainder of that
+    cell is the public /l/ URL.
+    """
+    return (f"() => [...document.querySelectorAll('{S.PRODUCT_ROWS}')].map(r => {{"
+            f" const c = [...r.querySelectorAll('td,th')]"
+            f".map(x => (x.innerText||'').trim()).find(Boolean) || '';"
+            f" return c.split('\\n')[0].trim(); }}).filter(Boolean)")
+
+
+def product_mismatches(live_names) -> list:
+    """(slug, name) for every PRODUCT entry that is not a current Gumroad listing.
+
+    A stale name is not cosmetic: read_state() reports filter=False for that slug forever,
+    and build() reacts by retyping the filter and clicking an option that no longer exists.
+    An empty `live_names` (the scrape found nothing) deliberately reports every slug rather
+    than passing silently - fail closed.
+    """
+    live = set(live_names)
+    return [(slug, name) for slug, name in sorted(PRODUCT.items()) if name not in live]
+
+
+def live_product_names(pg) -> list:
+    """Read-only: the listing names currently on the Gumroad products page."""
+    goto(pg, S.PRODUCTS_URL)
+    pg.wait_for_selector(S.PRODUCT_ROWS, state="attached", timeout=30_000)
+    return pg.evaluate(product_names_js())
 
 
 def workflow_links_js() -> str:
@@ -227,6 +260,23 @@ def main() -> int:
         return 0
     rc = 0
     with session.open_page("gumroad-workflows", repo=REPO) as pg:
+        if a.check:
+            # Name every stale PRODUCT entry instead of letting it show up as a silent
+            # filter=False. Read-only: the products page is only ever read.
+            names = live_product_names(pg)
+            if not names:
+                rc = 1
+                print(f"{'products':<13} PRODUCT MISMATCH could not read any listing name from "
+                      f"{S.PRODUCTS_URL} — cannot verify PRODUCT; treating as unverified",
+                      flush=True)
+            else:
+                for slug, name in product_mismatches(names):
+                    if a.only and slug != a.only:
+                        continue
+                    rc = 1
+                    print(f"{slug:<13} PRODUCT MISMATCH {name!r} is not one of the "
+                          f"{len(names)} live Gumroad listings — fix PRODUCT['{slug}'] and "
+                          f"re-capture tests/fixtures/gumroad_product_names.json", flush=True)
         for slug in slugs:
             try:
                 print(f"{slug:<13} {build(pg, slug, check_only=a.check)}", flush=True)
