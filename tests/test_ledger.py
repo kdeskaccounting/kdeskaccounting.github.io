@@ -73,6 +73,18 @@ def test_append_rejects_an_out_of_range_tier(tmp_path):
     assert not p.exists()
 
 
+def test_append_accepts_pending_veto_status_and_round_trips_it(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    written = ledger.append("T2 loosening", 2, "pending_veto", "r", [],
+                            veto_window_close="2026-09-16T12:00:00-0700", path=p)
+    assert written["status"] == "pending_veto"
+    assert written["veto_window_close"] == "2026-09-16T12:00:00-0700"
+    saved = json.loads(p.read_text().splitlines()[0])
+    assert saved["status"] == "pending_veto"
+    assert saved["veto_window_close"] == "2026-09-16T12:00:00-0700"
+    assert ledger.entries(p)[0]["status"] == "pending_veto"
+
+
 def test_find_and_veto_close_read_a_specific_entry(tmp_path):
     p = tmp_path / "decisions.jsonl"
     _write(p, [{"id": 69, "ts": "t", "tier": 2, "status": "in_progress", "action": "T1 loosening",

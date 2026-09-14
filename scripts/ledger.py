@@ -19,7 +19,7 @@ import pathlib
 REPO = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_PATH = REPO / "decisions" / "decisions.jsonl"
 TIERS = (0, 1, 2, 3)
-STATUSES = ("executed", "in_progress", "planned", "vetoed")
+STATUSES = ("executed", "in_progress", "planned", "pending_veto", "vetoed")
 
 
 def _path(path: pathlib.Path | None) -> pathlib.Path:
