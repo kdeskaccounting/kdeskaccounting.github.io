@@ -2,73 +2,182 @@
 """
 Upload covers + thumbnails to Gumroad listings through the logged-in debug Chrome (CDP :9222).
 The Gumroad API silently ignores cover params, so this drives the product editor UI.
-  scripts/video/.venv-tts/bin/python scripts/video/gumroad_covers_ui.py [--only slug]
+
+  scripts/video/.venv-tts/bin/python scripts/video/gumroad_covers_ui.py [--only slug] [--skip a,b]
+  scripts/video/.venv-tts/bin/python scripts/video/gumroad_covers_ui.py --check      # read-only
+  scripts/video/.venv-tts/bin/python scripts/video/gumroad_covers_ui.py --dry-run    # plan only
+
+Behaviour is unchanged from the 2026-09-02 version; the browser lifecycle, login preflight,
+condition waits (no wait_for_timeout), tracing and queue cards come from scripts/browser/.
 """
-import sys, pathlib, os, requests, warnings; warnings.filterwarnings("ignore")
-from playwright.sync_api import sync_playwright
-REPO = pathlib.Path(__file__).resolve().parents[2]; IMG = (REPO / "static" / "images" / "products").resolve()
-LISTINGS = {  # Gumroad EDITOR permalink (from /products list, not the custom slug) -> (cover, thumb, api product id or None)
-    "phxigq": ("asc842-cover.png", "asc842-thumb.png", "Gp9nwTmverZnmQqvQe_afg=="), "gljxc": ("asc842-free-cover.png", "asc842-free-thumb.png", "OYv6bQLI2pyKl7xnr-qzTA=="),
-    "mwmwpe": ("asc606-cover.png", "asc606-thumb.png", None), "cjexre": ("asc606-free-cover.png", "asc606-free-thumb.png", "XW7TqzwvQ8MuwsiMOUq-ng=="),
-    "xsezh": ("fixed-assets-cover.png", "fixed-assets-thumb.png", "SAuqdvLmzgT_nUKj99lpZw=="), "pdnpy": ("fixed-assets-free-cover.png", "fixed-assets-free-thumb.png", "T9PHkG-s1Hz_tHIlgoyf_A=="),
-    "qmgnitm": ("saas-metrics-cover.png", "saas-metrics-thumb.png", "5b3Dn9UXPPDSu_gJs1gVhA=="), "feqoy": ("saas-metrics-free-cover.png", "saas-metrics-free-thumb.png", "oEIj8s_0_Kk9qHDuPT6Y1Q=="),
-    "bujdfg": ("runway-cover.png", "runway-thumb.png", "tDj5H9JMTOTNHlr8JLqOWg=="), "onxlfg": ("runway-free-cover.png", "runway-free-thumb.png", "ZkFjfA6mjAV6ogPNTqkJjw=="),
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import sys
+import warnings
+
+warnings.filterwarnings("ignore")
+
+REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "scripts"))
+from browser import selectors_gumroad as S  # noqa: E402
+from browser import session  # noqa: E402
+
+IMG = (REPO / "static" / "images" / "products").resolve()
+LISTINGS = {  # Gumroad EDITOR permalink -> (cover, thumb, api product id or None)
+    "phxigq": ("asc842-cover.png", "asc842-thumb.png", "Gp9nwTmverZnmQqvQe_afg=="),
+    "gljxc": ("asc842-free-cover.png", "asc842-free-thumb.png", "OYv6bQLI2pyKl7xnr-qzTA=="),
+    "mwmwpe": ("asc606-cover.png", "asc606-thumb.png", None),
+    "cjexre": ("asc606-free-cover.png", "asc606-free-thumb.png", "XW7TqzwvQ8MuwsiMOUq-ng=="),
+    "xsezh": ("fixed-assets-cover.png", "fixed-assets-thumb.png", "SAuqdvLmzgT_nUKj99lpZw=="),
+    "pdnpy": ("fixed-assets-free-cover.png", "fixed-assets-free-thumb.png", "T9PHkG-s1Hz_tHIlgoyf_A=="),
+    "qmgnitm": ("saas-metrics-cover.png", "saas-metrics-thumb.png", "5b3Dn9UXPPDSu_gJs1gVhA=="),
+    "feqoy": ("saas-metrics-free-cover.png", "saas-metrics-free-thumb.png", "oEIj8s_0_Kk9qHDuPT6Y1Q=="),
+    "bujdfg": ("runway-cover.png", "runway-thumb.png", "tDj5H9JMTOTNHlr8JLqOWg=="),
+    "onxlfg": ("runway-free-cover.png", "runway-free-thumb.png", "ZkFjfA6mjAV6ogPNTqkJjw=="),
     "sjftml": ("month-end-close-cover.png", "month-end-close-thumb.png", "tvxqT2fwquibDUr1V4rJEg=="),
     "shccc": ("bundle-cover.png", "bundle-thumb.png", "WAKdGcEmy476e-5fWioVsQ=="),
 }
-SEC = "xpath=//*[self::h2 or self::h3 or self::legend or self::label][normalize-space(.)='{h}']/ancestor::*[self::section or self::fieldset][1]"
-def token():
-    for l in open(os.path.expanduser("~/kdeskaccountingtemplates/.env")):
-        if l.startswith("GUMROAD_ACCESS_TOKEN"): return l.split("=", 1)[1].strip().strip('"\'')
-def do_listing(pg, slug, cover, thumb):
-    pg.goto(f"https://app.gumroad.com/products/{slug}/edit", wait_until="domcontentloaded", timeout=60000); pg.wait_for_timeout(2500)
-    if "login" in pg.url: raise SystemExit("Not logged in to Gumroad in the debug browser.")
-    pg.evaluate("""() => { window.__fi=[]; const mo=new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1){ if(n.matches&&n.matches('input[type=file]')) window.__fi.push(n); n.querySelectorAll&&n.querySelectorAll('input[type=file]').forEach(i=>window.__fi.push(i)); } }))); mo.observe(document.documentElement,{childList:true,subtree:true}); }""")
-    cov = pg.locator(SEC.format(h="Cover")).first; cov.scroll_into_view_if_needed(); pg.wait_for_timeout(300)
-    tiles = cov.locator("[role=tablist][aria-label='Product covers'] [role=tab]"); before = tiles.count()
-    if cov.locator("button[aria-label='Add cover']").count():
-        cov.locator("button[aria-label='Add cover']").first.click(); pg.wait_for_timeout(800)
-        pg.locator("[role=dialog] button", has_text="Upload images or videos").first.click(); pg.wait_for_timeout(800)
+
+
+def token() -> str:
+    env = pathlib.Path(os.path.expanduser("~/kdeskaccountingtemplates/.env"))
+    for line in env.read_text().splitlines():
+        if line.startswith("GUMROAD_ACCESS_TOKEN"):
+            return line.split("=", 1)[1].strip().strip("\"'")
+    raise SystemExit(f"No GUMROAD_ACCESS_TOKEN in {env}")
+
+
+def open_editor(pg, slug: str):
+    from playwright.sync_api import expect
+    pg.goto(S.EDITOR_URL.format(slug=slug), wait_until="domcontentloaded", timeout=60_000)
+    status = session.classify("gumroad", S.EDITOR_URL.format(slug=slug), pg.url)
+    if not status.ok:
+        raise SystemExit(session.report(status, repo=REPO) and f"gumroad preflight: {status.detail}")
+    cover = pg.locator(S.SECTION.format(heading=S.COVER_HEADING)).first
+    expect(cover).to_be_visible(timeout=30_000)
+    return cover
+
+
+def check_listing(pg, slug: str) -> str:
+    """Read-only: assert the two anchors this driver depends on still resolve."""
+    from playwright.sync_api import expect
+    cover = open_editor(pg, slug)
+    thumb = pg.locator(S.SECTION.format(heading=S.THUMBNAIL_HEADING)).first
+    expect(thumb).to_be_visible(timeout=30_000)
+    tabs = cover.locator(S.COVER_TABS).count()
+    return f"cover section ok (tiles={tabs}) · thumbnail section ok"
+
+
+def do_listing(pg, slug: str, cover_png: str, thumb_png: str):
+    from playwright.sync_api import expect
+    cov = open_editor(pg, slug)
+    pg.evaluate(
+        "() => { window.__fi=[]; const mo=new MutationObserver(ms=>ms.forEach(m=>m.addedNodes"
+        ".forEach(n=>{ if(n.nodeType===1){ if(n.matches&&n.matches('input[type=file]'))"
+        " window.__fi.push(n); n.querySelectorAll&&n.querySelectorAll('input[type=file]')"
+        ".forEach(i=>window.__fi.push(i)); } }))); mo.observe(document.documentElement,"
+        "{childList:true,subtree:true}); }")
+    cov.scroll_into_view_if_needed()
+    tiles = cov.locator(S.COVER_TABS)
+    before = tiles.count()
+    if cov.locator(S.ADD_COVER_BUTTON).count():
+        cov.locator(S.ADD_COVER_BUTTON).first.click()
+        dialog = pg.locator("[role=dialog]")
+        expect(dialog).to_be_visible(timeout=15_000)
+        dialog.locator("button", has_text=S.UPLOAD_BUTTON_TEXT).first.click()
     else:
-        cov.locator("button", has_text="Upload images or videos").first.click(); pg.wait_for_timeout(800)
-    h = pg.evaluate_handle("() => window.__fi[window.__fi.length-1]")
-    if not h.as_element(): raise RuntimeError("no file input created by Upload images or videos")
-    h.as_element().set_input_files(str(IMG / cover)); pg.keyboard.press("Escape")
-    for _ in range(20):
-        pg.wait_for_timeout(1000)
-        if tiles.count() > before: break
-    if tiles.count() <= before: raise RuntimeError("cover tile did not appear")
+        cov.locator("button", has_text=S.UPLOAD_BUTTON_TEXT).first.click()
+    pg.wait_for_function("() => window.__fi && window.__fi.length > 0", timeout=15_000)
+    handle = pg.evaluate_handle("() => window.__fi[window.__fi.length-1]")
+    element = handle.as_element()
+    if element is None:
+        raise RuntimeError("no file input created by 'Upload images or videos'")
+    element.set_input_files(str(IMG / cover_png))
+    pg.keyboard.press("Escape")
+    pg.wait_for_function("n => document.querySelectorAll("
+                         "\"[role=tablist][aria-label='Product covers'] [role=tab]\").length > n",
+                         arg=before, timeout=120_000)
     if before > 0:  # drag the new (last) tile to the front so it becomes the main cover
-        src = tiles.nth(tiles.count() - 1).bounding_box(); dst = tiles.nth(0).bounding_box()
-        pg.mouse.move(src["x"] + src["width"] / 2, src["y"] + src["height"] / 2); pg.mouse.down(); pg.wait_for_timeout(200)
+        src = tiles.nth(tiles.count() - 1).bounding_box()
+        dst = tiles.nth(0).bounding_box()
+        pg.mouse.move(src["x"] + src["width"] / 2, src["y"] + src["height"] / 2)
+        pg.mouse.down()
         for i in range(1, 12):
-            pg.mouse.move(src["x"] + src["width"] / 2 + (dst["x"] - src["x"]) * i / 11, src["y"] + src["height"] / 2); pg.wait_for_timeout(60)
-        pg.mouse.move(dst["x"] + 5, dst["y"] + dst["height"] / 2); pg.wait_for_timeout(200); pg.mouse.up(); pg.wait_for_timeout(800)
-    th = pg.locator(SEC.format(h="Thumbnail")).first; th.scroll_into_view_if_needed()
-    rm = th.locator("button[aria-label='Remove']")
-    if rm.count(): rm.first.click(); pg.wait_for_timeout(700)
-    th.locator("input[type=file]").first.set_input_files(str(IMG / thumb))
-    for _ in range(15):
-        pg.wait_for_timeout(1000)
-        if th.locator("img").count(): break
-    pg.get_by_role("button", name="Save changes").first.click(); pg.wait_for_timeout(5000)
-    alerts = [a for a in pg.locator("[role=alert],[role=status]").all_inner_texts() if a.strip()][:2]
+            pg.mouse.move(src["x"] + src["width"] / 2 + (dst["x"] - src["x"]) * i / 11,
+                          src["y"] + src["height"] / 2)
+        pg.mouse.move(dst["x"] + 5, dst["y"] + dst["height"] / 2)
+        pg.mouse.up()
+        expect(tiles.nth(0)).to_be_visible(timeout=15_000)
+    th = pg.locator(S.SECTION.format(heading=S.THUMBNAIL_HEADING)).first
+    th.scroll_into_view_if_needed()
+    rm = th.locator(S.THUMBNAIL_REMOVE_BUTTON)
+    if rm.count():
+        rm.first.click()
+        expect(th.locator("img")).to_have_count(0, timeout=15_000)
+    th.locator(S.FILE_INPUT).first.set_input_files(str(IMG / thumb_png))
+    expect(th.locator("img").first).to_be_visible(timeout=120_000)
+    with pg.expect_response(lambda r: "/products/" in r.url and r.request.method in ("PUT", "POST"),
+                            timeout=60_000):
+        pg.get_by_role("button", name=S.SAVE_BUTTON).first.click()
+    alerts = [a for a in pg.locator(S.ALERTS).all_inner_texts() if a.strip()][:2]
     return before, alerts
-def main():
-    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None; tok = token()
-    with sync_playwright() as p:
-        b = p.chromium.connect_over_cdp("http://localhost:9222"); ctx = b.contexts[0]; pg = ctx.new_page()
-        for slug, (cover, thumb, pid) in LISTINGS.items():
-            if only and slug != only: continue
-            if "--skip" in sys.argv and slug in sys.argv[sys.argv.index("--skip") + 1].split(","): continue
+
+
+def verify_via_api(pid: str | None) -> str:
+    if not pid:
+        return ""
+    import requests
+    g = requests.get(f"https://api.gumroad.com/v2/products/{pid}",
+                     params={"access_token": token()}, timeout=30).json()["product"]
+    covers = g.get("covers") or []
+    return (f"covers={len(covers)} "
+            f"main_is_new={(covers[0].get('id') if covers else None) == g.get('main_cover_id')} "
+            f"thumb={bool(g.get('thumbnail_url'))}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only")
+    ap.add_argument("--skip", default="")
+    ap.add_argument("--check", action="store_true", help="read-only anchor assertion; changes nothing")
+    ap.add_argument("--dry-run", action="store_true", help="print the plan; open nothing")
+    a = ap.parse_args()
+    skip = {s for s in a.skip.split(",") if s}
+    targets = [(s, v) for s, v in LISTINGS.items() if (not a.only or s == a.only) and s not in skip]
+    if a.dry_run:
+        for slug, (cover, thumb, _pid) in targets:
+            print(f"(dry-run) {slug:<10} cover={cover} thumb={thumb}")
+        return 0
+    rc = 0
+    with session.open_page("gumroad-covers", repo=REPO) as pg:
+        for slug, (cover, thumb, pid) in targets:
             try:
+                if a.check:
+                    print(f"{slug:<10} CHECK {check_listing(pg, slug)}", flush=True)
+                    continue
                 before, alerts = do_listing(pg, slug, cover, thumb)
-                state = ""
-                if pid:
-                    g = requests.get(f"https://api.gumroad.com/v2/products/{pid}", params={"access_token": tok}).json()["product"]
-                    state = f"covers={len(g.get('covers') or [])} main_is_new={(g.get('covers') or [{}])[0].get('id')==g.get('main_cover_id')} thumb={bool(g.get('thumbnail_url'))}"
-                print(f"{slug:<30} ok  old_covers={before} {state} {alerts}", flush=True)
-            except Exception as e:
-                pg.screenshot(path=str(REPO / "scripts/video/build/cdp" / f"fail-{slug}.png")); print(f"{slug:<30} FAILED {str(e)[:140]}", flush=True)
-        pg.close()
-if __name__ == "__main__": main()
+                print(f"{slug:<10} ok  old_covers={before} {verify_via_api(pid)} {alerts}", flush=True)
+            except Exception as exc:  # noqa: BLE001 — one retry max, then a queue card (rule 7)
+                rc = 1
+                shot = session.trace_dir(REPO, f"gumroad-covers-fail-{slug}") / "fail.png"
+                pg.screenshot(path=str(shot))
+                card = session.write_queue_card(
+                    REPO, "manual", f"gumroad-cover-{slug}",
+                    session.queue_card_markdown(
+                        kind="gumroad-cover",
+                        title=f"Set the cover and thumbnail on Gumroad listing {slug} by hand",
+                        why=f"gumroad_covers_ui.py failed: {str(exc)[:300]}\n\nScreenshot: {shot}",
+                        steps=[f"Open {S.EDITOR_URL.format(slug=slug)}",
+                               f"Cover → Upload images or videos → static/images/products/{cover}",
+                               "Drag the new tile to the first position",
+                               f"Thumbnail → replace with static/images/products/{thumb}",
+                               "Save changes"]))
+                print(f"{slug:<10} FAILED {str(exc)[:120]} -> {card.relative_to(REPO)}", flush=True)
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

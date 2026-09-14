@@ -19,3 +19,9 @@ dist/
 # Video pipeline artifacts (rendered locally, published via GitHub Releases)
 scripts/video/build/
 scripts/video/.venv-tts/
+
+# Playwright traces + failure screenshots from scripts/browser (local evidence, not source)
+scripts/browser/runs/
+
+# Queued video assets are linked/copied from the build dir, never committed
+marketing/publish-queue/**/*.mp4
