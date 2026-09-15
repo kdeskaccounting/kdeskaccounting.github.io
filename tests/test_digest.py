@@ -122,6 +122,28 @@ def test_compose_redacts_known_secrets_through_the_session_seam(monkeypatch):
     assert "shh" not in md and "***" in md
 
 
+def test_every_configured_snapshot_key_resolves_against_the_real_last_row():
+    """Guards against exactly the bug this test was added to catch: SNAPSHOTS carrying a
+    dotted key that does not exist in the real tracked file, which makes that file's
+    'Numbers' line a permanent, silent no-op. A file that has never been pulled for real
+    (bing-snapshots.jsonl: no API key configured anywhere this suite runs) has nothing to
+    drift-check yet and is skipped rather than failed."""
+    checked = 0
+    for filename, keys in digest.SNAPSHOTS:
+        if not keys:
+            continue
+        path = digest.TRACKING / filename
+        if not path.exists():
+            continue
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        assert lines, f"{filename} is tracked but empty"
+        last = json.loads(lines[-1])
+        missing = [key for key in keys if digest._dig(last, key) is None]
+        assert not missing, f"{filename}: configured key(s) not present in the real last row: {missing}"
+        checked += 1
+    assert checked >= 3, "expected gumroad, youtube, ga4 and gsc to all be real tracked files"
+
+
 def test_vault_path_is_todays_daily_note(tmp_path):
     assert digest.vault_path(NOW, root=tmp_path) == tmp_path / "01-Daily" / "2026-09-14.md"
 

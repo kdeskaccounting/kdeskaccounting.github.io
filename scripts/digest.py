@@ -45,7 +45,20 @@ TRACKING = REPO / "marketing" / "seo-tracking"
 SNAPSHOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("gumroad-snapshots.jsonl", ("all_time.paid_full_price", "all_time.download_events",
                                  "all_time.unique_people", "all_time.revenue_usd")),
-    ("youtube-snapshots.jsonl", ("totals.views", "totals.subscribers")),
+    # Real field names as written by scripts/pull_youtube_snapshot.py — confirmed against the
+    # last two rows of the tracked file, not the draft plan's guessed "totals.views"/
+    # "totals.subscribers" (that path never exists, so it was a permanent no-op).
+    ("youtube-snapshots.jsonl", ("subscribers", "total_views", "shorts_views", "longform_views")),
+    # ga4-/gsc-snapshots.jsonl are both written by scripts/pull_seo_snapshot.py; keys below
+    # match its actual output dict, confirmed against the last two rows of each tracked file.
+    ("ga4-snapshots.jsonl", ("active_users_7d", "sessions_7d", "users_30d", "key_events_7d")),
+    ("gsc-snapshots.jsonl", ("totals.clicks", "totals.impressions", "totals.ctr_pct",
+                             "totals.avg_position")),
+    # bing-snapshots.jsonl: scripts/pull_bing_snapshot.py has never been run in this checkout
+    # (no ~/kdesk-analytics/bing-api-key.txt yet), so no real file exists to read keys from
+    # or drift-test against. Its schema would be ("totals.clicks", "totals.impressions",
+    # "totals.ctr_pct") per pull_bing_snapshot.py's pull() — add a SNAPSHOTS entry for it
+    # once a real snapshot lands so the drift test below can cover it too.
     ("mailerlite-sync.jsonl", ()),
 )
 
