@@ -1,12 +1,29 @@
-"""Named Short variants for a scenes.yaml spec.
+"""Spec-shape helpers shared by build_video.py and make_short.py. Stdlib only.
 
 Legacy specs carry one `short:` block. Newer specs add `shorts: {name: block}` so one
 workbook yields several Shorts (different hook, scenes, cell ranges). Variant None means
 the legacy block, and its output filenames are unchanged.
 """
+import re
 from collections import namedtuple
 
 ShortPaths = namedtuple("ShortPaths", "final work review")
+
+#: A slug is one path segment: it becomes scripts/video/build/<slug>.
+SLUG_RE = re.compile(r"[A-Za-z0-9._-]+")
+
+
+def safe_slug(slug) -> str:
+    """Validate the `slug:` of a spec that may have come from outside this repo.
+
+    The slug names a build directory, so a spec another repo hands us must not be able to
+    steer writes out of scripts/video/build/ - `.` and `..` pass the character class and are
+    rejected separately.
+    """
+    if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug) or slug in (".", ".."):
+        raise SystemExit(f"bad spec slug {slug!r}: a slug is one path segment of letters, "
+                         f"digits, dot, underscore or hyphen (and not '.' or '..')")
+    return slug
 
 
 def select_short(spec: dict, variant: str | None) -> dict:

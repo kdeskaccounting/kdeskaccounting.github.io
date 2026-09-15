@@ -1,0 +1,21 @@
+{
+  "captured": "2026-09-14",
+  "source": "https://gumroad.com/products (read-only navigation in the debug Chrome)",
+  "why": "Current Gumroad listing names. gumroad_workflows_ui.PRODUCT must only name listings that actually exist: a stale name makes --check report filter=False forever and makes a live run retype a filter that is already correct. When Stephen renames a listing, re-capture this file and update PRODUCT in the same commit.",
+  "names": [
+    "ASC 340-40 Commission Capitalization Kit — Technical Memo Template, Decision Framework, Clawback Policy, Close Procedure, Auditor PBC Package + the ASC 606 Workbook",
+    "ASC 606 Commission Accrual Workbook — Free Excel Template (5-Deal Version)",
+    "ASC 606 Commission Expense Workbook",
+    "ASC 842 Lease Accounting Workbook — Excel Template for Operating & Finance Leases",
+    "ASC 842 Lease Accounting Workbook — Free Excel Template (3-Lease Version)",
+    "Fixed Asset Register + Depreciation Schedule Workbook (ASC 360, Excel, 50 Assets)",
+    "Free Fixed Asset Register + Depreciation Schedule (Excel, 5 Assets)",
+    "Month-End Close Checklist + Tie-Out Workbook (Excel)",
+    "RSU Tax Planner — Excel Workbook: Vest-by-Vest Withholding Gaps, Safe Harbor & Quarterly Estimates (Tax Year 2026)",
+    "SaaS Controller Bundle — All 5 KDesk Excel Workbooks (ASC 842, ASC 606, Fixed Assets, SaaS Metrics, Runway)",
+    "SaaS Metrics & ARR Dashboard — Excel Template for Board-Ready SaaS KPIs",
+    "SaaS Metrics & ARR Dashboard — FREE 6-Month Excel Template",
+    "Startup Runway Calculator — Excel Template",
+    "Startup Runway Calculator — Free Excel Template (12-Month)"
+  ]
+}

@@ -90,8 +90,51 @@ def test_run_records_the_url_even_when_the_thumbnail_step_is_forbidden(tmp_path,
     job = dict(mp4=mp4, body=yp.video_body("t", "d", []), thumb=thumb, playlist="PL1", rec_path=rec_path, rec=rec, key=None, url_fmt="https://youtu.be/{}")
     monkeypatch.setattr(yp, "upload_video", lambda yt, m, b: "VID123")
     fake = _FakeYT()
-    assert yp.run(job, dry_run=False, yt=fake) == 0
+    assert yp.run(job, dry_run=False, yt=fake, acknowledged=True) == 0
     saved = __import__("json").loads(rec_path.read_text())
     assert saved["url"] == "https://youtu.be/VID123"                 # the upload is never lost
     assert fake.playlist_calls == ["VID123"]                         # later optional steps still run
     assert "thumbnail" in capsys.readouterr().err.lower()            # and the failure is reported, not swallowed silently
+
+
+def test_refuse_reason_blocks_an_unacknowledged_upload_and_names_the_replacement():
+    reason = yp.refuse_reason(False)
+    assert reason is not None
+    assert "locked" in reason.lower()
+    assert "scripts/publishers/youtube.py" in reason
+    assert "--i-understand-locked-private" in reason
+
+
+def test_refuse_reason_is_none_once_the_flag_is_passed():
+    assert yp.refuse_reason(True) is None
+
+
+def test_lock_finding_states_the_20_videos_and_that_reupload_is_the_only_fix():
+    assert "20" in yp.LOCK_FINDING
+    assert "re-upload" in yp.LOCK_FINDING.lower()
+    assert "cannot be appealed" in yp.LOCK_FINDING.lower()
+
+
+def test_run_refuses_a_live_upload_without_the_flag_and_never_calls_upload(tmp_path, capsys):
+    mp4 = tmp_path / "x.mp4"
+    mp4.write_bytes(b"0" * 10)
+    job = dict(mp4=mp4, body=yp.video_body("t", "d", []), thumb=None, playlist=None,
+               rec_path=tmp_path / "youtube.json", rec={}, key=None, url_fmt="https://youtu.be/{}")
+
+    class _Boom:
+        def videos(self):
+            raise AssertionError("no upload may be attempted without the acknowledgement flag")
+
+    assert yp.run(job, dry_run=False, yt=_Boom(), acknowledged=False) == 2
+    out = capsys.readouterr()
+    assert "--i-understand-locked-private" in out.err
+    assert not (tmp_path / "youtube.json").exists()
+
+
+def test_run_still_works_in_dry_run_without_the_flag(tmp_path, capsys):
+    mp4 = tmp_path / "x.mp4"
+    mp4.write_bytes(b"0" * 10)
+    job = dict(mp4=mp4, body=yp.video_body("t", "d", []), thumb=None, playlist=None,
+               rec_path=tmp_path / "youtube.json", rec={}, key=None, url_fmt="https://youtu.be/{}")
+    assert yp.run(job, dry_run=True, acknowledged=False) == 0
+    assert "(dry-run)" in capsys.readouterr().out

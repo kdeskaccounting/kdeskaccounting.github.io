@@ -89,4 +89,4 @@ Be useful to his audience first; the rest follows. Nothing on the call is a sale
 - Short — saas-metrics/mrr: https://youtube.com/shorts/xyZ8D2kyzoo
 - Short — saas-metrics/ltv-cac: https://youtube.com/shorts/rKZVOaUdWOI
 - Playlist: https://www.youtube.com/playlist?list=PLCJQ3Ua6AT-k
-- Guest post — **reviewed and ready to forward** (independent GAAP review applied, decision 60): Google Doc https://docs.google.com/document/d/1Ic85XE7MXBrH2XGtq9qUpwOBg0Qu3F2GKJGGsYceXcc/edit · source `marketing/outreach/guest-post-controller-academy-asc842.md`
+- Guest post — **reviewed and ready to forward** (independent GAAP review applied, decision 60): Google Doc https://docs.google.com/document/d/<redacted-doc:498a9090>/edit · source `marketing/outreach/guest-post-controller-academy-asc842.md`

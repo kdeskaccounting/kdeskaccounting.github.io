@@ -44,3 +44,20 @@ def test_short_paths_keep_legacy_filenames_and_suffix_named_variants():
     assert named.final == b / "asc842-short-je.mp4"
     assert named.work == b / "short-je"
     assert named.review == b / "short-review-je"
+
+
+# --- safe_slug: a spec from outside this repo names its own build directory -------------
+
+def test_safe_slug_accepts_the_slugs_this_repo_already_uses():
+    for slug in ("asc842", "asc606-kit", "month-end-close", "rsu-planner", "card-demo",
+                 "park.sheet_v2"):
+        assert sv.safe_slug(slug) == slug
+
+
+@pytest.mark.parametrize("slug", ["../../etc", "a/b", "..", ".", "", "has space",
+                                  "semi;colon", "quote'", None])
+def test_safe_slug_rejects_anything_that_is_not_one_path_segment(slug):
+    """slug becomes scripts/video/build/<slug>; an external spec must not steer that elsewhere."""
+    with pytest.raises(SystemExit) as e:
+        sv.safe_slug(slug)
+    assert "slug" in str(e.value)

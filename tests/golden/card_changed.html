@@ -1,0 +1,55 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1296px;height:2304px;overflow:hidden;
+  background:radial-gradient(120% 60% at 18% 6%, #1B2430 0%, #101418 58%, #101418 100%);
+  color:#FFFFFF;font-family:Carlito, Arial, Helvetica, sans-serif;-webkit-font-smoothing:antialiased}
+.card{width:1296px;height:2304px;display:flex;flex-direction:column;
+  padding:106px 104px}
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:46px;
+  font-size:35.7px;letter-spacing:.07em;text-transform:uppercase;
+  margin-bottom:51px}
+.bname{font-weight:700;color:#FFFFFF} .burl{color:#AAB6C4}
+h1{font-size:101.4px;line-height:1.06;font-weight:700;letter-spacing:-.01em;
+  margin-bottom:23px;display:-webkit-box;-webkit-line-clamp:3;
+  -webkit-box-orient:vertical;overflow:hidden}
+.sub{font-size:47.2px;line-height:1.25;color:#AAB6C4;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rule{width:184px;height:10.4px;border-radius:999px;
+  background:#F2C14E;margin:51px 0}
+.body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
+  overflow:hidden}
+.rows{list-style:none;display:flex;flex-direction:column;gap:25px}
+.row{display:flex;align-items:center;gap:28px;font-size:56.4px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);
+  border-radius:28px;padding:31px 45px}
+.rank{min-width:2.1em;font-size:1em;font-weight:700;color:#F2C14E;
+  font-variant-numeric:tabular-nums}
+.label{flex:1;font-size:.84em;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;
+  -webkit-box-orient:vertical;overflow:hidden}
+.value{font-size:1em;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.row.changed{flex-direction:column;align-items:stretch;gap:20px;
+  padding:40px 45px}
+.row.changed .label{flex:none;font-size:1em;font-weight:700;color:#F2C14E;
+  -webkit-line-clamp:1}
+.note{font-size:.9em;line-height:1.32;color:#AAB6C4;white-space:normal}
+.empty{border:6px dashed rgba(255,255,255,.22);border-radius:37px;
+  padding:115px 69px;text-align:center;font-size:55.3px;
+  color:#AAB6C4}
+.foot{padding-top:41px;font-size:39.2px;font-weight:700;
+  color:#F2C14E}
+</style></head><body>
+<div class="card">
+  <div class="brand"><span class="bname">Demo Brand</span><span class="burl">example.com</span></div>
+  <h1>What changed this week</h1>
+  <p class="sub">Walt Disney World · week of 2026-09-14</p>
+  <div class="rule"></div>
+  <div class="body">
+    <ul class="rows">
+      <li class="row changed"><div class="label">Test Track</div><div class="note">Reopened on Tuesday after a long refurbishment, and it is already the busiest ride at EPCOT.</div></li>
+      <li class="row changed"><div class="label">Space Mountain</div><div class="note">Goes down for refurbishment on Monday and is scheduled to stay closed until early spring.</div></li>
+      <li class="row changed"><div class="label">Jungle Cruise</div><div class="note">Held a steady thirty minute wait all week, the flattest line in the Magic Kingdom right now.</div></li>
+    </ul>
+  </div>
+  <div class="foot">Powered by Queue-Times.com</div>
+</div>
+</body></html>

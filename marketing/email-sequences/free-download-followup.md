@@ -123,11 +123,11 @@ These people already downloaded and never heard from us again (except csibas.com
 
 | Downloaded | Email | What they took | Draft angle |
 |---|---|---|---|
-| 2026-06-02 | operations@schlam.com | ASC 842 free (via storefront) | Ops team at an industrial firm → equipment/vehicle leases; finance-lease classification |
-| 2026-07-22 | melissa.deters@orion.com | ASC 842 free (via storefront) | Larger company; likely evaluating vs. lease software; 20-lease cap honesty |
-| 2026-08-10 | pfelesina@team-tristar.com | Month-end close ($1 paid) | Paid $1 = engaged; ask which reconciliation row is the pain, offer the matching workbook |
-| 2026-08-13 | wkohler@naeda.com | All six free files | Collector; ask which one they actually opened; single UPGRADE20 link to the store |
-| 2026-08-21 | scott@stratacloudaccountants.com | ASC 842 free | Accounting firm → multi-client use; that's also a CAE-adjacent conversation |
+| 2026-06-02 | <redacted:c286c14f> | ASC 842 free (via storefront) | Ops team at an industrial firm → equipment/vehicle leases; finance-lease classification |
+| 2026-07-22 | <redacted:da08b381> | ASC 842 free (via storefront) | Larger company; likely evaluating vs. lease software; 20-lease cap honesty |
+| 2026-08-10 | <redacted:1f231cdd> | Month-end close ($1 paid) | Paid $1 = engaged; ask which reconciliation row is the pain, offer the matching workbook |
+| 2026-08-13 | <redacted:44a69357> | All six free files | Collector; ask which one they actually opened; single UPGRADE20 link to the store |
+| 2026-08-21 | <redacted:0d859651> | ASC 842 free | Accounting firm → multi-client use; that's also a CAE-adjacent conversation |
 
 **Template (ASC 842 variant):**
 

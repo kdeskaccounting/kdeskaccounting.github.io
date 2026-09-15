@@ -14,13 +14,24 @@ Usage:
 from __future__ import annotations
 import datetime as dt, json, os, pathlib, sys, warnings
 warnings.filterwarnings("ignore")
-import requests
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 OUT = REPO / "marketing" / "seo-tracking" / "gumroad-snapshots.jsonl"
 ENV = pathlib.Path(os.environ.get("KDESK_GUMROAD_ENV", "~/kdeskaccountingtemplates/.env")).expanduser()
 B = "https://api.gumroad.com/v2"
 FREEMAIL = {"gmail.com","yahoo.com","hotmail.com","outlook.com","icloud.com","naver.com","proton.me","protonmail.com","aol.com","live.com","me.com"}
+
+def is_business(email: str) -> bool:
+    """True when the address is on a company domain (not one of the free consumer hosts).
+
+    The single definition of "business lead" for this repo - crm_sync.py imports it.
+    """
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return False
+    domain = email.rsplit("@", 1)[1]
+    return bool(domain) and domain not in FREEMAIL
+
 
 def token() -> str:
     t = os.environ.get("GUMROAD_ACCESS_TOKEN")
@@ -33,12 +44,21 @@ def token() -> str:
     return t
 
 def pull(tok: str):
-    prods = requests.get(f"{B}/products", params={"access_token": tok}, timeout=30).json().get("products", [])
+    """Read-only pull of every product and sale.
+
+    The token goes in the Authorization header, never a query string: a URL ends up in the
+    server's access log, in any proxy between here and Gumroad, in a requests exception's
+    repr (which is what a queue card or a CI log would print) and in the shell history of
+    anyone who reproduces the call with curl. Gumroad's v2 API accepts both; only one of
+    them is safe. Same pattern as crm_sync.fetch_gumroad.
+    """
+    import requests
+    headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+    prods = requests.get(f"{B}/products", headers=headers, timeout=30).json().get("products", [])
     sales, key = [], None
     while True:
-        p = {"access_token": tok}
-        if key: p["page_key"] = key
-        r = requests.get(f"{B}/sales", params=p, timeout=30).json()
+        p = {"page_key": key} if key else {}
+        r = requests.get(f"{B}/sales", headers=headers, params=p, timeout=30).json()
         sales += r.get("sales", [])
         key = r.get("next_page_key")
         if not key: break
@@ -51,7 +71,7 @@ def window(sales, days):
 def summarize(sales):
     emails = {s.get("email", "").lower() for s in sales if s.get("email")}
     paid = [s for s in sales if s.get("price", 0) > 0]
-    biz = sorted({e.split("@")[1] for e in emails if "@" in e and e.split("@")[1] not in FREEMAIL})
+    biz = sorted({e.rsplit("@", 1)[1] for e in emails if is_business(e)})
     by_product = {}
     for s in sales:
         by_product[s.get("product_name", "?")[:60]] = by_product.get(s.get("product_name", "?")[:60], 0) + 1

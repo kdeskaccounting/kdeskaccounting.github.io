@@ -1,0 +1,182 @@
+name: Weekly data pulls
+
+# Mondays 15:15 UTC = 08:15 PDT. (16:15 UTC would be 08:15 PST, so between the November
+# and March changeovers this runs an hour early — fine for a data pull.) GitHub cron is
+# UTC and best effort; a late run still appends the same rows.
+#
+# This replaces the Monday block of ~/kdesk-analytics/kdesk-daily.sh so the pulls happen
+# whether or not the Mac is awake. Until that block is turned off, BOTH will append a row
+# to the same JSONL files every Monday — see "Turning off the old launchd Monday block"
+# in marketing/runbooks/automation-2026-09.md.
+#
+# Two things this job deliberately cannot do. (1) crm_sync.py runs --dry-run here: the
+# live sync writes a private Google Sheet through gws, a local Homebrew binary holding
+# santiagokdesk credentials under ~/.config/gws that does not exist on a runner. CI still
+# proves the Gumroad and MailerLite pulls and the diff. (2) It never runs a Chrome driver:
+# Chrome is never on the recurring path (spec Chrome rule 1).
+on:
+  schedule:
+    - cron: '15 15 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Pull and print, but commit nothing'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialize, never cancel: a cancelled commit or push can leave marketing/seo-tracking
+  # half written. An overlapping run queues behind the one already in flight.
+  group: data-weekly
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    env:
+      # pull_gumroad_snapshot.py reads the environment before it falls back to
+      # ~/kdeskaccountingtemplates/.env, so the token needs no file on a runner.
+      GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
+      MAILERLITE_TOKEN: ${{ secrets.MAILERLITE_TOKEN }}
+      BING_API_KEY: ${{ secrets.BING_API_KEY }}
+      # GOOGLE_TOKEN_JSON is deliberately NOT here. It is a long-lived OAuth refresh token
+      # and only two steps need it, so it is bound to those two rather than handed to
+      # every step in the job — including actions/checkout and setup-uv, which are pinned
+      # by moving tag, not by SHA.
+      #
+      # pull_seo_snapshot.py git-commits and pushes by itself unless this is '1'. The one
+      # commit step at the bottom of this job is the only place it writes to git.
+      KDESK_SEO_SKIP_COMMIT: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # pull_seo_snapshot.py annotates each row with `git log --since=<last pull>`
+          # (git_changes_since). The default shallow checkout has a single commit, so
+          # every row's annotation would come back empty.
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.11'
+
+      - name: Preflight the secrets
+        id: preflight
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+        # Fail closed, once, naming the secret. Without this the job dies three steps
+        # later inside a Google token refresh with a stack trace nobody reads.
+        # BING_API_KEY is the one optional secret: Stephen has not minted the key yet
+        # (ledger 68), so the Bing step is skipped rather than failed while it is empty.
+        run: |
+          missing=''
+          for name in GOOGLE_TOKEN_JSON GUMROAD_ACCESS_TOKEN MAILERLITE_TOKEN; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "missing required repository secret(s):$missing" >&2
+            echo "fix: gh secret set <NAME> --repo $GITHUB_REPOSITORY (see marketing/runbooks/automation-2026-09.md)" >&2
+            exit 2
+          fi
+          if [ -n "$BING_API_KEY" ]; then
+            echo 'bing=yes' >> "$GITHUB_OUTPUT"
+          else
+            echo 'bing=' >> "$GITHUB_OUTPUT"
+            echo 'BING_API_KEY is empty; skipping the Bing pull'
+          fi
+
+      - name: Restore the credential files the scripts read by path
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          # One place decides whether a Bing key exists — the preflight. Re-testing the
+          # secret here is how the restore and the Bing step's `if` would come to disagree.
+          HAVE_BING: ${{ steps.preflight.outputs.bing }}
+        # These scripts open fixed paths rather than reading the environment:
+        # pull_seo_snapshot.py and pull_youtube_snapshot.py both open
+        # ~/kdesk-analytics/google-token.json, crm_sync.py opens
+        # ~/kdesk-analytics/mailerlite-token.txt, pull_bing_snapshot.py opens
+        # ~/kdesk-analytics/bing-api-key.txt. umask 077 first, so nothing is ever
+        # group- or world-readable — not even for the instant before chmod.
+        run: |
+          umask 077
+          mkdir -p ~/kdesk-analytics
+          printf '%s' "$GOOGLE_TOKEN_JSON" > ~/kdesk-analytics/google-token.json
+          printf '%s\n' "$MAILERLITE_TOKEN" > ~/kdesk-analytics/mailerlite-token.txt
+          chmod 600 ~/kdesk-analytics/google-token.json ~/kdesk-analytics/mailerlite-token.txt
+          if [ -n "$HAVE_BING" ]; then
+            printf '%s\n' "$BING_API_KEY" > ~/kdesk-analytics/bing-api-key.txt
+            chmod 600 ~/kdesk-analytics/bing-api-key.txt
+          fi
+          ls -l ~/kdesk-analytics
+
+      - name: GSC + GA4 + target queries
+        run: uv run scripts/pull_seo_snapshot.py
+
+      - name: Gumroad
+        run: uv run --with requests scripts/pull_gumroad_snapshot.py
+
+      - name: YouTube
+        # The token lost youtube.force-ssl on 2026-09-11 (ledger 68), so the analytics
+        # half of this pull is expected to fail until Stephen re-consents. The row still
+        # lands; one known-broken puller must not lose the other three.
+        continue-on-error: true
+        run: uv run scripts/pull_youtube_snapshot.py
+
+      - name: Bing
+        # Skipped, not failed, while the key does not exist: a red step every Monday for
+        # a known-absent optional key trains everyone to stop reading the run.
+        if: steps.preflight.outputs.bing != ''
+        run: uv run scripts/pull_bing_snapshot.py --print
+
+      - name: CRM sync (dry run — gws is not available on a runner)
+        # A hard failure here is a real signal: the Gumroad or MailerLite token broke.
+        # --dry-run writes nothing at all, not even the queue card.
+        run: uv run --with requests scripts/sales/crm_sync.py --dry-run
+
+      - name: Commit the snapshot rows
+        # !cancelled(), so rows that were already pulled are committed even when a later
+        # step failed — but a cancelled job stops rather than racing to commit a checkout
+        # whose steps were killed part-way. A manual dispatch commits nothing unless
+        # dry_run is explicitly false; on a schedule the inputs context is empty, so
+        # `!= true` is already correct and the event check just says so out loud.
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.dry_run != true) }}
+        run: |
+          git config user.name 'kdesk-bot'
+          git config user.email 'santiagokdesk@gmail.com'
+          # A DIRECTORY pathspec, never marketing/seo-tracking/*.jsonl: the shell would
+          # expand that glob into an explicit list naming mailerlite-sync.jsonl, which is
+          # gitignored on purpose (it is the free-file sync state and it used to carry
+          # real addresses, ledger 76), and `git add` on an explicitly named ignored file
+          # fails the step. `git add -A <dir>` honours .gitignore. mkdir -p so the
+          # pathspec exists on a from-scratch checkout.
+          mkdir -p marketing/seo-tracking
+          git add -A marketing/seo-tracking
+          if git diff --cached --quiet; then
+            echo 'no new snapshot rows'
+            exit 0
+          fi
+          git commit -m "chore(data): weekly snapshots $(date -u +%F)"
+          # Three attempts: this job, the Mac and anything else pushing to the same
+          # branch append to the same files, and a lost race here silently drops a week.
+          #
+          # Both halves live inside the `if` condition on purpose. This body runs under
+          # `bash -e`, so an unguarded `git pull --rebase` that loses the race would kill
+          # the step on attempt 1 and the loop would never reach attempt 2 — a retry loop
+          # that cannot retry. A condition suppresses -e for everything in it.
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" \
+              && git push origin "HEAD:$GITHUB_REF_NAME"; then
+              exit 0
+            fi
+            # A rebase stopped on a conflict leaves the tree mid-rebase, and the next
+            # attempt's pull would refuse to start until it is cleared. `|| true` because
+            # there is usually no rebase in progress and that is not an error.
+            git rebase --abort || true
+            echo "push attempt $attempt failed, retrying..." >&2
+            sleep $((attempt * 5))
+          done
+          echo 'giving up after 3 push attempts' >&2
+          exit 1

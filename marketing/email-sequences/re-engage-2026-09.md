@@ -7,7 +7,7 @@ downloaders never received any email. This one-off closes that gap and doubles a
 **Status:** copy ready. Creating the MailerLite group + campaign draft via API was blocked by the
 session's permission classifier (an outbound email to real subscribers) — so do it in the MailerLite UI:
 Campaigns → Create → Regular → paste subject + body → recipients = the group below (or "Gumroad free
-downloaders" minus zainabzafar2225@gmail.com, who is already inside the live 3-email sequence).
+downloaders" minus <redacted:ee1d74b2>, who is already inside the live 3-email sequence).
 
 **Sender:** KDesk Accounting · santiagokdesk@gmail.com (same as the automations).
 **Merge fields already on every subscriber:** `{$product_name}` `{$page_url}` `{$paid_url}` `{$price}` `{$free_cap}`.
@@ -35,22 +35,22 @@ KDesk Accounting · Poulsbo, WA
 ## Recipients (14 — MailerLite subscriber id · email · product)
 | id | email | product | domain |
 |---|---|---|---|
-| 197511901860595582 | ljusper01@gmail.com | month-end close checklist | free-mail (PH) |
-| 197511901124494555 | kimjum1@naver.com | month-end close checklist | free-mail (KR) |
-| 197511900414608737 | scott@stratacloudaccountants.com | ASC 842 lease workbook | **accounting firm** |
-| 197511899790705978 | creativengatia@gmail.com | month-end close checklist | free-mail (KE) |
-| 197511899123812225 | wkohler@naeda.com | ASC 842 lease workbook | **trade association** |
-| 197511898025953018 | pfelesina@team-tristar.com | month-end close checklist | business |
-| 197511897049728944 | tem.p.email5055@gmail.com | month-end close checklist | throwaway |
-| 197511896323065826 | melissa.deters@orion.com | ASC 842 lease workbook | business |
-| 197511895635199304 | alextduong@gmail.com | ASC 606 commission workbook | free-mail |
-| 197511894834086996 | monica.hargraves@gmail.com | ASC 606 commission workbook | free-mail |
-| 197511894082258015 | operations@schlam.com | ASC 842 lease workbook | business (role acct) |
-| 188942545572595161 | dtsygankov@yahoo.com | ASC 842 lease workbook | free-mail ($15 PWYW) |
-| 188942545022092738 | eehighsmith@gmail.com | ASC 606 commission workbook | free-mail |
-| 188942544445375778 | rmcgrew@csibas.com | ASC 842 lease workbook | business |
+| 197511901860595582 | <redacted:7a765380> | month-end close checklist | free-mail (PH) |
+| 197511901124494555 | <redacted:6d33214d> | month-end close checklist | free-mail (KR) |
+| 197511900414608737 | <redacted:0d859651> | ASC 842 lease workbook | **accounting firm** |
+| 197511899790705978 | <redacted:23736e75> | month-end close checklist | free-mail (KE) |
+| 197511899123812225 | <redacted:44a69357> | ASC 842 lease workbook | **trade association** |
+| 197511898025953018 | <redacted:1f231cdd> | month-end close checklist | business |
+| 197511897049728944 | <redacted:359689fb> | month-end close checklist | throwaway |
+| 197511896323065826 | <redacted:da08b381> | ASC 842 lease workbook | business |
+| 197511895635199304 | <redacted:9a4acc2c> | ASC 606 commission workbook | free-mail |
+| 197511894834086996 | <redacted:72c4a4dd> | ASC 606 commission workbook | free-mail |
+| 197511894082258015 | <redacted:c286c14f> | ASC 842 lease workbook | business (role acct) |
+| 188942545572595161 | <redacted:e0a482e8> | ASC 842 lease workbook | free-mail ($15 PWYW) |
+| 188942545022092738 | <redacted:95741558> | ASC 606 commission workbook | free-mail |
+| 188942544445375778 | <redacted:eef5e6e7> | ASC 842 lease workbook | business |
 
-Excluded: 197693384562837309 zainabzafar2225@gmail.com (entered the live sequence 2026-09-03).
+Excluded: 197693384562837309 <redacted:ee1d74b2> (entered the live sequence 2026-09-03).
 
 ## Also noted while here
 - Gumroad's `PUT /products/{id}` returns `success: true` for `custom_fields[]` and then drops them — the
