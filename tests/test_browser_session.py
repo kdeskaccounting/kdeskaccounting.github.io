@@ -1,5 +1,6 @@
 """scripts/browser/session.py — per-site preflight, queue cards, trace paths."""
 import datetime as dt
+import re
 
 import pytest
 
@@ -214,3 +215,119 @@ def test_fail_card_masks_a_secret_that_appears_in_the_steps_or_title(tmp_path):
         steps=["curl 'https://api.gumroad.com/v2/products?access_token=abc123'"],
         run_name="gumroad-covers")
     assert "abc123" not in card.read_text()
+
+
+# ============================ fix round 2 ============================
+
+# --- 1. known_secrets() took the value of EVERY KEY=VALUE line in the .env, so ordinary
+# config (a product URL, a base path) got masked in queue cards, corrupting the evidence
+# Stephen has to act on. Only credential-shaped KEYS contribute a literal.
+
+def _write_env(home, body):
+    d = home / "kdeskaccountingtemplates"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".env").write_text(body, encoding="utf-8")
+
+
+def test_known_secrets_takes_credential_keys_only(tmp_path, monkeypatch):
+    _write_env(tmp_path, "GUMROAD_ACCESS_TOKEN=tok_abcdefghijkl\n"
+                         "PRODUCT_URL=https://kdeskaccounting.gumroad.com/l/asc842\n")
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    session.known_secrets.cache_clear()
+    try:
+        secrets = session.known_secrets()
+        assert "tok_abcdefghijkl" in secrets
+        assert "https://kdeskaccounting.gumroad.com/l/asc842" not in secrets
+        masked = session.redact_secrets(
+            "failed for PRODUCT_URL=https://kdeskaccounting.gumroad.com/l/asc842")
+        assert "kdeskaccounting.gumroad.com/l/asc842" in masked, "config must survive"
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_known_secrets_matches_key_secret_password_variants(tmp_path, monkeypatch):
+    _write_env(tmp_path, "MAILERLITE_API_KEY=key_abcdefghijkl\n"
+                         "SOME_SECRET=sec_abcdefghijkl\n"
+                         "DB_PASSWORD=pw_abcdefghijkl\n"
+                         "BASE_DIR=/Users/someone/projects\n")
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    session.known_secrets.cache_clear()
+    try:
+        secrets = session.known_secrets()
+        assert {"key_abcdefghijkl", "sec_abcdefghijkl", "pw_abcdefghijkl"} <= secrets
+        assert "/Users/someone/projects" not in secrets
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_known_secrets_survives_a_binary_env_file(tmp_path, monkeypatch):
+    d = tmp_path / "kdeskaccountingtemplates"
+    d.mkdir(parents=True)
+    (d / ".env").write_bytes(b"\xff\xfe\x00binary garbage\x00")
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    session.known_secrets.cache_clear()
+    try:
+        assert isinstance(session.known_secrets(), frozenset)   # must not raise
+    finally:
+        session.known_secrets.cache_clear()
+
+
+# --- 3. Both call sites truncated the exception to 300 chars BEFORE redaction, so a token
+# straddling the cut left a usable prefix in the card. fail_card redacts first, then trims.
+
+def test_fail_card_redacts_before_truncating_so_a_straddling_token_cannot_survive(
+        tmp_path, monkeypatch):
+    token = "tok_" + "S" * 40
+    monkeypatch.setattr(session, "known_secrets", lambda: frozenset({token}))
+
+    class _Pg:
+        def screenshot(self, path):
+            pass
+
+    detail = "x" * 290 + token + " trailing context"
+    card = session.fail_card(tmp_path, _Pg(), kind="gumroad-cover", slug="s",
+                             title="t", detail=detail, steps=["s"],
+                             run_name="gumroad-covers")
+    text = card.read_text()
+    assert token not in text
+    for n in (8, 12, 20, 30):
+        assert token[:n] not in text, f"a {n}-char prefix of the token survived"
+
+
+def test_fail_card_still_truncates_a_very_long_detail(tmp_path):
+    class _Pg:
+        def screenshot(self, path):
+            pass
+
+    card = session.fail_card(tmp_path, _Pg(), kind="k", slug="s", title="t",
+                             detail="y" * 5000, steps=["s"], run_name="r")
+    text = card.read_text()
+    assert "y" * 5000 not in text
+    assert "truncated" in text
+    # the longest run of the filler is capped (counting every "y" would also count the
+    # ones pytest puts in tmp_path from this test's own name)
+    longest = max((len(m) for m in re.findall(r"y+", text)), default=0)
+    assert longest <= 400
+
+
+# --- 5. Credentials also appear in JSON bodies and colon-separated logs, not just URLs.
+
+def test_redact_secrets_masks_a_quoted_json_credential():
+    out = session.redact_secrets('{"api_key": "abc123secretvalue", "page": 2}')
+    assert "abc123secretvalue" not in out
+    assert "page" in out and "2" in out
+
+
+def test_redact_secrets_masks_a_bare_colon_credential():
+    out = session.redact_secrets("access_token: abc123secretvalue")
+    assert "abc123secretvalue" not in out
+
+
+def test_redact_secrets_masks_single_quoted_and_nested_forms():
+    out = session.redact_secrets("headers={'token': 'abc123secretvalue'}")
+    assert "abc123secretvalue" not in out
+
+
+def test_colon_redaction_does_not_eat_ordinary_words_ending_in_key():
+    out = session.redact_secrets("monkey: a banana")
+    assert "banana" in out

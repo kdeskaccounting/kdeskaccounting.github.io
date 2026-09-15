@@ -76,3 +76,40 @@ def test_dry_run_lines_show_the_argv_it_would_launch_when_nothing_answers():
     assert "--remote-debugging-port=9222" in text
     assert "/Applications/Google Chrome.app" in text
     assert "would launch" in text.lower()
+
+
+# --- 4. dry_run_lines() never touched launch_fn, so asserting `launched == []` proved
+# nothing. Drive the real --dry-run branch of main() and assert it launches nothing.
+
+def test_main_dry_run_never_launches_and_prints_the_argv(capsys):
+    launched = []
+    rc = ec.main(["--dry-run"],
+                 probe_fn=lambda port, timeout=2.0: None,
+                 launch_fn=lambda: launched.append("LAUNCHED"))
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert launched == [], "--dry-run must not start Chrome"
+    assert "--remote-debugging-port=9222" in out
+    assert "would launch" in out.lower()
+
+
+def test_main_dry_run_reports_an_already_running_chrome_without_launching(capsys):
+    launched = []
+    rc = ec.main(["--dry-run", "--port", "9333"],
+                 probe_fn=lambda port, timeout=2.0: {"Browser": "Chrome/141"},
+                 launch_fn=lambda: launched.append("LAUNCHED"))
+    out = capsys.readouterr().out
+    assert rc == 0 and launched == []
+    assert "9333" in out and "Chrome/141" in out
+
+
+def test_main_without_dry_run_does_launch_when_nothing_answers():
+    """The mirror image: proves the dry-run assertion above is not vacuous."""
+    launched = []
+    seq = iter([None, {"Browser": "Chrome/141"}])
+
+    rc = ec.main([], probe_fn=lambda port, timeout=2.0: next(seq),
+                 launch_fn=lambda: launched.append("LAUNCHED"),
+                 sleep_fn=lambda s: None)
+    assert rc == 0
+    assert launched == ["LAUNCHED"]

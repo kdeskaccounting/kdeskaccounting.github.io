@@ -296,10 +296,9 @@ def test_delete_loop_does_nothing_when_there_are_no_emails():
 
 def test_no_inline_gumroad_anchors_survive_in_the_workflows_driver():
     src = pathlib.Path(wf.__file__).read_text(encoding="utf-8")
-    body = src.split("# --- selector self-check")[0]
     for literal in ("button[aria-label='Delete']", "Yes, delete", "Create email", "Add email",
                     'name="Publish"', 'name="Unpublish"', "Save and continue"):
-        assert literal not in body, f"{literal!r} should live in selectors_gumroad.py"
+        assert literal not in src, f"{literal!r} should live in selectors_gumroad.py"
 
 
 def test_the_moved_selectors_all_exist():
@@ -325,3 +324,88 @@ def test_workflows_json_is_read_without_leaking_a_file_handle():
     src = pathlib.Path(wf.__file__).read_text(encoding="utf-8")
     assert "json.load(open(" not in src
     assert "read_text(" in src
+
+
+# ============================ fix round 2 ============================
+
+# --- 2. The pre-write PRODUCT guard navigates (goto + wait_for_selector), so it can time
+# out. It sat OUTSIDE the try/except: a timeout there produced a raw traceback, no queue
+# card and no ledger line - the exact "silent failure" the spec forbids.
+
+class _ShotPage:
+    def __init__(self):
+        self.shots = []
+
+    def screenshot(self, path):
+        self.shots.append(path)
+
+
+def _fake_open_page(page):
+    import contextlib as _ctx
+
+    @_ctx.contextmanager
+    def _cm(*_a, **_k):
+        yield page
+    return _cm
+
+
+def test_a_timeout_in_the_product_guard_writes_a_card_instead_of_a_traceback(
+        tmp_path, monkeypatch, capsys):
+    page = _ShotPage()
+
+    def timeout(*_a, **_k):
+        raise TimeoutError("Timeout 30000ms exceeded waiting for table tbody tr")
+
+    monkeypatch.setattr(wf, "REPO", tmp_path)
+    monkeypatch.setattr(wf.session, "open_page", _fake_open_page(page))
+    monkeypatch.setattr(wf, "live_product_names", timeout)
+    monkeypatch.setattr(wf, "build", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("build() must not run after the guard failed")))
+    monkeypatch.setattr(sys, "argv", ["gumroad_workflows_ui.py"])
+
+    rc = wf.main()
+
+    assert rc == 1
+    cards = list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    assert len(cards) == 1, "a failure must leave exactly one queue card"
+    body = cards[0].read_text()
+    assert "Timeout 30000ms exceeded" in body
+    assert page.shots, "a screenshot should accompany the card"
+    assert "FAILED" in capsys.readouterr().out
+
+
+def test_the_product_guard_failure_card_names_the_preflight_not_a_slug(tmp_path, monkeypatch):
+    page = _ShotPage()
+    monkeypatch.setattr(wf, "REPO", tmp_path)
+    monkeypatch.setattr(wf.session, "open_page", _fake_open_page(page))
+    monkeypatch.setattr(wf, "live_product_names",
+                        lambda _pg: (_ for _ in ()).throw(TimeoutError("boom")))
+    monkeypatch.setattr(sys, "argv", ["gumroad_workflows_ui.py"])
+    wf.main()
+    card = next((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    assert "preflight" in card.name
+
+
+# --- 6. JS built from the selector constants, not from re-typed literals.
+
+def test_email_state_js_is_built_from_the_selector_constants():
+    from browser import selectors_gumroad as S
+    js = wf.email_state_js()
+    for const in (S.WORKFLOW_SUBJECT_INPUT, S.WORKFLOW_BODY_EDITOR, S.WORKFLOW_DELAY_INPUT):
+        assert const in js, const
+    assert js.count("{") == js.count("}")
+    assert _balanced(js, "{", "}") and _balanced(js, "(", ")")
+
+
+def test_email_state_js_returns_the_same_three_fields_as_before():
+    js = wf.email_state_js()
+    assert "subj:" in js and "delay:" in js and "body:" in js
+    assert js.startswith("() =>")
+
+
+def test_no_retyped_selector_literals_remain_in_the_workflows_driver():
+    src = pathlib.Path(wf.__file__).read_text(encoding="utf-8")
+    for literal in ('input[placeholder=\\"Subject\\"]', "[contenteditable=true]",
+                    'input[placeholder=\\"0\\"]', "button[aria-label='Delete']",
+                    "Yes, delete", "Create email", "Add email", "Save and continue"):
+        assert literal not in src, f"{literal!r} should come from selectors_gumroad.py"

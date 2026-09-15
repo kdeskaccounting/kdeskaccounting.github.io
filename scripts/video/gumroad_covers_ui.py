@@ -50,6 +50,21 @@ def token() -> str:
     raise SystemExit(f"No GUMROAD_ACCESS_TOKEN in {env}")
 
 
+def file_input_watcher_js() -> str:
+    """JS: record every file input the editor adds to the DOM.
+
+    Gumroad creates the input only after the upload button is clicked, so it is watched
+    for rather than polled. Built from the selector constant (spec Chrome rule 6); plain
+    concatenation keeps the JS braces literal, with no f-string escaping to get wrong.
+    """
+    sel = repr(S.FILE_INPUT)
+    return ("() => { window.__fi=[]; const mo=new MutationObserver(ms=>ms.forEach(m=>m.addedNodes"
+            ".forEach(n=>{ if(n.nodeType===1){ if(n.matches&&n.matches(" + sel + "))"
+            " window.__fi.push(n); n.querySelectorAll&&n.querySelectorAll(" + sel + ")"
+            ".forEach(i=>window.__fi.push(i)); } }))); mo.observe(document.documentElement,"
+            "{childList:true,subtree:true}); }")
+
+
 def cover_tile_count_js() -> str:
     """JS predicate: has a new cover tile appeared since there were `n` of them?"""
     return f"n => document.querySelectorAll({S.COVER_TABS!r}).length > n"
@@ -79,12 +94,7 @@ def check_listing(pg, slug: str) -> str:
 def do_listing(pg, slug: str, cover_png: str, thumb_png: str):
     from playwright.sync_api import expect
     cov = open_editor(pg, slug)
-    pg.evaluate(
-        "() => { window.__fi=[]; const mo=new MutationObserver(ms=>ms.forEach(m=>m.addedNodes"
-        ".forEach(n=>{ if(n.nodeType===1){ if(n.matches&&n.matches('input[type=file]'))"
-        " window.__fi.push(n); n.querySelectorAll&&n.querySelectorAll('input[type=file]')"
-        ".forEach(i=>window.__fi.push(i)); } }))); mo.observe(document.documentElement,"
-        "{childList:true,subtree:true}); }")
+    pg.evaluate(file_input_watcher_js())
     cov.scroll_into_view_if_needed()
     tiles = cov.locator(S.COVER_TABS)
     before = tiles.count()
@@ -178,7 +188,7 @@ def main() -> int:
                 card = session.fail_card(
                     REPO, pg, kind="gumroad-cover", slug=slug, run_name="gumroad-covers",
                     title=f"Set the cover and thumbnail on Gumroad listing {slug} by hand",
-                    detail=f"gumroad_covers_ui.py failed: {str(exc)[:300]}",
+                    detail=f"gumroad_covers_ui.py failed: {exc}",   # full text: fail_card redacts, then trims
                     steps=[f"Open {S.EDITOR_URL.format(slug=slug)}",
                            f"Cover → {S.UPLOAD_BUTTON_TEXT} → static/images/products/{cover}",
                            "Drag the new tile to the first position",

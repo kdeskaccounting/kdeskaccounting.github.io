@@ -36,14 +36,23 @@ NAME = {
     "saas-metrics": "Free → full: SaaS Metrics (3-email follow-up)",
     "runway": "Free → full: Runway (3-email follow-up)",
 }
-JS_STATE = (
-    "() => [...document.querySelectorAll('input[placeholder=\"Subject\"]')].map(s=>{let n=s;"
-    " for(let i=0;i<12;i++){ n=n.parentElement; if(n.querySelector('[contenteditable=true]')"
-    "&&n.querySelector('input[placeholder=\"0\"]')) break;}"
-    " const ce=n.querySelector('[contenteditable=true]');"
-    " return {subj:s.value.slice(0,16), delay:n.querySelector('input[placeholder=\"0\"]').value,"
-    " body:(ce?ce.innerText:'').trim().length}})")
 DELAY_LABELS = ("0 days after purchase", "3 days after purchase", "7 days after purchase")
+
+
+def email_state_js() -> str:
+    """JS: {subj, delay, body-length} for every email block currently in the editor.
+
+    Built from the selector constants rather than re-typed literals, so a Gumroad markup
+    change is still a one-file fix (spec Chrome rule 6).
+    """
+    subj, editor, delay = (repr(S.WORKFLOW_SUBJECT_INPUT), repr(S.WORKFLOW_BODY_EDITOR),
+                           repr(S.WORKFLOW_DELAY_INPUT))
+    return ("() => [...document.querySelectorAll(" + subj + ")].map(s=>{let n=s;"
+            " for(let i=0;i<12;i++){ n=n.parentElement; if(n.querySelector(" + editor + ")"
+            "&&n.querySelector(" + delay + ")) break;}"
+            " const ce=n.querySelector(" + editor + ");"
+            " return {subj:s.value.slice(0,16), delay:n.querySelector(" + delay + ").value,"
+            " body:(ce?ce.innerText:'').trim().length}})")
 
 
 def block(pg, i):
@@ -250,7 +259,7 @@ def apply_emails(pg, slug):
         s.fill(e["subject"])
         type_body(pg, blk, e["body"])
     for i, e in enumerate(emails):
-        if pg.evaluate(JS_STATE)[i]["body"] < 50:
+        if pg.evaluate(email_state_js())[i]["body"] < 50:
             _s, blk = block(pg, i)
             type_body(pg, blk, e["body"])
     save(pg)
@@ -319,8 +328,27 @@ def main() -> int:
         return 0
     rc = 0
     with session.open_page("gumroad-workflows", repo=REPO) as pg:
-        # Verify PRODUCT against the live listings before anything is written. Read-only.
-        stale = mismatch_lines(live_product_names(pg), slugs)
+        # Verify PRODUCT against the live listings before anything is written. Read-only,
+        # but it navigates - so it can time out, and a timeout must leave a queue card
+        # rather than a bare traceback ("queues, not silent failures").
+        try:
+            stale = mismatch_lines(live_product_names(pg), slugs)
+        except Exception as exc:  # noqa: BLE001
+            card = session.fail_card(
+                REPO, pg, kind="gumroad-workflow", slug="preflight",
+                run_name="gumroad-workflows",
+                title="Check the Gumroad products page by hand, then re-run the workflows driver",
+                detail=f"gumroad_workflows_ui.py could not verify PRODUCT against the live "
+                       f"listings, so it wrote nothing: {exc}",
+                steps=[f"Open {S.PRODUCTS_URL} in the debug Chrome and confirm it loads",
+                       "Confirm each PRODUCT name in scripts/video/gumroad_workflows_ui.py "
+                       "still matches a listing there",
+                       "Re-capture tests/fixtures/gumroad_product_names.json if a name changed",
+                       "Re-run: scripts/video/.venv-tts/bin/python "
+                       "scripts/video/gumroad_workflows_ui.py --check"])
+            print(f"{'preflight':<13} FAILED {session.redact_secrets(str(exc))[:120]} "
+                  f"-> {card.relative_to(REPO)}", flush=True)
+            return 1
         for line in stale:
             print(line, flush=True)
         if stale:
@@ -340,7 +368,7 @@ def main() -> int:
                 card = session.fail_card(
                     REPO, pg, kind="gumroad-workflow", slug=slug, run_name="gumroad-workflows",
                     title=f"Finish the free→paid workflow for {slug} in the Gumroad editor",
-                    detail=f"gumroad_workflows_ui.py failed: {str(exc)[:300]}",
+                    detail=f"gumroad_workflows_ui.py failed: {exc}",   # full text: fail_card redacts, then trims
                     steps=[f"Open {S.WORKFLOWS_URL}",
                            f"Open or create '{NAME[slug]}' filtered to '{PRODUCT[slug]}'",
                            "Paste the three emails from marketing/email-sequences/workflows.json "

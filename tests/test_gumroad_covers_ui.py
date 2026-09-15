@@ -10,8 +10,6 @@ import pathlib
 import sys
 import types
 
-import pytest
-
 import gumroad_covers_ui as cv
 from browser import session
 
@@ -97,3 +95,21 @@ def test_the_covers_driver_uses_the_shared_fail_card_helper():
     src = pathlib.Path(cv.__file__).read_text(encoding="utf-8")
     assert "session.fail_card(" in src
     assert "session.write_queue_card(" not in src
+
+
+# --- fix round 2, item 6: the MutationObserver JS re-typed input[type=file] three times.
+
+def test_file_input_watcher_js_is_built_from_the_selector_constant():
+    from browser import selectors_gumroad as S
+    js = cv.file_input_watcher_js()
+    assert repr(S.FILE_INPUT) in js or S.FILE_INPUT in js
+    assert js.count("{") == js.count("}")
+    assert js.count("(") == js.count(")")
+    assert "window.__fi" in js and "MutationObserver" in js
+
+
+def test_no_retyped_selector_literals_remain_in_the_covers_driver():
+    src = pathlib.Path(cv.__file__).read_text(encoding="utf-8")
+    for literal in ("input[type=file]", "[role=tablist][aria-label='Product covers']",
+                    "[role=dialog]", '"img"'):
+        assert literal not in src, f"{literal!r} should come from selectors_gumroad.py"

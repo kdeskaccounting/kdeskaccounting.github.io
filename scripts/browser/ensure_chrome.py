@@ -80,17 +80,18 @@ def dry_run_lines(port: int = 9222, *, probe_fn=None, launch_fn=None,
             f"(dry-run) would create the profile dir if missing: {profile}"]
 
 
-def main() -> int:
+def main(argv=None, *, probe_fn=None, launch_fn=None, sleep_fn=None) -> int:
+    """The injection points exist so a test can prove --dry-run launches nothing."""
     ap = argparse.ArgumentParser(description="Ensure the debug Chrome is running.")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--dry-run", action="store_true",
                     help="report the probe and the argv it would launch; launch nothing")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     if a.dry_run:
-        for line in dry_run_lines(a.port):
+        for line in dry_run_lines(a.port, probe_fn=probe_fn, launch_fn=launch_fn):
             print(line)
         return 0
-    info = ensure(a.port)
+    info = ensure(a.port, probe_fn=probe_fn, launch_fn=launch_fn, sleep_fn=sleep_fn)
     print(f"debug Chrome up on :{a.port} — {info.get('Browser', '?')} (profile {PROFILE_DIR})")
     return 0
 

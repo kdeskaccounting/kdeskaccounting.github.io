@@ -83,8 +83,18 @@ _SECRET_PARAM = re.compile(
     r"\b(access_token|refresh_token|api_key|apikey|password|secret|token|key)=[^&\s\"'<>]+",
     re.IGNORECASE)
 _BEARER = re.compile(r"\b(Bearer)\s+[^\s\"'<>]+", re.IGNORECASE)
+# The same credentials also turn up in JSON bodies and colon-separated logs:
+#   {"api_key": "…"}   headers={'token': '…'}   access_token: …
+_SECRET_COLON = re.compile(
+    r"([\"']?)\b(access_token|refresh_token|api_key|apikey|password|secret|token|key)\b\1"
+    r"\s*:\s*([\"']?)[^\s,;}\]\"']+\3",
+    re.IGNORECASE)
 # Shorter than this and a "secret" would mask ordinary words; a real token is far longer.
 _MIN_SECRET_LEN = 8
+# .env holds configuration as well as credentials. Only these key shapes contribute a
+# literal to mask - masking a product URL or a base path would corrupt the very evidence
+# a queue card exists to carry.
+_CREDENTIAL_KEY = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|PASS)", re.IGNORECASE)
 
 
 @functools.lru_cache(maxsize=1)
@@ -99,15 +109,18 @@ def known_secrets() -> frozenset:
     env_file = home / "kdeskaccountingtemplates" / ".env"
     try:
         for line in env_file.read_text(encoding="utf-8").splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                found.add(line.split("=", 1)[1].strip().strip("\"'"))
-    except OSError:
+            if "=" not in line or line.lstrip().startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            if _CREDENTIAL_KEY.search(key):
+                found.add(value.strip().strip("\"'"))
+    except (OSError, UnicodeDecodeError):
         pass
     for plain in (home / "kdesk-analytics" / "mailerlite-token.txt",
                   home / "kdesk-analytics" / "bing-api-key.txt"):
         try:
             found.add(plain.read_text(encoding="utf-8").strip())
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             pass
     return frozenset(s for s in found if len(s) >= _MIN_SECRET_LEN)
 
@@ -125,6 +138,7 @@ def redact_secrets(text, *, secrets=None) -> str:
         if secret and len(str(secret).strip()) >= _MIN_SECRET_LEN:
             out = out.replace(str(secret), "***")
     out = _SECRET_PARAM.sub(r"\1=***", out)
+    out = _SECRET_COLON.sub(r"\1\2\1: \3***\3", out)
     return _BEARER.sub(r"\1 ***", out)
 
 
@@ -166,13 +180,17 @@ def trace_path(directory: pathlib.Path) -> pathlib.Path:
 
 
 def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, detail: str,
-              steps: list[str], run_name: str) -> pathlib.Path:
+              steps: list[str], run_name: str, limit: int = 400) -> pathlib.Path:
     """Turn a driver failure into a screenshot plus a paste-ready queue card.
 
     The single place a failure becomes a card, so redaction happens once rather than being
     re-implemented (and eventually forgotten) in each driver. Everything that lands on
     disk - the card body, the title, the steps and the screenshot path - is masked first.
     A screenshot failure never hides the original error.
+
+    Pass the FULL exception text: `detail` is redacted and only then truncated to `limit`.
+    Truncating first would cut a token in half and leave a usable prefix in a file that
+    git tracks, which is exactly what the callers used to do with str(exc)[:300].
     """
     safe_slug = redact_secrets(slug).replace("/", "-")
     out = trace_dir(repo, f"{run_name}-fail-{safe_slug}")
@@ -182,10 +200,13 @@ def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, det
         where = f"\n\nScreenshot: {redact_secrets(shot)}"
     except Exception:  # noqa: BLE001 - a dead page must not mask the real failure
         where = "\n\n(no screenshot: the page was not available)"
+    safe_detail = redact_secrets(detail)          # redact first...
+    if len(safe_detail) > limit:                  # ...then trim the already-safe text
+        safe_detail = safe_detail[:limit] + " […truncated]"
     body = queue_card_markdown(
         kind=kind,
         title=redact_secrets(title),
-        why=redact_secrets(detail) + where,
+        why=safe_detail + where,
         steps=[redact_secrets(s) for s in steps])
     return write_queue_card(repo, "manual", f"{kind}-{safe_slug}", body)
 
