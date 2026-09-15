@@ -10,10 +10,12 @@ merge fields ({$product_name}, {$free_cap}, {$paid_url}, {$page_url}, {$price}, 
 
   python3 scripts/sync_gumroad_to_mailerlite.py [--dry-run] [--since-days 3650]
 Tokens: ~/kdeskaccountingtemplates/.env (GUMROAD_ACCESS_TOKEN), ~/kdesk-analytics/mailerlite-token.txt
-State: marketing/seo-tracking/mailerlite-sync.jsonl (append-only: who was synced when)
+State: marketing/seo-tracking/mailerlite-sync.jsonl (append-only: who was synced when,
+as a salted SHA-256 - never an address. This repo is public; see scripts/privacy.py.)
 """
 import os, sys, json, pathlib, datetime as dt, warnings; warnings.filterwarnings("ignore")
-import requests
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import privacy
 REPO = pathlib.Path(__file__).resolve().parents[1]; STATE = REPO / "marketing/seo-tracking/mailerlite-sync.jsonl"
 ML = "https://connect.mailerlite.com/api"; GR = "https://api.gumroad.com/v2"
 GROUP_NAME = "Gumroad free downloaders"
@@ -26,11 +28,41 @@ PRODUCTS = {  # gumroad product name prefix -> merge fields
     "Month-End Close Checklist": dict(product_name="month-end close checklist", free_cap="the close scaffolding", paid_url="https://kdeskaccounting.gumroad.com/l/saas-controller-bundle", page_url="https://kdeskaccounting.com/templates/month-end-close/", price="$249 (all five workbooks)", full_desc="the technical workbooks the reconciliation rows tie to: ASC 842, ASC 606, fixed assets, SaaS metrics, runway"),
 }
 FIELDS = ["product_name", "free_cap", "paid_url", "page_url", "price", "full_desc"]
+
+def state_row(email, product, created_at, now=None):
+    """One line of the append-only state file - a digest, never the address.
+
+    The address is what makes this person identifiable; the digest is all the dedupe in
+    main() actually needs.
+    """
+    return {"email_sha256": privacy.email_hash(email), "product": product,
+            "gumroad_sale": created_at,
+            "synced_at": now or dt.datetime.now().astimezone().isoformat(timespec="minutes")}
+
+
+def synced_hashes(path=None):
+    """Digests already synced. Legacy rows carrying a plaintext address are hashed on read,
+    so a file written before containment still dedupes instead of re-syncing everyone."""
+    path = pathlib.Path(path if path is not None else STATE)
+    if not path.exists():
+        return set()
+    out = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        digest = row.get("email_sha256") or privacy.email_hash(row.get("email"))
+        if digest:
+            out.add(digest)
+    return out
+
+
 def gtoken():
     for l in open(os.path.expanduser("~/kdeskaccountingtemplates/.env")):
         if l.startswith("GUMROAD_ACCESS_TOKEN"): return l.split("=", 1)[1].strip().strip('"\'')
 def mltoken(): return open(os.path.expanduser("~/kdesk-analytics/mailerlite-token.txt")).read().strip()
 def ml(method, path, **kw):
+    import requests
     r = requests.request(method, ML + path, headers={"Authorization": f"Bearer {mltoken()}", "Accept": "application/json", "Content-Type": "application/json"}, timeout=30, **kw)
     if r.status_code >= 300: raise SystemExit(f"MailerLite {method} {path} -> {r.status_code} {r.text[:300]}")
     return r.json() if r.text else {}
@@ -43,6 +75,7 @@ def ensure_group():
         if g["name"] == GROUP_NAME: return g["id"]
     return ml("POST", "/groups", json={"name": GROUP_NAME})["data"]["id"]
 def gumroad_sales(since_days):
+    import requests
     sales, key = [], None
     while True:
         p = {"access_token": gtoken()}
@@ -53,15 +86,13 @@ def gumroad_sales(since_days):
     return [s for s in sales if dt.datetime.fromisoformat(s["created_at"].replace("Z", "+00:00")) >= cutoff]
 def main():
     dry = "--dry-run" in sys.argv; since = int(sys.argv[sys.argv.index("--since-days") + 1]) if "--since-days" in sys.argv else 3650
-    done = set()
-    if STATE.exists():
-        for l in STATE.read_text().splitlines():
-            if l.strip(): done.add(json.loads(l)["email"].lower())
+    done = synced_hashes()
     if not dry: ensure_fields(); gid = ensure_group()
     synced = 0
     for s in sorted(gumroad_sales(since), key=lambda s: s["created_at"]):
         email = (s.get("email") or "").lower(); name = s.get("product_name", "")
-        if not email or email in done or "santiagokdesk" in email or "kdeskaccounting" in email: continue
+        digest = privacy.email_hash(email)
+        if not email or digest in done or "santiagokdesk" in email or "kdeskaccounting" in email: continue
         if s.get("price", 0) >= 4900: continue  # paid customers get a different treatment
         prod = next((v for k, v in PRODUCTS.items() if name.startswith(k)), None)
         if not prod: continue
@@ -69,7 +100,7 @@ def main():
         payload["fields"] = {k: v for k, v in payload["fields"].items() if v}
         if dry: print("would sync", email, "->", prod["product_name"]); continue
         ml("POST", "/subscribers", json=payload)
-        with STATE.open("a") as f: f.write(json.dumps({"email": email, "product": prod["product_name"], "gumroad_sale": s["created_at"], "synced_at": dt.datetime.now().astimezone().isoformat(timespec="minutes")}) + "\n")
-        done.add(email); synced += 1; print("synced", email, "->", prod["product_name"])
+        with STATE.open("a") as f: f.write(json.dumps(state_row(email, prod["product_name"], s["created_at"])) + "\n")
+        done.add(digest); synced += 1; print("synced", email, "->", prod["product_name"])
     print("done:", synced, "new subscriber(s)")
 if __name__ == "__main__": main()

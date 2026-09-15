@@ -32,10 +32,12 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from typing import Iterable
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
 import ledger  # noqa: E402
+import privacy  # noqa: E402  (the tracked sync log stores digests, never addresses)
 from browser import session  # noqa: E402  (redact_secrets, so no token reaches a card)
 from pull_gumroad_snapshot import is_business  # noqa: E402  (single definition of the rule)
 
@@ -45,6 +47,11 @@ MAILERLITE_TOKEN_FILE = pathlib.Path.home() / "kdesk-analytics" / "mailerlite-to
 TABS = ("People", "Events", "Pipeline", "Scoreboard")
 COLUMNS = ("email", "first_seen", "source", "domain", "is_business", "interest",
            "stage", "mrr", "last_touch", "next_action")
+# Who owns which cell. Machine columns are recomputed from the APIs on every run and
+# overwritten without asking. Human columns are Stephen's: read them, never clobber them.
+# email is the key and first_seen only ever moves backwards, so neither is in either list.
+MACHINE_COLUMNS = ("source", "domain", "is_business", "interest", "stage", "mrr", "last_touch")
+HUMAN_COLUMNS = ("next_action",)
 LAST_COL = chr(ord("A") + len(COLUMNS) - 1)          # "J"
 SOURCE_RANK = {"gumroad-paid": 3, "gumroad-free": 2, "calculator": 2, "mailerlite": 1, "": 0}
 PAID_CENTS = 1                                        # any non-zero price is a purchase
@@ -135,17 +142,29 @@ def from_mailerlite(subscribers: list[dict]) -> dict[str, Person]:
     return out
 
 
-def from_seo_tracking(repo: pathlib.Path) -> dict[str, Person]:
-    """The append-only sync log is the record of who took a free file and when."""
+def from_seo_tracking(repo: pathlib.Path,
+                     known_emails: "Iterable[str]" = ()) -> dict[str, Person]:
+    """The append-only sync log is the record of who took a free file and when.
+
+    That log lives in a PUBLIC repo, so it stores a salted digest instead of the address
+    (scripts/privacy.py). A digest cannot be turned back into an address, but it can be
+    matched against addresses we already hold from the live Gumroad/MailerLite pulls - pass
+    those as `known_emails` and a hash-only row still enriches its person. A digest we
+    cannot resolve is skipped: there is no key to file it under. Rows written before
+    containment still carry a plaintext `email` and are read as-is.
+    """
     out: dict[str, Person] = {}
     path = pathlib.Path(repo) / "marketing" / "seo-tracking" / "mailerlite-sync.jsonl"
     if not path.exists():
         return out
+    by_hash = privacy.hash_index(known_emails)
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
         email = (row.get("email") or "").strip().lower()
+        if not email and row.get("email_sha256"):
+            email = by_hash.get(row["email_sha256"], "")
         if not email:
             continue
         day = _date(row.get("gumroad_sale", ""))
@@ -181,6 +200,27 @@ def merge(*sources: dict[str, Person]) -> dict[str, Person]:
     return merged
 
 
+def apply_to(existing: Person, wanted: Person) -> Person:
+    """The row we actually want in the sheet: machine columns refreshed, human columns kept.
+
+    Writing `wanted` wholesale would silently erase whatever Stephen typed into
+    next_action - the sheet is a working CRM, not a read-only export, so a column a human
+    owns is read and preserved rather than recomputed.
+    """
+    merged = dataclasses.replace(existing)
+    for column in MACHINE_COLUMNS:
+        setattr(merged, column, getattr(wanted, column))
+    for column in HUMAN_COLUMNS:
+        if not str(getattr(existing, column, "")).strip():
+            setattr(merged, column, getattr(wanted, column))
+    merged.email = existing.email or wanted.email
+    # first_seen is the earliest we have ever seen this person; it never moves forward, so a
+    # sale that has aged out of the API window cannot reset it.
+    if wanted.first_seen and (not existing.first_seen or wanted.first_seen < existing.first_seen):
+        merged.first_seen = wanted.first_seen
+    return merged
+
+
 def diff(existing_rows: list[list[str]], wanted: dict[str, Person]):
     """Return (updates, appends). updates are (1-based sheet row, Person)."""
     index: dict[str, tuple[int, Person]] = {}
@@ -192,8 +232,10 @@ def diff(existing_rows: list[list[str]], wanted: dict[str, Person]):
         found = index.get(email)
         if found is None:
             appends.append(person)
-        elif found[1].as_row() != person.as_row():
-            updates.append((found[0], person))
+            continue
+        target = apply_to(found[1], person)
+        if found[1].as_row() != target.as_row():
+            updates.append((found[0], target))
     return updates, appends
 
 
@@ -374,8 +416,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
     try:
-        wanted = merge(from_seo_tracking(REPO), from_mailerlite(fetch_mailerlite()),
-                       from_gumroad(fetch_gumroad()))
+        subscribers = from_mailerlite(fetch_mailerlite())
+        buyers = from_gumroad(fetch_gumroad())
+        # The tracker is hash-only, so it is read last: the addresses just pulled are what
+        # its digests are matched against.
+        tracked = from_seo_tracking(REPO, known_emails=set(subscribers) | set(buyers))
+        wanted = merge(tracked, subscribers, buyers)
         sheet_id = ensure_sheet(a.dry_run)
         existing = [] if a.dry_run and not SHEET_ID_FILE.exists() else read_people(sheet_id)
         print(f"{SHEET_TITLE} ({sheet_id}) — {len(wanted)} people "

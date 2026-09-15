@@ -6,6 +6,8 @@ import types
 
 from sales import crm_sync as cs
 
+COL = {name: i for i, name in enumerate(cs.COLUMNS)}
+
 GUMROAD = [
     {"email": "Buyer@NorthStar.EXAMPLE", "price": 0, "product_name": "ASC 842 — Free",
      "created_at": "2026-08-01T10:00:00Z"},
@@ -341,3 +343,104 @@ def test_read_people_refuses_to_silently_duplicate_past_the_row_cap(monkeypatch)
         assert "row read cap" in str(exc)
     else:
         raise AssertionError("a full People tab must stop the sync, not duplicate it")
+
+
+# --- containment: the tracker is pseudonymised, and humans own some columns ---------------
+
+
+def _sanitised_tracker(tmp_path, digest, product="ASC 842 lease workbook"):
+    d = tmp_path / "marketing" / "seo-tracking"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "mailerlite-sync.jsonl").write_text(
+        json.dumps({"email_sha256": digest, "product": product,
+                    "gumroad_sale": "2026-09-11T04:25:17Z",
+                    "synced_at": "2026-09-11T08:15-07:00"}) + "\n")
+    return tmp_path
+
+
+def test_from_seo_tracking_joins_a_hash_only_row_to_an_address_we_already_hold(
+        tmp_path, monkeypatch):
+    """The tracked file carries no address; the live API pull does. Hashing what we know is
+    how a pseudonymised row still enriches its person."""
+    monkeypatch.setattr(cs.privacy, "SALT_FILE", tmp_path / "salt.txt")
+    repo = _sanitised_tracker(tmp_path, cs.privacy.email_hash("info@northwind.example"))
+    people = cs.from_seo_tracking(repo, known_emails=["INFO@northwind.example", "x@y.example"])
+    assert set(people) == {"info@northwind.example"}
+    assert people["info@northwind.example"].interest == "ASC 842 lease workbook"
+    assert people["info@northwind.example"].first_seen == "2026-09-11"
+    assert people["info@northwind.example"].is_business == "TRUE"
+
+
+def test_from_seo_tracking_skips_a_hash_it_cannot_resolve(tmp_path, monkeypatch):
+    monkeypatch.setattr(cs.privacy, "SALT_FILE", tmp_path / "salt.txt")
+    repo = _sanitised_tracker(tmp_path, cs.privacy.email_hash("gone@northwind.example"))
+    assert cs.from_seo_tracking(repo, known_emails=["someone@else.example"]) == {}
+    assert cs.from_seo_tracking(repo) == {}
+
+
+def test_from_seo_tracking_needs_no_known_emails_for_a_legacy_plaintext_row(tmp_path):
+    d = tmp_path / "marketing" / "seo-tracking"
+    d.mkdir(parents=True)
+    (d / "mailerlite-sync.jsonl").write_text(
+        json.dumps({"email": "info@northwind.example", "product": "runway calculator",
+                    "gumroad_sale": "2026-09-11T04:25:17Z"}) + "\n")
+    assert set(cs.from_seo_tracking(tmp_path)) == {"info@northwind.example"}
+
+
+def test_the_column_ownership_split_covers_every_column():
+    assert set(cs.MACHINE_COLUMNS) | set(cs.HUMAN_COLUMNS) | {"email", "first_seen"} == set(cs.COLUMNS)
+    assert cs.HUMAN_COLUMNS == ("next_action",)
+    assert "next_action" not in cs.MACHINE_COLUMNS
+
+
+def test_diff_never_overwrites_a_next_action_a_human_typed():
+    wanted = cs.from_mailerlite([MAILERLITE[1]])                  # next_action == ""
+    person = wanted["new@acme.io"]
+    row = person.as_row()
+    row[COL["next_action"]] = "call them Tuesday"
+    row[COL["stage"]] = "lead"
+    existing = [list(cs.COLUMNS), row]
+    updates, appends = cs.diff(existing, wanted)
+    assert appends == []
+    assert updates == [], "nothing machine-owned changed, so there is nothing to write"
+
+
+def test_diff_updates_machine_columns_while_keeping_the_human_one():
+    wanted = cs.merge(cs.from_gumroad(GUMROAD))
+    person = wanted["buyer@northstar.example"]                    # stage customer, paid
+    stale = person.as_row()
+    stale[COL["stage"]] = "lead"                                  # machine-owned, out of date
+    stale[COL["interest"]] = ""                                   # machine-owned, out of date
+    stale[COL["next_action"]] = "send the case study"             # human-owned, keep it
+    existing = [list(cs.COLUMNS), stale]
+    updates, _appends = cs.diff(existing, wanted)
+    assert len(updates) == 1
+    row, updated = updates[0]
+    assert row == 2
+    assert updated.stage == "customer"                            # machine column refreshed
+    assert updated.interest == person.interest
+    assert updated.next_action == "send the case study"           # human column preserved
+    assert updated.as_row()[COL["next_action"]] == "send the case study"
+
+
+def test_diff_keeps_the_earliest_first_seen_the_sheet_has_ever_held():
+    wanted = cs.merge(cs.from_gumroad(GUMROAD))
+    person = wanted["buyer@northstar.example"]                    # first_seen 2026-08-01
+    older = person.as_row()
+    older[COL["first_seen"]] = "2025-01-01"
+    older[COL["stage"]] = "lead"                                  # force an update
+    existing = [list(cs.COLUMNS), older]
+    updates, _appends = cs.diff(existing, wanted)
+    assert updates[0][1].first_seen == "2025-01-01", "first_seen must never move forward"
+
+
+def test_a_human_edit_survives_a_second_sync(tmp_path, monkeypatch):
+    """The regression that matters: edit the sheet, re-run, edit still there, zero writes."""
+    monkeypatch.setattr(cs, "_gws", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a no-op sync must make no gws call")))
+    wanted = cs.merge(cs.from_gumroad(GUMROAD), cs.from_mailerlite(MAILERLITE))
+    rows = [list(cs.COLUMNS)] + [p.as_row() for p in wanted.values()]
+    rows[1][COL["next_action"]] = "intro call booked"
+    assert cs.sync(sheet_id="S", wanted=wanted, existing=rows, dry_run=False,
+                   show_emails=False) == (0, 0)
+    assert rows[1][COL["next_action"]] == "intro call booked"
