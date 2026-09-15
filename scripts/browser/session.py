@@ -147,7 +147,10 @@ def _file_secrets() -> frozenset:
     except (OSError, UnicodeDecodeError):
         pass
     for plain in (home / "kdesk-analytics" / "mailerlite-token.txt",
-                  home / "kdesk-analytics" / "bing-api-key.txt"):
+                  home / "kdesk-analytics" / "bing-api-key.txt",
+                  # scripts/video/narrate.py's ElevenLabs key. Its API echoes request
+                  # detail back in error bodies, and narrate prints those.
+                  home / "kdesk-analytics" / "elevenlabs-api-key.txt"):
         try:
             found.add(plain.read_text(encoding="utf-8").strip())
         except (OSError, UnicodeDecodeError):

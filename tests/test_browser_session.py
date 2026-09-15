@@ -433,3 +433,30 @@ def test_the_environment_sweep_leaves_an_innocent_lookalike_alone(tmp_path, monk
 def test_the_ambient_environment_is_hidden_from_every_test():
     leaked = [n for n in os.environ if session.is_credential_name(n)]
     assert leaked == [], f"credential-named variables visible to tests: {leaked}"
+
+
+# ============================ ElevenLabs narration key ============================
+
+# --- The ElevenLabs key lives in a token FILE beside MailerLite's and Bing's
+# (~/kdesk-analytics/elevenlabs-api-key.txt, 0600), and scripts/video/narrate.py prints
+# ElevenLabs error text to stdout. If the sweep does not know the file, a 401 body that
+# echoes the key would land in a build log verbatim.
+
+def test_known_secrets_includes_the_elevenlabs_key_file(tmp_path, monkeypatch):
+    analytics = tmp_path / "kdesk-analytics"
+    analytics.mkdir()
+    (analytics / "elevenlabs-api-key.txt").write_text("sk_fake_elevenlabs_0123456789\n")
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    session.known_secrets.cache_clear()
+    try:
+        assert "sk_fake_elevenlabs_0123456789" in session.known_secrets()
+        out = session.redact_secrets("ElevenLabs HTTP 401 for xi-api-key "
+                                     "sk_fake_elevenlabs_0123456789")
+        assert "sk_fake_elevenlabs_0123456789" not in out
+        assert "***" in out
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_the_elevenlabs_environment_variable_is_swept_as_a_credential():
+    assert session.is_credential_name("ELEVENLABS_API_KEY")
