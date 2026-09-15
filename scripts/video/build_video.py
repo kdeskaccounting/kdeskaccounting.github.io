@@ -24,42 +24,53 @@ def recalc(src: pathlib.Path, outdir: pathlib.Path) -> pathlib.Path:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--spec", required=True)
+    ap.add_argument("--spec", required=True,
+                    help="path to a scenes.yaml spec; may live outside this repo "
+                         "(a card-only spec needs no workbook and no LibreOffice)")
     ap.add_argument("--frames-only", action="store_true")
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
     a = ap.parse_args()
     spec = yaml.safe_load(open(a.spec)); slug = spec["slug"]
     build = HERE / "build" / slug; frames = build / "frames"; frames.mkdir(parents=True, exist_ok=True)
-    src = pathlib.Path(spec["source"]).expanduser()
-    if not src.is_absolute(): src = REPO / src
-    staged = build / "src.xlsx"
-    if not a.skip_recalc or not (build / "recalc" / "src.xlsx").exists():
-        shutil.copy(src, staged)
-        presets = spec.get("presets") or {}
-        if presets:
-            wb = openpyxl.load_workbook(staged)
-            for sheet, cells in presets.items():
-                for addr, val in cells.items():
-                    wb[sheet][addr] = val
-            wb.save(staged)
-        rec = recalc(staged, build / "recalc")
-        print(f"recalc ok -> {rec}")
-    rec = build / "recalc" / "src.xlsx"
-    wbv = openpyxl.load_workbook(rec, data_only=True); wbf = openpyxl.load_workbook(rec)
+    import cards
+    needs_workbook = any(sc.get("kind", "sheet") not in ("title", "outro", "card")
+                         for sc in spec["scenes"])
+    wbv = wbf = None
+    wbname = spec.get("workbook_name", "")
+    if needs_workbook:
+        src = pathlib.Path(spec["source"]).expanduser()
+        if not src.is_absolute(): src = REPO / src
+        staged = build / "src.xlsx"
+        if not a.skip_recalc or not (build / "recalc" / "src.xlsx").exists():
+            shutil.copy(src, staged)
+            presets = spec.get("presets") or {}
+            if presets:
+                wb = openpyxl.load_workbook(staged)
+                for sheet, cells in presets.items():
+                    for addr, val in cells.items():
+                        wb[sheet][addr] = val
+                wb.save(staged)
+            rec = recalc(staged, build / "recalc")
+            print(f"recalc ok -> {rec}")
+        rec = build / "recalc" / "src.xlsx"
+        wbv = openpyxl.load_workbook(rec, data_only=True); wbf = openpyxl.load_workbook(rec)
+        wbname = spec.get("workbook_name", src.name)
     only = {int(x) for x in a.scenes.split(",")} if a.scenes else None
     fj = frames / "focus.json"; focus = json.load(open(fj)) if fj.exists() else {}
-    wbname = spec.get("workbook_name", src.name)
     for i, sc in enumerate(spec["scenes"]):
         if only is not None and i not in only: continue
         out = frames / f"scene_{i:02d}.png"; kind = sc.get("kind", "sheet")
-        if kind in ("title", "outro"):
+        if cards.is_card(sc):
+            focus[str(i)] = R.render_card_scene(out, sc["template"], sc.get("data", {}),
+                                                spec.get("brand"))
+        elif kind in ("title", "outro"):
             focus[str(i)] = R.render_card(kind, out, sc.get("heading", spec.get("title", "")), sc.get("sub", ""),
                                           sc.get("lines", []), sc.get("price", ""), sc.get("url", ""), sc.get("badge", ""))
         else:
             focus[str(i)] = R.render_sheet(wbv, wbf, sc["sheet"], sc["range"], out, tuple(sc.get("highlight", [])),
                                            float(sc.get("zoom", 1.0)), sc.get("caption", ""), wbname)
-        print(f"scene {i:02d}: {kind:<6} {sc.get('sheet','')} {sc.get('range','')} -> {out.name} focus={focus[str(i)]}", flush=True)
+        print(f"scene {i:02d}: {kind:<6} {sc.get('template', sc.get('sheet',''))} {sc.get('range','')} -> {out.name} focus={focus[str(i)]}", flush=True)
     json.dump(focus, open(fj, "w"), indent=1)
     if a.frames_only: return
     subprocess.run([str(VENV_PY), str(HERE / "narrate.py"), "--spec", a.spec, "--out", str(build / "audio")], check=True)

@@ -3,7 +3,11 @@
 Vertical YouTube Short (1080x1920, 30 fps, <= 59 s) composed from the existing walkthrough assets:
 scene PNGs + narration WAVs + the `short:` block in marketing/video/<slug>/scenes.yaml.
   scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842
+  scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /abs/path/scenes.yaml
 Output: scripts/video/build/<slug>/<slug>-short.mp4 (+ short-review/*.png sample frames).
+  --slug reads marketing/video/<slug>/scenes.yaml in this repo; --spec takes a scenes.yaml
+  anywhere on disk (its `slug:` key names the build directory), which is how a second venture
+  renders a card-only Short through this pipeline.
   --variant NAME renders the block under `shorts: {NAME: …}` instead → <slug>-short-NAME.mp4
 All text is rendered into PNGs via HTML (this ffmpeg has no drawtext).
 """
@@ -12,6 +16,7 @@ import yaml
 from PIL import Image, ImageChops
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
+import cards
 from short_variants import select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
 TOP, BOT = 360, 312                                            # bands at render scale (300 / 260 at 1080 wide)
@@ -54,28 +59,72 @@ html,body{{width:{RW}px;height:{RH}px;background:{NAVY}}}
 <div class="bot"><div class="cap">{html.escape(caption)}</div><div class="url">kdeskaccounting.com</div></div>
 </body></html>"""
 
-def end_html(cta):
+def end_html(cta, brand=None):
+    """The closing CTA card.
+
+    `brand` is a `cards.brand_tokens()` dict from the spec's `brand:` block. A spec that carries
+    one signs off in its own name — a second venture's Short must not end on KDesk's tagline.
+    Without it the card is byte-for-byte the KDesk outro every existing Short already uses.
+    """
     head, _, link = cta.partition("→"); head = head.strip() or cta; link = link.strip()
     link_html = f'<div class="link">{html.escape(link)}</div>' if link else ""
+    grad = GRAD if brand is None else (f"radial-gradient(1100px 700px at 20% 10%, "
+                                       f"{brand['bg_alt']} 0%, {brand['bg']} 45%, {brand['bg']} 100%)")
+    name = "KDesk Accounting" if brand is None else html.escape(brand["name"])
+    sub = "Pure Excel · No macros · Windows &amp; Mac" if brand is None else html.escape(brand["url"])
+    fg = "#fff" if brand is None else brand["fg"]
+    muted = "#dbe7f7" if brand is None else brand["muted"]
+    accent = "#ffd966" if brand is None else brand["accent"]
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>{R.BASE_CSS}
-html,body{{width:{RW}px;height:{RH}px;background:{GRAD}}}
+html,body{{width:{RW}px;height:{RH}px;background:{grad}}}
 .wrap{{position:absolute;left:0;top:0;width:{RW}px;height:{RH}px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:0 90px}}
-.brand{{color:#dbe7f7;font-size:40px;margin-bottom:60px}} .brand i{{width:32px;height:32px;background:#fff}}
-.cta{{color:#fff;font-family:Carlito,Arial,sans-serif;font-weight:700;font-size:92px;line-height:1.12}}
-.link{{color:#ffd966;font-family:Carlito,Arial,sans-serif;font-weight:700;font-size:58px;line-height:1.2;margin-top:44px;word-break:break-all}}
-.sub{{color:#dbe7f7;font-size:40px;margin-top:56px}}
-</style></head><body><div class="wrap"><div class="brand"><i></i>KDesk Accounting</div><div class="cta">{html.escape(head)}</div>{link_html}<div class="sub">Pure Excel · No macros · Windows &amp; Mac</div></div></body></html>"""
+.brand{{color:{muted};font-size:40px;margin-bottom:60px}} .brand i{{width:32px;height:32px;background:{fg}}}
+.cta{{color:{fg};font-family:Carlito,Arial,sans-serif;font-weight:700;font-size:92px;line-height:1.12}}
+.link{{color:{accent};font-family:Carlito,Arial,sans-serif;font-weight:700;font-size:58px;line-height:1.2;margin-top:44px;word-break:break-all}}
+.sub{{color:{muted};font-size:40px;margin-top:56px}}
+</style></head><body><div class="wrap"><div class="brand"><i></i>{name}</div><div class="cta">{html.escape(head)}</div>{link_html}<div class="sub">{sub}</div></div></body></html>"""
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--slug", required=True); ap.add_argument("--crf", type=int, default=26); ap.add_argument("--variant", default=None, help="named block under `shorts:` (default: legacy `short:`)"); a = ap.parse_args()
-    slug = a.slug; spec = yaml.safe_load(open(REPO / "marketing/video" / slug / "scenes.yaml")); sh = select_short(spec, a.variant)
+    ap = argparse.ArgumentParser()
+    where = ap.add_mutually_exclusive_group(required=True)
+    where.add_argument("--slug", help="render marketing/video/<slug>/scenes.yaml from this repo")
+    where.add_argument("--spec", help="path to a scenes.yaml anywhere on disk; its `slug:` key "
+                                      "names the build directory (use for a card-only spec)")
+    ap.add_argument("--crf", type=int, default=26)
+    ap.add_argument("--variant", default=None, help="named block under `shorts:` (default: legacy `short:`)")
+    a = ap.parse_args()
+    spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / a.slug / "scenes.yaml"
+    spec = yaml.safe_load(open(spec_path)); slug = a.slug or spec["slug"]; sh = select_short(spec, a.variant)
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
-    focus = json.load(open(build / "frames/focus.json")); durs = json.load(open(build / "audio/durations.json"))
+    fj = build / "frames/focus.json"
+    focus = json.load(open(fj)) if fj.exists() else {}
+    durs = json.load(open(build / "audio/durations.json"))
     parts = []
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
     wbv = wbf = None
     for k, idx in enumerate(sh["scenes"]):
         sc = spec["scenes"][idx]; mode = "cover"; fx = fy = 0.5; pan = None
+        if cards.is_card(sc):
+            # A card is already 9:16 — use it as the whole frame, no top/bottom banding.
+            png = work / f"scene_{k}.png"
+            R.render_card_scene(png, sc["template"], sc.get("data", {}), spec.get("brand"),
+                                RW, RH, html_dir=work)
+            wav = build / "audio" / f"scene_{idx:02d}.wav"
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+            n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
+            vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
+                  f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
+                  f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p")
+            out = work / f"scene_{k}.mp4"
+            run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
+                 "-filter_complex",
+                 f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+                 f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
+                 "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
+                 "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac",
+                 "-b:a", "128k", str(out)])
+            parts.append(out); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
+            continue
         if str(idx) in ranges:  # dedicated portrait-friendly render of a narrower range, trimmed to the table
             if wbv is None:
                 from openpyxl import load_workbook
@@ -116,7 +165,8 @@ def main():
              f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,aformat=sample_rates=48000:channel_layouts=stereo[a]",
              "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
         parts.append(out); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
-    hp = work / "end.html"; hp.write_text(end_html(sh["cta"])); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
+    brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
+    hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
     out = work / "end.mp4"; n = int(1.5 * FPS)
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
          f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",

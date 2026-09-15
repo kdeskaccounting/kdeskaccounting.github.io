@@ -1,0 +1,75 @@
+# Card-scene smoke spec: one scene per card template, no workbook, no LibreOffice.
+# It is the spec tests/test_card_scene_e2e.py renders, and the worked example of the data
+# contract a caller outside this repo emits (`data:` is always heading / subheading / items /
+# footer; ranked_list and countdown items are {rank, label, value}, changed items are
+# {label, value} where value is a full sentence).
+#
+# Frames: scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
+#           --spec marketing/video/card-demo/scenes.yaml --frames-only
+# Short:  scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
+#           --spec marketing/video/card-demo/scenes.yaml
+slug: card-demo
+title: The card scene kind
+voice: am_michael
+brand:
+  name: KDesk Accounting
+  url: kdeskaccounting.com
+  accent: "#FFD966"
+short:
+  hook: "Three card layouts, one 9:16 frame"
+  scenes: [0, 1, 2]
+  cta: "Three layouts, one renderer"
+meta:
+  title: The card scene kind — three layouts in one 9:16 frame
+  description: >
+    A smoke render of the three card templates the video pipeline supports: ranked_list,
+    countdown, and changed. No workbook, no spreadsheet recalculation — the scene data is
+    the whole input.
+  tags: [video pipeline, automation, shorts]
+  platforms: []
+scenes:
+  - kind: card
+    template: ranked_list
+    data:
+      heading: Three card layouts
+      subheading: Rendered straight from a scene's data block
+      items:
+        - {rank: 1, label: "ranked_list — rank, label, value", value: ""}
+        - {rank: 2, label: "countdown — the same rows, counted down", value: ""}
+        - {rank: 3, label: "changed — a label and a sentence", value: ""}
+      footer: kdeskaccounting.com
+    narration: >
+      The video pipeline now renders three card layouts. A ranked list, a countdown, and a
+      changed list. Each one is built from a single block of data, with no spreadsheet behind it.
+
+  - kind: card
+    template: countdown
+    data:
+      heading: The card contract in three numbers
+      subheading: What every card scene renders to
+      items:
+        - {rank: 3, label: "Card templates", value: 3}
+        - {rank: 2, label: "Rows a card holds at most", value: 8}
+        - {rank: 1, label: "Frame height in pixels", value: 2304}
+      footer: kdeskaccounting.com
+    narration: >
+      Three templates. Eight rows at most, so the type stays large enough to read on a phone.
+      And a frame two thousand three hundred and four pixels tall, rendered at one point two
+      times the final size.
+
+  - kind: card
+    template: changed
+    data:
+      heading: What the card kind changes
+      subheading: Compared with the spreadsheet scenes
+      items:
+        - label: No workbook required
+          value: "A spec whose scenes are all cards renders with no Excel file and no LibreOffice recalculation."
+        - label: Brand-neutral by default
+          value: "Colours come from the spec's brand block, so a second venture reuses the renderer unchanged."
+        - label: Full-bleed in a Short
+          value: "make_short uses a card as the entire frame instead of banding it between a hook and a caption."
+      footer: kdeskaccounting.com
+    narration: >
+      A card only spec needs no workbook at all. The colours come from the spec, so the same
+      renderer serves another brand. And in a Short, the card is the whole frame.

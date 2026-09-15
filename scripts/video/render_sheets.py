@@ -226,3 +226,12 @@ ul{{font-size:46px;line-height:1.55;margin:10px 0 30px;padding-left:46px;color:#
     hp = pathlib.Path(html_dir or pathlib.Path(out_png).parent) / (pathlib.Path(out_png).stem + ".html")
     hp.write_text(doc); screenshot(hp, out_png)
     return {"fx": 0.5, "fy": 0.5, "static": True}
+
+def render_card_scene(out_png, template, data, brand, width=W, height=H, html_dir=None):
+    """Render a `kind: card` scene to PNG. Returns the same focus shape as render_card()."""
+    import cards
+    doc = cards.card_html(template, data, cards.brand_tokens(brand), width, height)
+    hp = pathlib.Path(html_dir or pathlib.Path(out_png).parent) / (pathlib.Path(out_png).stem + ".html")
+    hp.write_text(doc, encoding="utf-8")
+    screenshot(hp, out_png, width, height)
+    return {"fx": 0.5, "fy": 0.5, "static": True}
