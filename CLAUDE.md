@@ -6,7 +6,7 @@
 
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
 2. **`marketing/plan-2026-09-14-automation.md`** — the automation plan (2026-09-14, ledger #69–#71): how the plan of record above gets executed with less of Stephen's time (< 30 min/wk), plus a **second, separate brand** (`parksheet`, a subscription living Google Sheet). It does **not** replace the revenue plan of record. Its session runbook is **`marketing/runbooks/automation-2026-09.md`** — pipeline map, one command per stage, current phase, open vetoes, the "if X is broken do Y" table, and (Phase 1, 2026-09-15) the two GitHub Actions schedules: what runs on Actions, what only runs on the Mac and why, the exact `gh secret set` commands, the launchd handover, and the weekly selector canary. Read both before touching publishing, the video pipeline, or the venture.
-3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#71**. **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
+3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#79** (79 entries, ids contiguous 1–79). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
 4. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers. The venture has its own MOC, `~/CommandCenter/02-Projects/ParkSheet.md`.
 5. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
 6. The **Currently working on** section below.
@@ -91,6 +91,11 @@ hugo server --port 1313
 # Production build (Actions runs this on push to main)
 hugo --minify
 
+# The test suite. This exact command, and nothing but pytest + the standard library is
+# available inside it — so every module a test imports must import cleanly with stdlib alone
+# (put `import requests` / `yaml` / `playwright` / `openpyxl` INSIDE the function that needs it).
+uv run --with pytest pytest tests/ -q
+
 # Read decisions log
 tail -20 decisions/decisions.jsonl | python3 -c 'import sys,json; [print(f"{json.loads(l)[\"id\"]:>3} T{json.loads(l)[\"tier\"]} {json.loads(l)[\"status\"]:>10} {json.loads(l)[\"action\"][:90]}") for l in sys.stdin]'
 
@@ -110,6 +115,22 @@ uv run scripts/pull_bing_snapshot.py --print                    # Bing clicks/im
 
 # Render a named Short (safe — rendering is local and unaffected)
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --variant liability
+
+# Render a Short from a spec that lives anywhere on disk (--slug and --spec are mutually
+# exclusive; the spec's own `slug:` key names the build directory under scripts/video/build/)
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/scenes.yaml
+
+# The `card` scene kind — a 9:16 card rendered from a scene's own data, no workbook, no
+# LibreOffice recalculation. A spec whose scenes are ALL cards needs no Excel file at all,
+# which is what makes a data Short (a ranking, a countdown, a what-changed list) cheap.
+#   - kind: card
+#     template: ranked_list | countdown | changed
+#     data: {heading, subheading, items: [...]}
+# ranked_list/countdown take up to 8 rows of {rank, label, value} (value "" drops the value
+# column); `changed` takes up to 5 rows of {label, value} where value is a whole sentence.
+# Past those caps cards.card_html raises rather than render type too small to read on a
+# phone. Worked example of all three: marketing/video/card-demo/scenes.yaml.
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/card-demo/scenes.yaml
 
 # DO NOT RUN — youtube_publish.py uploads land LOCKED PRIVATE and cannot be recovered (ledger #71).
 # Anything it uploads is dead on arrival: no appeal, no Studio flip, re-upload is the only fix.
@@ -135,11 +156,29 @@ python3 scripts/video/reupload_locked.py --dry-run
 
 ## Currently working on (resume here next session)
 
-**State as of 2026-09-04 (evening).** Strategy pivoted (decision 51): the target is **$10,000/month**; the **$4,246/month safety net** (essential burn minus VA + Kaley income — the number that makes quitting the W-2 pressure-free) is the first milestone, **never the goal — Stephen rejected a plan that lowered the target.** Plan: `marketing/plan-2026-09-10k-portfolio.md`. Diagnosis: one distribution channel (Google, 1.07 clicks/day at position 28.9); the fix is more channels, not better SEO. ASC 842 software is off the table (LeaseGuru is free / $999 self-serve; the private-company wave was 2022). Lead cluster is now **ASC 606 + equity comp**.
+**Phase 1 of the automation engine is built and tested (2026-09-15); it is not yet live.**
+Work from the runbook, not from this section: **`marketing/runbooks/automation-2026-09.md`** —
+pipeline map, one command per stage, current phase, open vetoes, the "if X is broken do Y"
+table, the two GitHub Actions schedules, the `gh secret set` commands and the launchd handover.
+The reasoning behind it is `marketing/plan-2026-09-14-automation.md`; the revenue plan of record
+is still `marketing/plan-2026-09-10k-portfolio.md` ($10k/mo, five streams, review 2026-12-01).
 
-**The five streams:** (A) RSU withholding-gap calculator → $99–149 workbook (tax mechanics only — no personalized sell/hold) · (B) faceless YouTube at volume · (C) affiliate/referral layer (FinQuery Referral Partner, Cradle) · (D) expert networks (GLG, AlphaSights, Guidepoint …) · (E) $1,997 ASC 606 commission kit. Gated on validation: a QuickBooks/Xero app. Ladder: $2k → **$4,246** → $10k; kill criteria per stream in the plan; portfolio review **2026-12-01** (if total revenue is still $0, stop building).
+**What Phase 1 shipped:** the ledger writer · a reusable Chrome/CDP session layer with
+per-site preflight and queue cards · the Upload-Post publisher stack (`youtube` · `tiktok` ·
+`instagram` · `site`) behind one `publish.py` · the locked-video re-upload driver · the `card`
+scene kind for data Shorts · the private Google-Sheet CRM sync · the veto-gated re-engagement
+sender · the daily digest · `data-weekly.yml` and `daily-publish.yml`.
 
-**Shipped 2026-09-04 evening (decisions 53–54):** YouTube Data API live (Stephen re-consented; APIs enabled); `scripts/video/youtube_publish.py` (no browser), `scripts/pull_youtube_snapshot.py` in the Monday job, `make_short.py --variant`; **12 new Shorts uploaded via the API — ~~PRIVATE until flipped~~ LOCKED private, unrecoverable, must be re-uploaded (#71)** (URLs in `marketing/video/*/shorts.json`); 17 tests (`uv run --with pytest pytest tests/`). First channel data: 206 views in ~48 h, 76% from YouTube search, Shorts ~4:1 over long-form. **Shipped 2026-09-05 (decision 55): the free RSU withholding-gap calculator at `/rsu-tax-calculator/`** — TDD'd tax core, 2026 table pinned to primary sources, second-agent fact-check FIX FIRST → all must-fixes applied, in the nav and homepage, sign-ups tagged `interest=rsu-planner`. Also drafted (not sent): the re-engagement email to the 14 skipped downloaders (`marketing/email-sequences/re-engage-2026-09.md`) and the affiliate applications (`marketing/affiliates/applications-2026-09.md`). **Staged 2026-09-05 (decision 56, T2): the RSU Tax Planner workbook, $149** — `~/kdeskaccountingtemplates/templates/rsu-planner/` (SPEC.md, build_v1.py, 7 LibreOffice-recalculated acceptance tests in `tests/test_rsu_planner.py`, validator clean), unpublished Gumroad listing `n5PlxijnuNvTLMOLryYCUw==` (`/l/dqqhk`) with the file attached, product page **draft** at `content/templates/rsu-planner/`, covers in `static/images/products/rsu-planner-*`, walkthrough `-rfZDelJQMY` + Short `nvp8_qt5-4g` uploaded private **(locked — re-upload, #71)**, mp4 on release `media-2026-09`, file + spec backed up to the KDesk Drive folder. **Gotcha:** `thumbnails.set` via the API returns 403 (channel lacks custom-thumbnail permission for API uploads) — the publisher now warns and keeps going; posters get set in Studio. **Staged 2026-09-05 (decision 57, T2): the ASC 340-40 Commission Capitalization Kit, $1,997 (Stream E)** — `~/kdeskaccountingtemplates/templates/asc606-kit/` (SPEC.md, `build_kit.py` → six DOCX+PDF from the fact-checked commission posts + the ASC 606 workbook + README in a zip; 22 tests), unpublished Gumroad listing `JDJrWvrxH8JMkQ2fbBKS2g==` (`/l/tngbwg`) with the zip attached, product page **draft** at `content/templates/asc606-kit/`, covers `static/images/products/asc606-kit-*`, zip + spec on Drive. **Fact-check done (decision 58): FIX FIRST → all 7 must-fixes + 9 nice-to-haves applied, Kit v1.1 re-attached, 23 tests green; publishes when the veto closes** (runbook §3).
+**Three things gate going live.** (1) **Ledger #69's veto window closes 2026-09-16 12:00 PT** —
+until it does, `publish.py` refuses every non-dry-run publish with exit 2 and `send_reengage.py`
+refuses to send. That is the gate working, not a bug; there is no override flag. (2) Stephen's
+Upload-Post account with the KDesk channel connected, plus the repository secrets in the runbook.
+(3) The first Saturday render batch on the Mac, which is where the mp4s come from.
+
+**Weekly cadence:** Monday launchd pulls GSC + GA4 + target queries + Gumroad + YouTube; the
+scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent
+GAAP fact-check before publishing** — all four articles so far came back FIX FIRST. One LinkedIn
+draft per article; one outreach batch; nothing sends without Stephen.
 
 **Waiting on Stephen:**
 1. **Approve or veto #69 and #70 by 2026-09-16 12:00 PT.** #69 = marketing autonomy loosened to T1 auto-publish (Shorts/TikTok/Reels/blog/email) behind a mandatory fact-check gate, LinkedIn + Reddit still manual. #70 = launching the separate `parksheet` subscription-sheet venture (30-day test first, < $100). Silence = approval; say the word and either is reverted with no work lost. *(The old item here — "flip the 12 new Shorts to public in Studio" — was impossible and has been removed: those uploads are locked, see ledger #71.)*
@@ -151,14 +190,14 @@ python3 scripts/video/reupload_locked.py --dry-run
 7. Read IBM's outside-activities / conflict-of-interest policy → join 3–4 expert networks (Stream D).
 8. VA 90% → 100% claim (+$1,083/mo tax-free, cuts the safety net 25%; do not touch the PTSD rating).
 9. Reply on `marketing/outreach/batch-2026-09-07.md`; Reddit account; LinkedIn #17; free sign-ups (Eloquens, Featured.com, Source of Sources, Qwoted). *Done 2026-09-04: OAuth consent, the Bill Hanna DM, the customer-discovery emails.*
-10. **Send the re-engagement email** to the 14 downloaders the nurture skipped — copy, recipients and merge fields in `marketing/email-sequences/re-engage-2026-09.md` (paste into a MailerLite campaign; API creation was blocked). **Submit the three affiliate applications** — `marketing/affiliates/applications-2026-09.md` (FinQuery Referral Partner first).
+10. **Send the re-engagement email** to the 14 downloaders the nurture skipped. The sender exists now — `scripts/sales/send_reengage.py` reads the recipients from the private store (`~/kdesk-analytics/private/`, 0600), renders the tracked copy in `marketing/email-sequences/re-engage-2026-09.md` and sends one message at a time through `gws`. It refuses to send until **#69's window closes unvetoed**; `--dry-run` renders all 14 and sends nothing. **Submit the three affiliate applications** — `marketing/affiliates/applications-2026-09.md` (FinQuery Referral Partner first).
 11. Gumroad "What's your role?" checkout question — the API accepts `custom_fields[]` and silently drops them; add it in the Gumroad editor (or via the CDP pattern) on the free listings.
 
-**Next builds (Claude, in order):** apply the kit fact-check fixes → rebuild → re-attach (task #7) · publish the RSU Tax Planner (task #6) and then the kit when their vetoes close · cross-link the kit from the three commission posts and the ASC 606 page once live · more Shorts from the planner spec · Shorts at ~5/week · **execute repricing after the veto closes 2026-09-06 22:00 PT** (`gumroad_publish.py update`, decision 52) · port the product-specific `workflows.json` nurture copy into MailerLite via CDP · wire affiliate links + disclosure + `click_affiliate_outbound` once approvals arrive · product #6 (decision 50) only if it serves a stream.
+**Next builds (Claude, in order):** once #69 closes unvetoed — first live `publish.py` run from the Saturday batch, then the re-engagement send (`send_reengage.py --dry-run` first, always) · reconcile the Actions artifact's ledger rows into the Mac's copy · re-upload the 20 locked videos through Upload-Post (`reupload_locked.py`, free tier is 10/mo so it takes two months) · Shorts at ~5/week, including card-only data Shorts · cross-link the ASC 340-40 kit from the three commission posts and the ASC 606 page · Phase 2 items live in the runbook, not here.
 
 **Weekly cadence (mechanics unchanged, new scoreboard):** Monday launchd pulls GSC + GA4 + target queries + Gumroad **+ YouTube**; the scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent GAAP fact-check before publishing** (all four articles so far came back FIX FIRST). One LinkedIn draft per article; one outreach batch; nothing sends without Stephen.
 
-**Recent decision context:** 42 GSC/GA4 OAuth · 44, 46, 49 the three commission/deferred-rent articles · 47 roadmap (superseded) · 48 Free-vs-Full · 50 product #6 research · **51 portfolio pivot · 52 repricing (veto open) · 53 YouTube API + publisher + weekly pull · 54 first Shorts batch (12, private) · 55 RSU calculator live · 56 RSU Tax Planner $149 staged (veto open) · 57 ASC 340-40 Commission Kit $1,997 staged (veto open) · 58 kit fact-check applied (v1.1).**
+**Recent decision context:** the ledger is the record — `python3 scripts/ledger.py --tail 10`. The ones that still shape the work: **51** portfolio pivot · **52/61** repricing executed (ASC 842 $249 · ASC 606 $249 · bundle $599) · **63** RSU Tax Planner live · **69/70** the two open vetoes above · **71** the YouTube uploads are locked and must be re-uploaded · **76–79** the privacy containment rounds (public repo: addresses and the CRM sheet id out of tracked files).
 
 ## Privacy (this repo is PUBLIC)
 
@@ -168,10 +207,30 @@ world-readable, forever, including in history.
 **Never commit a third-party email address, name+address pair, or any other customer contact
 detail.** KDesk's own published addresses (`santiagokdesk@`, `@kdeskaccounting.com`) are fine —
 they are meant to be findable. This is enforced, not just advised: `tests/test_no_third_party_emails.py`
-scans every tracked file under `marketing/ decisions/ content/ scripts/ tests/` and fails on any
-address that is not KDesk-own or an RFC 2606 reserved domain (`example.com`, `*.example`, `*.test`,
-`*.invalid`). Its `ALLOWED_LITERALS` set is deliberately tiny — if you find yourself adding to it,
-use a reserved domain instead.
+scans **every tracked file in the repo, repo-wide** — not a hand-listed set of directories, because
+the third leak sat in a directory the directory-listed version of the test did not look at — and
+fails on any address that is not KDesk-own or an RFC 2606 reserved domain (`example.com`,
+`*.example`, `*.test`, `*.invalid`). Its `ALLOWED_LITERALS` set is deliberately tiny — if you find
+yourself adding to it, use a reserved domain instead.
+
+**KDesk-own means exactly two domains: `kdeskaccounting.com` and `kdeskconsulting.com`** (plus the
+`kdeskaccounting.gumroad.com` storefront). `kdesk.com` is **not** ours — it sat in the test's
+`OWN_DOMAINS` on resemblance alone until 2026-09-15, which was a standing permission to publish
+every address at a domain that could belong to anyone. An entry there needs ownership *and* a
+tracked file that uses it.
+
+**No private handle in a tracked file either.** `tests/test_no_private_ids.py` fails on a Google
+Sheet-id-shaped token (40+ base64url characters mixing case and digits) anywhere near the word
+"sheet". The private "KDesk CRM" sheet's id lives only in `~/kdesk-analytics/crm-sheet-id.txt`
+(0600); anything tracked refers to the sheet by title. It got in once through a ledger line
+(entry 75, redacted in place by entry 79) and out again through the digest, which re-emits ledger
+lines into `$GITHUB_STEP_SUMMARY` — a public workflow log.
+
+**One scrubber, one `gws` seam.** `scripts/gws.py` owns both: `run()` keeps only the FIRST line of
+`gws` stderr (it echoes the request it choked on, `--json` body and all), and `scrub()` masks known
+credentials, elides base64-shaped runs of 40+ characters and swaps every remaining address for a
+`<redacted:XXXXXXXX>` marker. Anything that becomes a queue card, a ledger line, stdout or CI
+output goes through it.
 
 **Where personal data lives:** `~/kdesk-analytics/private/` (dir `0700`, files `0600`), outside the
 repo and never synced to git.
