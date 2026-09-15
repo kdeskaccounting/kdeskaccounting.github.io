@@ -331,6 +331,13 @@ def live_run(items: list[LockedVideo], repo: pathlib.Path, pub, *, limit: int | 
         else:
             failed += 1
             print(f"  {label}: QUEUED {result.queued_path} ({result.detail})")
+    if not items:
+        # "Ledger entry on every live side effect" - and only on one. A --slug that matches
+        # nothing, or a re-run after everything has been re-uploaded, would otherwise append
+        # "Re-uploaded 0 of 0 ..." to the audit log: a row saying nothing happened, which the
+        # daily digest then reports as activity in the last 24 h.
+        print("nothing to do: no locked-private records matched")
+        return {"done": 0, "failed": 0, "rewritten": rewritten}
     ledger.append(
         action=(f"Re-uploaded {done} of {len(items)} locked-private YouTube videos through "
                 f"Upload-Post ({failed} queued, pending or missing an mp4/title). The Data-API "

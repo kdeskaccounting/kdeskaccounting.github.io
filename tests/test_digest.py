@@ -1,6 +1,7 @@
 """scripts/digest.py — the 07:30 summary: what happened, what is queued, what moved."""
 import datetime as dt
 import json
+import pathlib
 
 import digest
 import gws as gws_module
@@ -286,3 +287,41 @@ def test_digest_scrubs_through_the_one_shared_scrubber():
 
 def test_digest_has_no_private_gws_implementation_left():
     assert "subprocess" not in dir(digest), "digest must not shell out on its own any more"
+
+
+# --- timestamps: one parser, shared with the ledger --------------------------------------
+
+def _row(ts, rid=95):
+    return {"id": rid, "ts": ts, "tier": 0, "status": "executed", "action": "a",
+            "reasoning": "r", "files": [], "veto_window_close": None,
+            "stephen_reviewed": False}
+
+
+def test_recent_entries_reads_the_colon_bearing_offset_shape():
+    """The ledger's own writer emits -0700, but a hand-edited or imported row can carry
+    -07:00. Both are the same instant and both must land in the digest."""
+    rows = [_row("2026-09-14T06:00:00-07:00"), _row("2026-09-14T06:00:00-0700", rid=96)]
+    assert [e["id"] for e in digest.recent_entries(rows, NOW)] == [95, 96]
+
+
+def test_recent_entries_reads_every_shape_the_shared_parser_accepts():
+    """This is what switching from strptime to ledger.parse_ts actually buys: strptime's
+    "%Y-%m-%dT%H:%M:%S%z" rejects fractional seconds and a minute-precision stamp outright,
+    so those rows silently vanished from the digest instead of being reported."""
+    rows = [_row("2026-09-14T06:00:00.123456-07:00"), _row("2026-09-14T06:00-0700", rid=96),
+            _row("2026-09-14T13:00:00Z", rid=97)]
+    assert [e["id"] for e in digest.recent_entries(rows, NOW)] == [95, 96, 97]
+
+
+def test_recent_entries_uses_the_shared_parser_and_not_a_private_copy():
+    assert digest.ledger.parse_ts is ledger.parse_ts
+    source = pathlib.Path(digest.__file__).read_text(encoding="utf-8")
+    assert "strptime(" not in source, "no local timestamp parsing left, only the comment"
+
+
+def test_recent_entries_skips_a_row_it_cannot_place_in_time_rather_than_crashing():
+    """A naive stamp cannot be compared against an aware `now` (TypeError), and garbage
+    cannot be parsed at all. One bad row must not take the whole digest down."""
+    rows = [_row("not a timestamp"), _row("2026-09-14T06:00:00", rid=96),
+            _row("2026-09-14T06:00:00-0700", rid=97), {"id": 98}]
+    assert [e["id"] for e in digest.recent_entries(rows, NOW)] == [97]

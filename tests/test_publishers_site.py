@@ -1,5 +1,6 @@
 """scripts/publishers/site.py — cross-post a Short to the Hugo site."""
 import datetime as dt
+import pathlib
 
 import pytest
 
@@ -27,6 +28,33 @@ def test_post_markdown_has_hugo_frontmatter_and_embeds_the_video_url():
     assert "https://youtube.com/shorts/n1BlUeme0k4" in md
     assert md.count("---\n") >= 2
     assert "PV of the remaining payments, every month." in md
+
+
+def test_the_embed_iframe_carries_intrinsic_9_by_16_dimensions():
+    """`.kd-short-embed` had no stylesheet rule at all, so the iframe rendered at the HTML
+    default 300x150 - a letterboxed sliver for a 9:16 Short. The CSS below fixes the box;
+    width/height attributes fix the *intrinsic ratio* the browser reserves before any CSS
+    arrives, which is what keeps the page from shifting under the reader (CLS)."""
+    md = site.post_markdown(DATE, "s", META)
+    assert f'width="{site.EMBED_WIDTH}"' in md
+    assert f'height="{site.EMBED_HEIGHT}"' in md
+    assert site.EMBED_WIDTH / site.EMBED_HEIGHT == 9 / 16
+
+
+def test_the_short_embed_class_has_a_stylesheet_rule():
+    """The class name in the generated markdown and the rule in the stylesheet are two
+    files apart; nothing but this test notices when one of them moves."""
+    css = (pathlib.Path(site.__file__).resolve().parents[2]
+           / "assets" / "css" / "extended" / "custom.css").read_text(encoding="utf-8")
+    assert ".kd-short-embed {" in css
+    assert ".kd-short-embed iframe {" in css
+    rule = css[css.index(".kd-short-embed {"):]
+    assert "aspect-ratio: 9 / 16" in rule
+    assert "kd-short-embed" in md_class_of_site(), "the markdown must use the same class"
+
+
+def md_class_of_site() -> str:
+    return site.post_markdown(DATE, "s", META)
 
 
 def test_post_markdown_uses_the_youtube_embed_form_for_a_shorts_url():

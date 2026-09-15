@@ -502,6 +502,16 @@ def test_daily_uploads_the_publish_log_and_any_queue_cards_as_an_artifact():
     assert upload["if"].startswith("always()")
 
 
+def test_daily_uploads_the_ledger_rows_it_wrote_in_the_ephemeral_checkout():
+    """This job deliberately never commits (contents: read), so every ledger line a publish
+    appends is written into a checkout that is deleted when the job ends. Without the file
+    in the artifact, the audit trail for anything Actions published simply does not exist -
+    the publish happened, the row proving it was thrown away."""
+    upload = next(s for s in steps_of(DAILY)
+                  if s.get("uses", "").startswith("actions/upload-artifact"))
+    assert "decisions/decisions.jsonl" in upload["with"]["path"]
+
+
 def test_daily_publish_steps_tee_without_masking_the_exit_code():
     publish = [s for s in steps_of(DAILY) if "publishers/publish.py" in s.get("run", "")]
 

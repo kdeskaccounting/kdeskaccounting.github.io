@@ -12,6 +12,11 @@ name: Daily publish
 # produced the media ran on the Saturday before, so a computed tag would point at a
 # release nobody created on six days out of seven.
 #
+# Until ledger entry 69's veto window closes unvetoed (2026-09-16 12:00 PT), publish.py
+# refuses every non-dry-run publish with exit 2 and posts nothing - see its module docstring.
+# On those mornings this job is expected to end red with an empty summary: nothing published
+# and nothing queued is exactly the state the final step exists to report.
+#
 # Two things this job deliberately cannot do. (1) digest.py --send needs gws, a local
 # Homebrew binary holding santiagokdesk credentials under ~/.config/gws, and --vault
 # appends to ~/CommandCenter — the vault is local, so neither can run on a runner. The
@@ -209,11 +214,18 @@ jobs:
             exit 1
           fi
 
-      - name: Upload the publish log and any queue cards
+      - name: Upload the publish log, any queue cards, and the ledger rows
         # A queued platform's paste-ready card lands under marketing/publish-queue/ in
         # this ephemeral checkout, which is deleted when the job ends. Without this, a
         # QUEUED line in the log would name a path nobody can ever read. The run id is in
         # the name so a same-day retry uploads its own bundle instead of colliding.
+        #
+        # decisions/decisions.jsonl for the same reason and a worse one: this job never
+        # commits (contents: read - the Mac owns the ledger), so every row a publish
+        # appends is written into a checkout that is about to be deleted. Without the file
+        # here the audit trail for anything Actions published would not exist at all. The
+        # Mac reconciles: append the rows from the artifact that are not already in its
+        # copy, in id order (see marketing/runbooks/automation-2026-09.md).
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -221,4 +233,5 @@ jobs:
           path: |
             publish-stdout.txt
             marketing/publish-queue/
+            decisions/decisions.jsonl
           if-no-files-found: warn

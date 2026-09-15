@@ -6,7 +6,9 @@ there is nothing to embed, so it queues rather than publishing an empty page.
 Hugo resolves layouts by `type`, so the frontmatter sets type: "shorts" explicitly
 (see CLAUDE.md: `layout:` alone silently falls back to _default/single.html).
 The iframe is raw HTML inside markdown, which renders because hugo.toml sets
-markup.goldmark.renderer.unsafe = true.
+markup.goldmark.renderer.unsafe = true. Its wrapper class `.kd-short-embed` is styled in
+assets/css/extended/custom.css (9:16, capped so a vertical video does not fill a desktop
+screen); the width/height attributes carry the same ratio for the moment before CSS loads.
 """
 from __future__ import annotations
 
@@ -19,6 +21,12 @@ import urllib.parse
 from publishers.base import REPO, Publisher, PublishResult, card_slug, slug_holds_a_secret
 
 SITE_BASE = "https://kdeskaccounting.com"
+# The intrinsic size the browser reserves for the player before any CSS has loaded. The
+# stylesheet (.kd-short-embed in assets/css/extended/custom.css) then makes it fluid, but
+# without these attributes the iframe defaults to 300x150 - a letterboxed sliver for a
+# vertical video, and a layout shift when the CSS lands. 315x560 is exactly 9:16.
+EMBED_WIDTH = 315
+EMBED_HEIGHT = 560
 _PATH_MARKERS = ("/shorts/", "/embed/", "/live/")
 # An explicit allow-list, never a suffix match (the same rule session.Site.alt_hosts follows):
 # 'youtube.com.evil.test' and 'notyoutube.com' must not read as YouTube.
@@ -62,7 +70,9 @@ def post_markdown(date: dt.date, slug: str, meta: dict) -> str:
     title = str(meta.get("title", ""))
     embed = (f'<div class="kd-short-embed">\n'
              f'  <iframe src="https://www.youtube.com/embed/{html.escape(vid, quote=True)}" '
-             f'title="{html.escape(title, quote=True)}" frameborder="0" allowfullscreen '
+             f'title="{html.escape(title, quote=True)}" '
+             f'width="{EMBED_WIDTH}" height="{EMBED_HEIGHT}" '
+             f'frameborder="0" allowfullscreen '
              f'loading="lazy"></iframe>\n</div>')
     tags = ", ".join(json.dumps(t) for t in meta.get("tags", []))
     description = meta.get("description", "")

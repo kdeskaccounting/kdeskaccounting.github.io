@@ -367,3 +367,27 @@ def test_live_run_stub_publisher_covers_success_queued_pending_and_scopes_the_le
     assert captured["files"] == sorted(result["rewritten"])
     assert captured["tier"] == 1
     assert captured["status"] == "executed"
+
+
+def test_live_run_with_nothing_to_do_writes_no_ledger_row(tmp_path, monkeypatch):
+    """"Ledger entry on every live side effect" - and only on one. A --slug that matches
+    nothing, or a second run after everything has been re-uploaded, produced
+    "Re-uploaded 0 of 0 locked-private YouTube videos" in the audit log: a row recording
+    that nothing happened, which the digest then reports as activity."""
+    rows = []
+    monkeypatch.setattr(rl.ledger, "append", lambda **kw: rows.append(kw) or {"id": 0})
+    result = rl.live_run([], tmp_path, pub=None)
+    assert rows == [], "no side effect, no ledger line"
+    assert result == {"done": 0, "failed": 0, "rewritten": set()}
+
+
+def test_live_run_still_logs_when_every_item_only_queued(tmp_path, monkeypatch):
+    """The other side of the same line: items that all failed IS a side effect worth a row -
+    queue cards were written and a human has work to do. Only an empty run is silent."""
+    rows = []
+    monkeypatch.setattr(rl.ledger, "append", lambda **kw: rows.append(kw) or {"id": 0})
+    repo = _repo(tmp_path)
+    items = [i for i in rl.scan(repo) if not i.title][:1] or rl.scan(repo)[:1]
+    monkeypatch.setattr(rl, "resolve_mp4", lambda repo, item: None)
+    rl.live_run(items, repo, pub=None)
+    assert len(rows) == 1

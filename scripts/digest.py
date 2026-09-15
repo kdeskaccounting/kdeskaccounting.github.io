@@ -92,15 +92,30 @@ class Section:
 
 
 def recent_entries(entries: list[dict], now: dt.datetime, hours: int = 24) -> list[dict]:
+    """The ledger rows stamped within the last `hours`.
+
+    ledger.parse_ts, not a local strptime: the format string this used ("%Y-%m-%dT%H:%M:%S%z")
+    rejects a stamp with fractional seconds or minute precision, and a rejected row did not
+    fail loudly - it silently vanished from the digest. The shared parser is also the one
+    open_veto_windows() below already uses, so a row cannot be readable in one section of
+    the same digest and invisible in another.
+
+    A row whose stamp cannot be parsed, or cannot be compared (a naive stamp against an
+    aware `now`), is skipped rather than raised: one bad row in an append-only log a
+    scheduled job writes to every day must not take the whole digest down.
+    """
     cutoff = now - dt.timedelta(hours=hours)
     out = []
     for row in entries:
         try:
-            stamp = dt.datetime.strptime(row["ts"], "%Y-%m-%dT%H:%M:%S%z")
-        except (KeyError, ValueError):
+            stamp = ledger.parse_ts(row["ts"])
+        except (KeyError, TypeError, ValueError):
             continue
-        if stamp >= cutoff:
-            out.append(row)
+        try:
+            if stamp >= cutoff:
+                out.append(row)
+        except TypeError:
+            continue          # naive vs aware: refuse the comparison rather than guess
     return out
 
 
