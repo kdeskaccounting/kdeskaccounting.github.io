@@ -3,6 +3,7 @@ import datetime as dt
 import json
 
 import digest
+import ledger
 
 TZ = dt.timezone(dt.timedelta(hours=-7))
 NOW = dt.datetime(2026, 9, 14, 7, 30, tzinfo=TZ)
@@ -29,6 +30,12 @@ def test_recent_entries_keeps_only_the_last_24_hours():
 
 def test_open_veto_windows_lists_only_windows_still_in_the_future():
     assert [e["id"] for e in digest.open_veto_windows(ENTRIES, NOW)] == [70]
+
+
+def test_open_veto_windows_uses_the_shared_ledger_parse_ts_not_a_private_copy():
+    """_parse_iso used to be duplicated here; it now lives once in ledger.py."""
+    assert digest.ledger is ledger
+    assert not hasattr(digest, "_parse_iso"), "the old private copy must be gone, not just unused"
 
 
 def test_queue_cards_lists_every_card_across_every_platform_folder(tmp_path):
@@ -76,6 +83,47 @@ def test_snapshot_delta_of_a_missing_file_is_empty(tmp_path):
     assert digest.snapshot_delta(tmp_path / "nope.jsonl", ("a",)) == {}
 
 
+def test_snapshot_delta_skips_a_malformed_middle_line_with_a_stderr_note(tmp_path, capsys):
+    p = tmp_path / "x.jsonl"
+    p.write_text("\n".join([
+        json.dumps({"a": 1}),
+        "{not valid json",
+        json.dumps({"a": 5}),
+    ]) + "\n")
+    assert digest.snapshot_delta(p, ("a",)) == {"a": (5, 4.0)}
+    err = capsys.readouterr().err
+    assert str(p) in err and "line 2" in err
+
+
+def test_snapshot_delta_skips_a_malformed_last_line_with_a_stderr_note(tmp_path, capsys):
+    p = tmp_path / "x.jsonl"
+    p.write_text("\n".join([
+        json.dumps({"a": 1}),
+        json.dumps({"a": 5}),
+        "{not valid json",
+    ]) + "\n")
+    assert digest.snapshot_delta(p, ("a",)) == {"a": (5, 4.0)}
+    err = capsys.readouterr().err
+    assert str(p) in err and "line 3" in err
+
+
+def test_snapshot_delta_never_aborts_when_every_line_is_malformed(tmp_path, capsys):
+    p = tmp_path / "x.jsonl"
+    p.write_text("nope\nalso not json\n")
+    assert digest.snapshot_delta(p, ("a",)) == {}
+    err = capsys.readouterr().err
+    assert "line 1" in err and "line 2" in err
+
+
+def test_snapshot_delta_with_only_one_parseable_row_after_a_malformed_line_has_no_delta(tmp_path):
+    """Fewer than two parseable rows: report the value with an empty (None) delta, exactly
+    as a genuinely single-row file already does — a skipped line must not fabricate a second
+    comparison point that was never really there."""
+    p = tmp_path / "x.jsonl"
+    p.write_text(json.dumps({"a": 1}) + "\n{not valid json\n")
+    assert digest.snapshot_delta(p, ("a",)) == {"a": (1, None)}
+
+
 def test_compose_has_every_section_and_names_the_open_window(tmp_path):
     md = digest.compose(NOW, digest.recent_entries(ENTRIES, NOW),
                         digest.open_veto_windows(ENTRIES, NOW),
@@ -120,6 +168,22 @@ def test_compose_redacts_known_secrets_through_the_session_seam(monkeypatch):
             "veto_window_close": None, "stephen_reviewed": False}]
     md = digest.compose(NOW, hot, [], [], {})
     assert "shh" not in md and "***" in md
+
+
+def test_compose_is_pure_taking_an_identity_redact_touches_no_filesystem(monkeypatch):
+    """compose()'s only I/O is the default redact's privacy.email_hash (reads the salt
+    file). Passing an identity function must skip that entirely — nothing left unredacted
+    must be silently dropped, and nothing must touch the filesystem to get there."""
+    def _boom(*a, **k):
+        raise AssertionError("compose() touched the filesystem despite an identity redact")
+    monkeypatch.setattr(digest.privacy, "email_hash", _boom)
+    monkeypatch.setattr(digest.session, "redact_secrets", _boom)
+    hot = [{"id": 93, "ts": "2026-09-14T06:10:00-0700", "tier": 0, "status": "executed",
+            "action": "raw@example.com stays raw with an identity redact",
+            "reasoning": "r", "files": [], "veto_window_close": None,
+            "stephen_reviewed": False}]
+    md = digest.compose(NOW, hot, [], [], {}, redact=lambda text: text)
+    assert "raw@example.com" in md
 
 
 def test_every_configured_snapshot_key_resolves_against_the_real_last_row():

@@ -227,35 +227,12 @@ def rfc822(to: str, subject: str, body: str, sender: str = SENDER) -> str:
 
 # ------------------------------------------------------------------------------------ the gate
 
-def _parse_iso(value: str) -> dt.datetime:
-    """Parse an ISO-8601 stamp, including the ledger's colon-free ±HHMM offset.
-
-    ledger.append() stamps with %z, which renders as `-0700`. datetime.fromisoformat only
-    learned to read that in 3.11, and the runbook drives these scripts with the system
-    python3 — 3.9.6 on this Mac. Without this the gate refused every entry as "unparseable":
-    fail-closed, so nothing was ever sent wrongly, but for the wrong reason, and it would
-    have gone on refusing after the window actually shut.
-    """
-    text = str(value).strip()
-    if text.endswith(("Z", "z")):
-        text = text[:-1] + "+00:00"
-    try:
-        return dt.datetime.fromisoformat(text)
-    except ValueError:
-        pass
-    match = re.search(r"([+-])(\d{2})(\d{2})$", text)
-    if not match:
-        raise ValueError(f"unparseable timestamp {value!r}")
-    return dt.datetime.fromisoformat(
-        f"{text[:match.start()]}{match.group(1)}{match.group(2)}:{match.group(3)}")
-
-
 def veto_ok(close_iso: str | None, now: dt.datetime) -> tuple[bool, str]:
     """Has the veto window closed? The reason is a verb phrase; the caller names the entry."""
     if not close_iso:
         return False, "has no veto_window_close — nothing authorises this send"
     try:
-        closes = _parse_iso(close_iso)
+        closes = ledger.parse_ts(close_iso)
     except ValueError:
         return False, f"has an unparseable veto_window_close {close_iso!r}"
     if closes.tzinfo is None:

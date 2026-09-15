@@ -143,3 +143,29 @@ def test_find_and_veto_close_read_a_specific_entry(tmp_path):
     assert ledger.find(70, p) is None
     assert ledger.veto_close(69, p) == "2026-09-16T09:00:00-0700"
     assert ledger.veto_close(70, p) is None
+
+
+# --------------------------------------------------------------------------- parse_ts
+# Was two private `_parse_iso` copies (scripts/digest.py, scripts/sales/send_reengage.py),
+# each written to fix the same bug independently: datetime.fromisoformat only learned to
+# read the ledger's colon-free `-0700` offset in Python 3.11, and this repo's scripts run
+# under both the system python3 (3.9.6 on this Mac) and `uv run`'s newer interpreter.
+
+def test_parse_ts_reads_the_colon_free_offset_ledger_append_actually_writes():
+    parsed = ledger.parse_ts("2026-09-16T12:00:00-0700")
+    assert parsed == dt.datetime(2026, 9, 16, 12, 0, tzinfo=dt.timezone(dt.timedelta(hours=-7)))
+
+
+def test_parse_ts_reads_every_shape_the_ledger_or_a_human_writes():
+    colon = ledger.parse_ts("2026-09-16T12:00:00-07:00")
+    z = ledger.parse_ts("2026-09-16T19:00:00Z")
+    naive = ledger.parse_ts("2026-09-16T12:00:00")
+    assert colon == dt.datetime(2026, 9, 16, 12, 0, tzinfo=dt.timezone(dt.timedelta(hours=-7)))
+    assert z == dt.datetime(2026, 9, 16, 19, 0, tzinfo=dt.timezone.utc)
+    assert naive == dt.datetime(2026, 9, 16, 12, 0)
+    assert naive.tzinfo is None
+
+
+def test_parse_ts_raises_value_error_on_garbage():
+    with pytest.raises(ValueError, match="unparseable"):
+        ledger.parse_ts("not a timestamp")

@@ -18,6 +18,7 @@ import datetime as dt
 import fcntl
 import json
 import pathlib
+import re
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_PATH = REPO / "decisions" / "decisions.jsonl"
@@ -97,6 +98,33 @@ def find(entry_id: int, path: pathlib.Path | None = None) -> dict | None:
 def veto_close(entry_id: int, path: pathlib.Path | None = None) -> str | None:
     row = find(entry_id, path)
     return row.get("veto_window_close") if row else None
+
+
+def parse_ts(value: str) -> dt.datetime:
+    """Parse an ISO-8601 stamp, including the ledger's own colon-free ±HHMM offset.
+
+    append() below stamps with %z, which renders as `-0700`. datetime.fromisoformat only
+    learned to read that shape in 3.11, and scripts in this repo are driven by both the
+    system python3 (3.9.6 on this Mac) and `uv run`'s newer interpreter, so both must parse
+    a ledger timestamp identically. This used to be a private `_parse_iso` duplicated in
+    scripts/digest.py and scripts/sales/send_reengage.py (both hit the same bug
+    independently); it lives here once now and both import it.
+
+    Also accepts a trailing 'Z'/'z' (UTC) and a bare offset-less stamp (returned naive,
+    same as fromisoformat). Raises ValueError for anything else.
+    """
+    text = str(value).strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        return dt.datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    match = re.search(r"([+-])(\d{2})(\d{2})$", text)
+    if not match:
+        raise ValueError(f"unparseable timestamp {value!r}")
+    return dt.datetime.fromisoformat(
+        f"{text[:match.start()]}{match.group(1)}{match.group(2)}:{match.group(3)}")
 
 
 def append(action: str, tier: int, status: str, reasoning: str, files: list[str],

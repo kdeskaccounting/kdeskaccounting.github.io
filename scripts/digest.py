@@ -30,6 +30,7 @@ import re
 import subprocess
 import sys
 from email.message import EmailMessage
+from typing import Callable
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
@@ -102,28 +103,6 @@ def recent_entries(entries: list[dict], now: dt.datetime, hours: int = 24) -> li
     return out
 
 
-def _parse_iso(value: str) -> dt.datetime:
-    """Parse an ISO-8601 stamp, including the ledger's colon-free ±HHMM offset.
-
-    ledger.append() stamps with %z, which renders as `-0700`. datetime.fromisoformat only
-    learned to read that in 3.11, and this script has to run under the system python3
-    (3.9.6 on this Mac) as well as under `uv run`'s newer interpreter — identical fix and
-    rationale as scripts/sales/send_reengage.py._parse_iso, which hit the same bug first.
-    """
-    text = str(value).strip()
-    if text.endswith(("Z", "z")):
-        text = text[:-1] + "+00:00"
-    try:
-        return dt.datetime.fromisoformat(text)
-    except ValueError:
-        pass
-    match = re.search(r"([+-])(\d{2})(\d{2})$", text)
-    if not match:
-        raise ValueError(f"unparseable timestamp {value!r}")
-    return dt.datetime.fromisoformat(
-        f"{text[:match.start()]}{match.group(1)}{match.group(2)}:{match.group(3)}")
-
-
 def open_veto_windows(entries: list[dict], now: dt.datetime) -> list[dict]:
     out = []
     for row in entries:
@@ -131,7 +110,7 @@ def open_veto_windows(entries: list[dict], now: dt.datetime) -> list[dict]:
         if not close:
             continue
         try:
-            closes = _parse_iso(close)
+            closes = ledger.parse_ts(close)
         except ValueError:
             continue
         if closes.tzinfo is None:
@@ -158,10 +137,25 @@ def _dig(row: dict, dotted: str):
 
 
 def snapshot_delta(path: pathlib.Path, keys: tuple[str, ...]) -> dict:
+    """Last row minus the previous row for each dotted key.
+
+    A malformed line is skipped with a note on stderr rather than raising: one bad row in a
+    tracker a scheduled job appends to every day must not take the whole digest down with it.
+    Skipping means "not there" for every purpose below, same as a file that never had a
+    second row — 0 parseable rows returns {}; exactly 1 reports the value with no delta.
+    """
     path = pathlib.Path(path)
     if not path.exists() or not keys:
         return {}
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = []
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            print(f"digest: skipping malformed JSON in {path} (line {lineno}): {exc}",
+                 file=sys.stderr)
     if not rows:
         return {}
     last, previous = rows[-1], (rows[-2] if len(rows) > 1 else None)
@@ -187,7 +181,12 @@ def _fmt_delta(delta) -> str:
 
 
 def compose(now: dt.datetime, recent: list[dict], veto: list[dict],
-            cards: list[pathlib.Path], deltas: dict) -> str:
+            cards: list[pathlib.Path], deltas: dict, *,
+            redact: Callable[[str], str] = _scrub) -> str:
+    """Compose the digest markdown. Pure: no filesystem or subprocess I/O of its own — the
+    default `redact=_scrub` is the one call that can touch the salt file (privacy.email_hash),
+    so pass `redact=lambda text: text` in a test that wants compose() to touch nothing at all.
+    """
     shipped = Section("### Shipped in the last 24 h",
                       [f"- **{r['id']}** T{r['tier']} {r['action'][:220]}" for r in recent]
                       or ["Nothing logged in the last 24 h."])
@@ -203,7 +202,7 @@ def compose(now: dt.datetime, recent: list[dict], veto: list[dict],
     numbers = Section("### Numbers", number_lines or ["No snapshot rows yet."])
     parts = "\n".join(s.render() for s in (shipped, waiting, windows, numbers))
     md = f"{VAULT_HEADING} — {now.strftime('%Y-%m-%d')}\n\n{parts}"
-    return _scrub(md)
+    return redact(md)
 
 
 def vault_path(now: dt.datetime, *, root: pathlib.Path | None = None) -> pathlib.Path:

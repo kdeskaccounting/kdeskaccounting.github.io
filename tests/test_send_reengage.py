@@ -769,3 +769,9 @@ def test_main_honours_a_custom_veto_entry(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr("sys.argv", ["send_reengage.py", "--veto-entry", "71"])
     assert sr.main() == 2
     assert "entry 71" in capsys.readouterr().err
+
+
+def test_veto_ok_uses_the_shared_ledger_parse_ts_not_a_private_copy():
+    """_parse_iso used to be duplicated here; it now lives once in ledger.py."""
+    assert sr.ledger is ledger
+    assert not hasattr(sr, "_parse_iso"), "the old private copy must be gone, not just unused"
