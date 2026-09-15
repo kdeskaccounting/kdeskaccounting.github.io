@@ -169,3 +169,82 @@ def test_parse_ts_reads_every_shape_the_ledger_or_a_human_writes():
 def test_parse_ts_raises_value_error_on_garbage():
     with pytest.raises(ValueError, match="unparseable"):
         ledger.parse_ts("not a timestamp")
+
+
+# --- the T2 act-with-veto-window gate ----------------------------------------------------
+#
+# Lived in send_reengage.py, where it was written for one caller. publish.py cites the same
+# decision (#69) to justify its T1 ledger rows, so the gate has to live where both can reach
+# it - and a second copy would be a second place to get "vetoed but elapsed" wrong.
+
+TZ = dt.timezone(dt.timedelta(hours=-7))
+BEFORE = dt.datetime(2026, 9, 15, 8, 0, tzinfo=TZ)
+AFTER = dt.datetime(2026, 9, 17, 8, 0, tzinfo=TZ)
+
+
+def _entry(**over) -> dict:
+    row = {"id": 69, "ts": "2026-09-14T14:40:00-0700", "tier": 2, "status": "pending_veto",
+           "action": "T1 loosening", "reasoning": "r", "files": [],
+           "veto_window_close": "2026-09-16T12:00:00-0700", "stephen_reviewed": False}
+    row.update(over)
+    return row
+
+
+def _ledger_with(tmp_path, *rows):
+    p = tmp_path / "decisions.jsonl"
+    _write(p, list(rows))
+    return p
+
+
+def test_t2_window_open_is_false_before_the_window_closes(tmp_path):
+    ok, why = ledger.t2_window_open(69, BEFORE, path=_ledger_with(tmp_path, _entry()))
+    assert ok is False
+    assert "2026-09-16" in why
+
+
+def test_t2_window_open_is_true_once_the_window_has_closed(tmp_path):
+    ok, why = ledger.t2_window_open(69, AFTER, path=_ledger_with(tmp_path, _entry()))
+    assert ok is True
+    assert "closed" in why
+
+
+def test_t2_window_open_refuses_an_entry_that_does_not_exist_yet(tmp_path):
+    ok, why = ledger.t2_window_open(69, AFTER, path=_ledger_with(tmp_path))
+    assert ok is False
+    assert "does not exist" in why
+
+
+def test_t2_window_open_refuses_an_entry_of_the_wrong_tier(tmp_path):
+    """A T0 note authorises nothing, however old it is."""
+    ok, why = ledger.t2_window_open(69, AFTER,
+                                    path=_ledger_with(tmp_path, _entry(tier=0)))
+    assert ok is False
+    assert "tier 0" in why
+
+
+def test_t2_window_open_refuses_an_entry_stephen_actually_vetoed(tmp_path):
+    """The check that matters most: an elapsed window does not turn a veto into permission."""
+    ok, why = ledger.t2_window_open(69, AFTER,
+                                    path=_ledger_with(tmp_path, _entry(status="vetoed")))
+    assert ok is False
+    assert "VETOED" in why
+
+
+def test_t2_window_open_refuses_an_entry_with_no_window_at_all(tmp_path):
+    ok, why = ledger.t2_window_open(69, AFTER,
+                                    path=_ledger_with(tmp_path, _entry(veto_window_close=None)))
+    assert ok is False
+    assert "no veto_window_close" in why
+
+
+def test_veto_ok_refuses_a_naive_now_rather_than_guessing_an_offset():
+    ok, why = ledger.veto_ok("2026-09-16T12:00:00-0700",
+                             dt.datetime(2026, 9, 17, 8, 0))
+    assert ok is False
+    assert "naive" in why
+
+
+def test_veto_ok_refuses_an_unparseable_window_rather_than_assuming_it_closed():
+    ok, why = ledger.veto_ok("not a timestamp", AFTER)
+    assert ok is False
+    assert "unparseable" in why

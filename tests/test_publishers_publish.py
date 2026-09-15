@@ -1,10 +1,26 @@
-"""scripts/publishers/publish.py — the CLI: exit codes, ledger lines, meta handling."""
+"""scripts/publishers/publish.py — the CLI: exit codes, the veto gate, ledger lines, meta."""
+import datetime as dt
 import json
 
 import pytest
 
 from publishers import publish
 from publishers import upload_post as up
+
+TZ = dt.timezone(dt.timedelta(hours=-7))
+# Entry 69's real window closes 2026-09-16 12:00 PT. Both stamps are fixtures: the tests
+# must not change their answer on the day it actually closes, or the day Stephen vetoes it.
+BEFORE = dt.datetime(2026, 9, 15, 8, 0, tzinfo=TZ)
+AFTER = dt.datetime(2026, 9, 17, 8, 0, tzinfo=TZ)
+
+
+def autonomy_entry(**over) -> dict:
+    row = {"id": publish.VETO_ENTRY, "ts": "2026-09-14T14:40:00-0700", "tier": 2,
+           "status": "pending_veto", "action": "T1 auto-publish for five surfaces",
+           "reasoning": "r", "files": [],
+           "veto_window_close": "2026-09-16T12:00:00-0700", "stephen_reviewed": False}
+    row.update(over)
+    return row
 
 META = {"slug": "asc842-liability", "title": "ASC 842 Lease Liability in Excel",
         "description": "PV of the remaining payments.", "privacy": "public",
@@ -21,13 +37,18 @@ def rig(tmp_path, monkeypatch):
     rows = []
     monkeypatch.setattr(publish.ledger, "append",
                         lambda **kw: rows.append(kw) or dict(kw))
+    # The gate reads the live ledger otherwise. Every test below that is not about the gate
+    # runs at AFTER against a closed, un-vetoed window - the world in which publishing is
+    # authorised at all.
+    monkeypatch.setattr(publish.ledger, "find",
+                        lambda entry_id, path=None: autonomy_entry())
     monkeypatch.delenv("UPLOAD_POST_KEY", raising=False)
     return {"repo": tmp_path, "asset": asset, "meta": meta_path, "rows": rows}
 
 
-def _run(rig, platform, *extra):
+def _run(rig, platform, *extra, now=AFTER):
     return publish.main(["--platform", platform, "--asset", str(rig["asset"]),
-                         "--meta", str(rig["meta"]), *extra], repo=rig["repo"])
+                         "--meta", str(rig["meta"]), *extra], repo=rig["repo"], now=now)
 
 
 def test_capabilities_exits_zero_and_prints_one_line_per_publisher(capsys):
@@ -137,3 +158,84 @@ def test_whoami_prints_the_profiles_and_never_the_key(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "kdesk" in out
     assert key not in out
+
+
+# --- the veto gate -----------------------------------------------------------------------
+#
+# publish.py wrote tier-1 ledger rows citing "the 2026-09-14 autonomy decision" while that
+# decision (#69) was still pending_veto. The rows were true about what happened and false
+# about what authorised it: until the window closes unvetoed the rule is still "queues, not
+# auto-posters". Nothing bypasses this - there is deliberately no --i-accept-veto-risk.
+
+def test_a_live_publish_refuses_while_the_autonomy_window_is_still_open(rig, capsys):
+    rig["meta"].write_text(json.dumps({**META, "video_url": "https://youtu.be/VID"}),
+                           encoding="utf-8")
+    assert _run(rig, "site", now=BEFORE) == 2
+    err = capsys.readouterr().err
+    assert f"entry {publish.VETO_ENTRY}" in err
+    assert "2026-09-16" in err
+    assert "--dry-run" in err, "say what the caller can do instead"
+    assert rig["rows"] == [], "a refused run logs nothing"
+    assert not (rig["repo"] / "content").exists(), "and publishes nothing"
+
+
+def test_a_live_publish_refuses_when_stephen_actually_vetoed_the_decision(rig, monkeypatch,
+                                                                          capsys):
+    """An elapsed window does not turn a veto into permission."""
+    monkeypatch.setattr(publish.ledger, "find",
+                        lambda entry_id, path=None: autonomy_entry(status="vetoed"))
+    rig["meta"].write_text(json.dumps({**META, "video_url": "https://youtu.be/VID"}),
+                           encoding="utf-8")
+    assert _run(rig, "site", now=AFTER) == 2
+    assert "VETOED" in capsys.readouterr().err
+    assert rig["rows"] == []
+
+
+def test_a_live_publish_refuses_when_the_decision_does_not_exist_yet(rig, monkeypatch,
+                                                                    capsys):
+    monkeypatch.setattr(publish.ledger, "find", lambda entry_id, path=None: None)
+    assert _run(rig, "site", now=AFTER) == 2
+    assert "does not exist" in capsys.readouterr().err
+
+
+def test_a_live_publish_proceeds_once_the_window_has_closed_unvetoed(rig):
+    rig["meta"].write_text(json.dumps({**META, "video_url": "https://youtu.be/VID"}),
+                           encoding="utf-8")
+    assert _run(rig, "site", now=AFTER) == 0
+    assert len(rig["rows"]) == 1
+
+
+def test_dry_run_is_never_gated(rig, capsys):
+    """--dry-run performs zero writes, so there is nothing for a veto to protect against -
+    and it is the one thing a refused caller is told to run."""
+    assert _run(rig, "youtube,site", "--dry-run", now=BEFORE) == 0
+    assert rig["rows"] == []
+
+
+def test_capabilities_and_whoami_are_not_gated(monkeypatch):
+    """Read-only probes. Gating them would make diagnosing the gate itself harder."""
+    monkeypatch.setattr(publish.ledger, "find", lambda entry_id, path=None: None)
+    assert publish.main(["--capabilities"]) == 0
+
+
+def test_the_gate_runs_before_the_meta_file_is_even_read(rig, capsys):
+    """A refused run must not reach the work. Invalid JSON would exit 2 with a parse error;
+    the refusal has to come first, with the refusal's own message."""
+    rig["meta"].write_text("{not json", encoding="utf-8")
+    assert _run(rig, "site", now=BEFORE) == 2
+    assert "REFUSING" in capsys.readouterr().err
+
+
+def test_there_is_no_flag_to_bypass_the_veto_gate(capsys):
+    """Deliberate: an override flag is the thing that gets typed at 2 a.m. and committed to
+    a workflow file. If the window has not closed, the answer is --dry-run or wait."""
+    with pytest.raises(SystemExit):
+        publish.main(["--help"])
+    help_text = capsys.readouterr().out
+    assert "veto" not in help_text.lower() or "--i-accept-veto-risk" not in help_text
+    assert "--i-accept-veto-risk" not in help_text
+
+
+def test_the_gate_is_the_shared_ledger_helper_not_a_second_copy():
+    assert publish.ledger.t2_window_open is not None
+    assert publish.VETO_ENTRY == 69

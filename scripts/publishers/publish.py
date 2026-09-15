@@ -12,12 +12,18 @@ meta.json: {"slug": "...", "title": "...", "description": "...", "privacy": "pub
 Exit code 0 only when every requested platform published. A queued card is a non-zero exit
 on purpose: the daily job must surface it in the digest.
 
+A live run is gated on ledger entry 69, the T2 decision that authorises auto-publishing:
+until its veto window has closed, and unless its status is not "vetoed", any non-dry-run
+publish refuses with exit 2 and publishes nothing. There is no override flag. --dry-run is
+never gated, because it writes nothing.
+
 Everything printed or written to the ledger goes through session.redact_secrets first;
 PublishResult already masks its own detail and url, and this is the second belt.
 """
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import pathlib
 import sys
@@ -35,6 +41,12 @@ from publishers.youtube import YouTubePublisher  # noqa: E402
 PUBLISHERS: dict[str, type] = {"youtube": YouTubePublisher, "tiktok": TikTokPublisher,
                                "instagram": InstagramPublisher, "site": SitePublisher}
 VIDEO_PLATFORMS = ("youtube", "tiktok", "instagram")
+# The T2 decision that authorises auto-publishing at all: 2026-09-14, "marketing autonomy
+# loosened to T1 auto-publish for five surfaces", veto window closing 2026-09-16 12:00 PT.
+# Until that window closes unvetoed the standing rule is "queues, not auto-posters", so a
+# live publish refuses. The ledger rows this script writes cite the decision by number; they
+# must not be written while the decision is still pending.
+VETO_ENTRY = 69
 
 
 def whoami() -> int:
@@ -68,7 +80,19 @@ def load_meta(ap: argparse.ArgumentParser, path: pathlib.Path) -> dict:
     return meta
 
 
-def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None) -> int:
+def veto_gate(now: dt.datetime | None = None, *,
+              entry_id: int = VETO_ENTRY) -> tuple[bool, str]:
+    """May we publish yet? (may_act, why), straight from the shared ledger helper.
+
+    No local copy of the rule and, deliberately, no override flag: an --i-accept-veto-risk
+    is the thing that gets typed once at 2 a.m. and then committed to a workflow file. If
+    the window has not closed, the answers are --dry-run or wait.
+    """
+    return ledger.t2_window_open(entry_id, now or dt.datetime.now().astimezone())
+
+
+def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
+         now: dt.datetime | None = None) -> int:
     ap = argparse.ArgumentParser(description="Publish one asset to one or more platforms.")
     ap.add_argument("--platform", help="comma-separated: " + ", ".join(PUBLISHERS))
     ap.add_argument("--asset", type=pathlib.Path)
@@ -94,6 +118,19 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None) -> 
     for label, path in (("--asset", a.asset), ("--meta", a.meta)):
         if not path.exists():
             ap.error(f"{label} not found: {path}")
+
+    # The gate comes before meta is even read: a refused run must not reach the work, and
+    # its message must be the refusal, not a JSON parse error from a file it should not have
+    # opened. --dry-run performs zero writes, so there is nothing for a veto to protect
+    # against and it stays ungated — it is what a refused caller is told to run.
+    if not a.dry_run:
+        ok, why = veto_gate(now)
+        if not ok:
+            print(f"REFUSING: ledger entry {VETO_ENTRY} {why}. Auto-publishing is authorised "
+                  f"by that T2 decision alone; until its window closes unvetoed this repo's "
+                  f"rule is 'queues, not auto-posters'. Re-run with --dry-run to see exactly "
+                  f"what it would have published.", file=sys.stderr)
+            return 2
 
     meta = load_meta(ap, a.meta)
     rc = 0

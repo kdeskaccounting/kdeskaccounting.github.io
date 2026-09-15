@@ -24,6 +24,7 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_PATH = REPO / "decisions" / "decisions.jsonl"
 TIERS = (0, 1, 2, 3)
 STATUSES = ("executed", "in_progress", "planned", "pending_veto", "vetoed")
+VETO_TIER = 2                     # "act, with a veto window" — the only tier a gate can open
 
 
 class LedgerError(ValueError):
@@ -125,6 +126,78 @@ def parse_ts(value: str) -> dt.datetime:
         raise ValueError(f"unparseable timestamp {value!r}")
     return dt.datetime.fromisoformat(
         f"{text[:match.start()]}{match.group(1)}{match.group(2)}:{match.group(3)}")
+
+
+# --------------------------------------------------------------------------- the T2 gate
+#
+# T2 is "act, with a veto window": the decision is written, Stephen gets a stated number of
+# hours to say no, and the action happens only after that window closes unvetoed. Two scripts
+# act on the same T2 decision (#69, the marketing-autonomy loosening): send_reengage.py sends
+# email under it and publishers/publish.py posts under it. The gate lives here so there is one
+# answer to "may I act yet", and one place that gets the awkward case right: a decision
+# Stephen actually vetoed, whose window has since elapsed, must read as NO, not as permission.
+
+
+def veto_ok(close_iso: str | None, now: dt.datetime) -> tuple[bool, str]:
+    """Has the veto window closed? The reason is a verb phrase; the caller names the entry."""
+    if not close_iso:
+        return False, "has no veto_window_close — nothing authorises this action"
+    try:
+        closes = parse_ts(close_iso)
+    except ValueError:
+        return False, f"has an unparseable veto_window_close {close_iso!r}"
+    if closes.tzinfo is None:
+        # A stamp with no offset is read in the reader's own zone rather than crashing the
+        # comparison; append() always writes one, so this only covers a hand-edited row.
+        closes = closes.replace(tzinfo=now.tzinfo)
+    if now.tzinfo is None and closes.tzinfo is not None:
+        # A naive `now` cannot be compared against an aware `closes` (TypeError). Refuse
+        # rather than guess which offset the caller meant - a wrong guess here is the
+        # difference between "refused" and "published".
+        return False, (f"the caller passed a timezone-naive 'now', which cannot be compared "
+                       f"against veto_window_close {close_iso} — refusing rather than "
+                       f"assuming an offset")
+    if now < closes:
+        return False, (f"has a veto window that closes {close_iso}; it is "
+                       f"{now.isoformat(timespec='minutes')}")
+    return True, f"veto window closed {close_iso}"
+
+
+def veto_gate(entry: dict | None, now: dt.datetime,
+              entry_id: int = 0) -> tuple[bool, str]:
+    """Every condition that authorises an autonomous action under a T2 window, in one place.
+
+    Four ways to fail and they are not interchangeable: an entry that does not exist yet, an
+    entry of the wrong tier (a T0 note authorises nothing), an entry Stephen actually vetoed,
+    and a window that has not closed. The status check is the one that matters most: a vetoed
+    decision whose window has since elapsed would otherwise read as permission.
+    """
+    if entry is None:
+        return False, (f"does not exist yet — the T{VETO_TIER} entry that authorises this "
+                       f"action has not been written. Run `python3 scripts/ledger.py "
+                       f"--tail 5` and check which id carries the window")
+    try:
+        tier = int(entry.get("tier", -1))
+    except (TypeError, ValueError):
+        tier = -1
+    if tier != VETO_TIER:
+        return False, (f"is tier {entry.get('tier')!r}, not a T{VETO_TIER} "
+                       f"act-with-veto-window entry — it authorises no action")
+    if str(entry.get("status", "")).strip().lower() == "vetoed":
+        return False, ("was VETOED — Stephen said no. An elapsed window does not turn a veto "
+                       "into permission; this action must not happen")
+    return veto_ok(entry.get("veto_window_close"), now)
+
+
+def t2_window_open(entry_id: int, now: dt.datetime,
+                   *, path: pathlib.Path | None = None) -> tuple[bool, str]:
+    """(may_act, why) for the T2 entry `entry_id` — the form callers actually want.
+
+    "Open" means the authorisation is open for acting: the entry exists, is T2, was not
+    vetoed, and its window has closed. The reason is a verb phrase to be printed after
+    "ledger entry <id> …", so it reads the same from every caller.
+    """
+    return veto_gate(find(entry_id, path), now, entry_id)
 
 
 def append(action: str, tier: int, status: str, reasoning: str, files: list[str],
