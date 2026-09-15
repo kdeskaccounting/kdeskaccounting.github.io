@@ -43,7 +43,11 @@ jobs:
       GUMROAD_ACCESS_TOKEN: ${{ secrets.GUMROAD_ACCESS_TOKEN }}
       MAILERLITE_TOKEN: ${{ secrets.MAILERLITE_TOKEN }}
       BING_API_KEY: ${{ secrets.BING_API_KEY }}
-      GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+      # GOOGLE_TOKEN_JSON is deliberately NOT here. It is a long-lived OAuth refresh token
+      # and only two steps need it, so it is bound to those two rather than handed to
+      # every step in the job — including actions/checkout and setup-uv, which are pinned
+      # by moving tag, not by SHA.
+      #
       # pull_seo_snapshot.py git-commits and pushes by itself unless this is '1'. The one
       # commit step at the bottom of this job is the only place it writes to git.
       KDESK_SEO_SKIP_COMMIT: '1'
@@ -56,6 +60,8 @@ jobs:
 
       - name: Preflight the secrets
         id: preflight
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
         # Fail closed, once, naming the secret. Without this the job dies three steps
         # later inside a Google token refresh with a stack trace nobody reads.
         # BING_API_KEY is the one optional secret: Stephen has not minted the key yet
@@ -78,6 +84,8 @@ jobs:
           fi
 
       - name: Restore the credential files the scripts read by path
+        env:
+          GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
         # These scripts open fixed paths rather than reading the environment:
         # pull_seo_snapshot.py and pull_youtube_snapshot.py both open
         # ~/kdesk-analytics/google-token.json, crm_sync.py opens

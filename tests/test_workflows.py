@@ -328,6 +328,18 @@ def test_weekly_restores_the_google_token_at_the_path_the_scripts_read_and_locks
     assert "cat ~/kdesk-analytics" not in restore
 
 
+def test_weekly_binds_the_google_refresh_token_to_only_the_steps_that_need_it():
+    """A long-lived OAuth refresh token in job-level env is handed to every step in the
+    job, including actions/checkout and setup-uv, which are pinned by moving tag rather
+    than by SHA. Two steps need it; two steps get it."""
+    job = load(WEEKLY)["jobs"]["pull"]
+    assert "GOOGLE_TOKEN_JSON" not in job["env"]
+
+    bound = [s for s in job["steps"] if "GOOGLE_TOKEN_JSON" in (s.get("env") or {})]
+    assert [s["name"] for s in bound] == ["Preflight the secrets",
+                                          "Restore the credential files the scripts read by path"]
+
+
 def test_weekly_skips_bing_cleanly_when_its_key_is_not_minted_yet():
     workflow_steps = steps_of(WEEKLY)
     bing = next(s for s in workflow_steps if "pull_bing_snapshot.py" in s.get("run", ""))
