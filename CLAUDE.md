@@ -114,6 +114,9 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --v
 # Anything it uploads is dead on arrival: no appeal, no Studio flip, re-upload is the only fix.
 # uv run scripts/video/youtube_publish.py --kind short --slug asc842 --variant liability
 # Publish through Upload-Post instead (Phase 1), or upload manually in the debug Chrome.
+
+# List the 20 locked-private videos, whether each mp4 is ready, and re-upload once UPLOAD_POST_KEY exists (zero writes with --dry-run)
+python3 scripts/video/reupload_locked.py --dry-run
 ```
 
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
