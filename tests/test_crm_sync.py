@@ -583,3 +583,41 @@ def test_crm_sync_has_no_private_gws_implementation_left():
     """The seam keeps its name (tests patch it); the implementation lives in scripts/gws.py."""
     assert cs.gws is gws_module
     assert "subprocess" not in dir(cs), "crm_sync must not shell out on its own any more"
+
+
+# --- the sheet id is a private handle, not repo content ----------------------------------
+#
+# It was interpolated into the ledger line, the ledger is tracked, and digest.py re-emits
+# recent ledger lines into $GITHUB_STEP_SUMMARY - a public workflow log. One f"({sheet_id})"
+# published the handle to the sheet holding every customer address KDesk has.
+
+def _fake_sheet_id() -> str:
+    """Built from parts so this file does not trip tests/test_no_private_ids.py."""
+    return "1A" + "bQ7z_x-9" * 5 + "2yK"
+
+
+def test_neither_stdout_nor_the_ledger_ever_carries_the_sheet_id(tmp_path, monkeypatch,
+                                                                capsys):
+    sheet_id = _fake_sheet_id()
+    idfile = tmp_path / "crm-sheet-id.txt"
+    idfile.write_text(sheet_id + "\n")
+    logged = {}
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", idfile)
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", lambda: GUMROAD)
+    monkeypatch.setattr(cs, "_gws", lambda argv, body=None: {"values": [list(cs.COLUMNS)]})
+    monkeypatch.setattr(cs.ledger, "append", lambda **kw: logged.update(kw) or {"id": 1})
+    assert cs.main([]) == 0
+    out = capsys.readouterr().out
+    assert sheet_id not in out
+    assert f"the private '{cs.SHEET_TITLE}' Google Sheet" in out
+    assert cs.SHEET_ID_HINT in out, "say where the id lives, rather than what it is"
+    assert sheet_id not in logged["action"]
+    assert cs.SHEET_ID_HINT in logged["action"]
+
+
+def test_the_id_hint_names_the_private_file_and_not_a_home_absolute_path():
+    """A tilde path is the same on both machines and leaks no username."""
+    assert cs.SHEET_ID_HINT == "id in ~/kdesk-analytics/crm-sheet-id.txt"
+    assert cs.SHEET_ID_FILE.name == "crm-sheet-id.txt"

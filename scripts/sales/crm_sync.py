@@ -18,7 +18,9 @@ with fixture data), but the CLI never asks.
 
 Transport is the `gws` CLI, which carries its own santiagokdesk credentials
 (~/.config/gws/). That binary is local to the Mac, so live runs happen on the Mac; CI runs
---dry-run only. Sheet id: ~/kdesk-analytics/crm-sheet-id.txt (mode 0600, never committed).
+--dry-run only. Sheet id: ~/kdesk-analytics/crm-sheet-id.txt (mode 0600, never committed) -
+and it stays there: nothing this script prints, logs or queues ever contains the id, because
+the ledger is tracked and the digest re-emits ledger lines into a public CI step summary.
 requests is imported lazily so this module is importable with the standard library alone.
 """
 from __future__ import annotations
@@ -41,6 +43,10 @@ from pull_gumroad_snapshot import is_business  # noqa: E402  (single definition 
 
 SHEET_TITLE = "KDesk CRM"
 SHEET_ID_FILE = pathlib.Path.home() / "kdesk-analytics" / "crm-sheet-id.txt"
+# How anything tracked refers to the sheet. The id itself is a private handle to a document
+# holding every customer address KDesk has: printing it puts it in the ledger (tracked) and
+# from there into the digest's $GITHUB_STEP_SUMMARY, which is a public workflow log.
+SHEET_ID_HINT = "id in ~/kdesk-analytics/crm-sheet-id.txt"
 MAILERLITE_TOKEN_FILE = pathlib.Path.home() / "kdesk-analytics" / "mailerlite-token.txt"
 TABS = ("People", "Events", "Pipeline", "Scoreboard")
 COLUMNS = ("email", "first_seen", "source", "domain", "is_business", "interest",
@@ -448,8 +454,8 @@ def main(argv: list[str] | None = None) -> int:
         wanted = merge(tracked, subscribers, buyers)
         sheet_id = ensure_sheet(a.dry_run)
         existing = [] if a.dry_run and recorded_sheet_id() is None else read_people(sheet_id)
-        print(f"{SHEET_TITLE} ({sheet_id}) — {len(wanted)} people "
-              f"from Gumroad + MailerLite + trackers")
+        print(f"the private '{SHEET_TITLE}' Google Sheet ({SHEET_ID_HINT}) — "
+              f"{len(wanted)} people from Gumroad + MailerLite + trackers")
         updated, appended = sync(sheet_id, wanted, existing, a.dry_run)
     except Exception as exc:  # noqa: BLE001
         # A traceback out of a scheduled job is a silent failure: nobody reads it. Everything
@@ -471,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     ledger.append(
         action=(f"CRM sync: updated {updated} and appended {appended} rows on the private "
-                f"'{SHEET_TITLE}' Google Sheet ({sheet_id}) from Gumroad sales, MailerLite "
+                f"'{SHEET_TITLE}' Google Sheet ({SHEET_ID_HINT}) from Gumroad sales, MailerLite "
                 f"subscribers and marketing/seo-tracking/mailerlite-sync.jsonl. "
                 f"{len(wanted)} people total; keyed on lowercased email, so the run is "
                 f"idempotent. No addresses left the private sheet."),
