@@ -12,12 +12,12 @@ Output: scripts/video/build/<slug>/<slug>-short.mp4 (+ short-review/*.png sample
 All text is rendered into PNGs via HTML (this ffmpeg has no drawtext).
 """
 import argparse, html, json, math, pathlib, subprocess, sys
-import yaml
-from PIL import Image, ImageChops
+# yaml and PIL are imported inside the functions that use them so this module
+# imports with the standard library alone (see tests/test_make_short_cards.py).
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
 import cards
-from short_variants import select_short, short_paths
+from short_variants import safe_slug, select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
 TOP, BOT = 360, 312                                            # bands at render scale (300 / 260 at 1080 wide)
 CAP_BAR = 118                                                  # caption bar height on the 2400x1350 scene PNGs
@@ -30,8 +30,29 @@ def run(cmd):
 def dur_of(p):
     return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(p)], capture_output=True, text=True).stdout.strip() or 0)
 
+def encode_scene(png, wav, dur, crf):
+    """One still + one narration WAV -> an mp4 beside the PNG. Returns that path.
+
+    Slow zoom to 1.06x over the whole scene, 0.3 s fades either end, audio padded so the last
+    word is never clipped. Every scene kind - sheet, pan and card - encodes through here.
+    """
+    n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
+    vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
+          f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
+          f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p")
+    out = pathlib.Path(png).with_suffix(".mp4")
+    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
+         "-filter_complex",
+         f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+         f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
+         "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-c:a", "aac",
+         "-b:a", "128k", str(out)])
+    return out
+
 def highlight_bbox(im):
     """Bounding box of the orange (#E67E22) highlight rings drawn by render_sheets, or None."""
+    from PIL import ImageChops
     r, g, b = im.split(); tol = 28
     mask = r.point(lambda v: 255 if abs(v - 0xE6) < tol else 0)
     mask = ImageChops.multiply(mask, g.point(lambda v: 255 if abs(v - 0x7E) < tol else 0))
@@ -85,6 +106,8 @@ html,body{{width:{RW}px;height:{RH}px;background:{grad}}}
 </style></head><body><div class="wrap"><div class="brand"><i></i>{name}</div><div class="cta">{html.escape(head)}</div>{link_html}<div class="sub">{sub}</div></div></body></html>"""
 
 def main():
+    import yaml
+    from PIL import Image, ImageChops
     ap = argparse.ArgumentParser()
     where = ap.add_mutually_exclusive_group(required=True)
     where.add_argument("--slug", help="render marketing/video/<slug>/scenes.yaml from this repo")
@@ -93,12 +116,21 @@ def main():
     ap.add_argument("--crf", type=int, default=26)
     ap.add_argument("--variant", default=None, help="named block under `shorts:` (default: legacy `short:`)")
     a = ap.parse_args()
-    spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / a.slug / "scenes.yaml"
-    spec = yaml.safe_load(open(spec_path)); slug = a.slug or spec["slug"]; sh = select_short(spec, a.variant)
+    # --slug also builds a path, so it is validated before it is used to open anything.
+    slug = safe_slug(a.slug) if a.slug else None
+    spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
+    spec = yaml.safe_load(open(spec_path)); slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
-    durs = json.load(open(build / "audio/durations.json"))
+    dj = build / "audio" / "durations.json"
+    if not dj.exists():
+        raise SystemExit(
+            f"no narration durations at {dj}\n"
+            f"Synthesize them first:\n"
+            f"  scripts/video/.venv-tts/bin/python scripts/video/narrate.py "
+            f"--spec {spec_path} --out {build / 'audio'}")
+    durs = json.load(open(dj))
     parts = []
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
     wbv = wbf = None
@@ -111,18 +143,7 @@ def main():
                                 RW, RH, html_dir=work)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
-            n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
-            vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
-                  f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
-                  f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p")
-            out = work / f"scene_{k}.mp4"
-            run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
-                 "-filter_complex",
-                 f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
-                 f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
-                 "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
-                 "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac",
-                 "-b:a", "128k", str(out)])
+            out = encode_scene(png, wav, dur, a.crf)
             parts.append(out); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue
         if str(idx) in ranges:  # dedicated portrait-friendly render of a narrower range, trimmed to the table
@@ -156,14 +177,8 @@ def main():
             f = focus.get(str(idx), {}); fx = min(0.72, max(0.30, float(f.get("fx", 0.5)))); fy = min(0.60, max(0.20, float(f.get("fy", 0.5)) * src.height / crop.height))
         hp = work / f"scene_{k}.html"; hp.write_text(scene_html(sh["hook"], sc.get("caption", ""), cropped.resolve(), fx, fy, mode, pan))
         png = work / f"scene_{k}.png"; R.screenshot(hp, png, RW, RH)
-        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6; n = math.ceil(dur * FPS)
-        zmax = 1.06; dz = (zmax - 1.0) / n
-        vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
-              f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p")
-        out = work / f"scene_{k}.mp4"
-        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav), "-filter_complex",
-             f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,aformat=sample_rates=48000:channel_layouts=stereo[a]",
-             "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
+        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+        out = encode_scene(png, wav, dur, a.crf)
         parts.append(out); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
     hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)

@@ -5,8 +5,9 @@ using the Playwright headless Chromium shell (cached under ~/Library/Caches/ms-p
 Also renders title / outro cards. Every visual element (captions, highlight rings, tab strip)
 is drawn here because this ffmpeg build has no text filters.
 """
-import openpyxl, html, subprocess, pathlib, datetime, json, re, glob, os
-from openpyxl.utils import get_column_letter, range_boundaries, coordinate_to_tuple
+import html, subprocess, pathlib, datetime, json, re, glob, os
+# openpyxl is imported inside render_sheet(): this module must import with the standard
+# library alone so the tests that import make_short/cards run in the bare pytest environment.
 
 FONT_DIR = "/Applications/LibreOffice.app/Contents/Resources/fonts/truetype"
 W, H = 2400, 1350
@@ -82,6 +83,7 @@ def tab_strip(wb, active):
 
 def render_sheet(wbv, wbf, sheet, rng, out_png, highlight=(), zoom=1.0, caption="",
                  workbook_name="Workbook.xlsx", html_dir=None, show_caption=True):
+    from openpyxl.utils import get_column_letter, range_boundaries, coordinate_to_tuple
     cap_h = CAP_H if show_caption else 0
     ws, wsf = wbv[sheet], wbf[sheet]
     c1, r1, c2, r2 = range_boundaries(rng)

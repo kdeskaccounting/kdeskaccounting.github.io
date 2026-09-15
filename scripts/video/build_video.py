@@ -10,6 +10,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import render_sheets as R
+from short_variants import safe_slug
 
 SOFFICE = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 VENV_PY = HERE / ".venv-tts" / "bin" / "python"
@@ -31,7 +32,7 @@ def main():
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
     a = ap.parse_args()
-    spec = yaml.safe_load(open(a.spec)); slug = spec["slug"]
+    spec = yaml.safe_load(open(a.spec)); slug = safe_slug(spec["slug"])
     build = HERE / "build" / slug; frames = build / "frames"; frames.mkdir(parents=True, exist_ok=True)
     import cards
     needs_workbook = any(sc.get("kind", "sheet") not in ("title", "outro", "card")

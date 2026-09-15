@@ -5,9 +5,16 @@ Three templates, all fed by one `data:` block with exactly four keys — `headin
 `subheading`, `items`, `footer`:
 
   ranked_list  items: [{rank: int ascending, label: str, value: int|float|""}]   0-8 rows
-  countdown    items: [{rank: int descending, label: str, value: int}]           rendered in list order
-  changed      items: [{label: str, value: str}]                                 no rank; value is a
-                                                                                 full sentence that wraps
+  countdown    items: [{rank: int descending, label: str, value: int}]           0-8 rows, list order
+  changed      items: [{label: str, value: str}]                                 0-5 rows; no rank, and
+                                                                                 value is a 60-120
+                                                                                 character sentence
+                                                                                 that wraps
+
+The row caps are readability limits, not storage limits: rows shrink as they multiply, and past
+8 ranked rows (or 5 sentence rows) the type is too small to read on a phone, so `card_html`
+raises rather than render something unusable. `changed` note text never falls below 30px on the
+1296x2304 canvas.
 
 `ranked_list` renders a rank + label row with no value column when `value` is `""`, and an
 empty `items` list renders the heading, subheading and footer over a tasteful empty body
@@ -30,8 +37,15 @@ import re
 
 TEMPLATES = ("ranked_list", "countdown", "changed")
 
-#: A 9:16 card stays legible down to about this many rows; past it the caller must split.
+#: A 9:16 card stays legible down to about this many rank rows; past it the caller must split.
 MAX_ITEMS = 8
+
+#: `changed` rows carry a whole sentence each, so they run out of room far sooner.
+MAX_CHANGED_ITEMS = 5
+
+#: Floor on a `changed` row's font size, in canvas units (height/100). The note is .9em of it,
+#: so 1.45 units keeps note text at 30px or more on the 1296x2304 card.
+MIN_CHANGED_ROW_UNITS = 1.45
 
 DEFAULT_BRAND: dict = {
     "name": "Your Brand",
@@ -93,9 +107,14 @@ def _value_text(value: object) -> str:
     return str(value)
 
 
-def _rank_text(template: str, item: dict, index: int) -> str:
-    """The caller supplies the rank; countdown reads `#3 … #1`, ranked_list `1 … N`."""
-    rank = item.get("rank", index + 1)
+def _rank_text(template: str, item: dict, index: int, count: int) -> str:
+    """The caller supplies the rank; countdown reads `#3 … #1`, ranked_list `1 … N`.
+
+    The fallback follows the template's direction, so a countdown that omits `rank` still
+    counts down instead of silently counting up.
+    """
+    default = count - index if template == "countdown" else index + 1
+    rank = item.get("rank", default)
     return f"#{rank}" if template == "countdown" else str(rank)
 
 
@@ -105,7 +124,7 @@ def _rows_ranked(template: str, items: list[dict]) -> str:
     out = []
     for i, item in enumerate(items):
         value = _value_text(item.get("value"))
-        cells = (f'<div class="rank">{_e(_rank_text(template, item, i))}</div>'
+        cells = (f'<div class="rank">{_e(_rank_text(template, item, i, len(items)))}</div>'
                  f'<div class="label">{_e(item.get("label"))}</div>')
         if value:
             out.append(f'<li class="row">{cells}<div class="value">{_e(value)}</div></li>')
@@ -137,7 +156,7 @@ def _row_size(template: str, count: int, unit: float) -> float:
     """Rows shrink as they multiply, so 3 rows and 8 rows both fit the same canvas."""
     n = max(count, 1)
     if template == "changed":
-        return min(2.45, 8.4 / n) * unit
+        return max(min(2.45, 8.4 / n), MIN_CHANGED_ROW_UNITS) * unit
     return min(3.3, 18.0 / n) * unit
 
 
@@ -148,9 +167,10 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     items = data.get("items") or []
     if not isinstance(items, list):
         raise TypeError(f"card data.items must be a list, got {type(items).__name__}")
-    if len(items) > MAX_ITEMS:
-        raise ValueError(f"card template {template!r} holds at most {MAX_ITEMS} items, "
-                         f"got {len(items)}")
+    cap = MAX_CHANGED_ITEMS if template == "changed" else MAX_ITEMS
+    if len(items) > cap:
+        raise ValueError(f"card template {template!r} holds at most {cap} items, "
+                         f"got {len(items)}; split it across two cards")
 
     heading = str(data.get("heading") or "")
     subheading = str(data.get("subheading") or "")

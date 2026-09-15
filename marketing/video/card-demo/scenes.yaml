@@ -1,8 +1,9 @@
 # Card-scene smoke spec: one scene per card template, no workbook, no LibreOffice.
 # It is the spec tests/test_card_scene_e2e.py renders, and the worked example of the data
 # contract a caller outside this repo emits (`data:` is always heading / subheading / items /
-# footer; ranked_list and countdown items are {rank, label, value}, changed items are
-# {label, value} where value is a full sentence).
+# footer; ranked_list and countdown items are {rank, label, value} and hold at most 8 rows;
+# changed items are {label, value} where value is a 60-120 character sentence, at most 5 rows -
+# past that the note text shrinks below 30px and cards.py raises rather than render it).
 #
 # Frames: scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
 #           --spec marketing/video/card-demo/scenes.yaml --frames-only

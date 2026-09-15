@@ -54,6 +54,28 @@ CHANGED = {
     ],
     "footer": "Powered by Queue-Times.com",
 }
+CHANGED_FIVE = {
+    "heading": "What changed this week",
+    "subheading": "Walt Disney World · week of 2026-09-14",
+    "items": [
+        {"label": "Test Track",
+         "value": "Reopened on Tuesday after a long refurbishment, and it is already the "
+                  "busiest ride at EPCOT."},
+        {"label": "Space Mountain",
+         "value": "Goes down for refurbishment on Monday and is scheduled to stay closed "
+                  "until early spring."},
+        {"label": "Jungle Cruise",
+         "value": "Held a steady thirty minute wait all week, the flattest line in the "
+                  "Magic Kingdom right now."},
+        {"label": "Rise of the Resistance",
+         "value": "Posted the longest wait of the week on Saturday, and it has not dropped "
+                  "below an hour since."},
+        {"label": "Haunted Mansion",
+         "value": "Switched to its holiday overlay on Friday, which pushed the evening wait "
+                  "up by about twenty minutes."},
+    ],
+    "footer": "Powered by Queue-Times.com",
+}
 EMPTY_RANKED = {
     "heading": "No parks reporting yet",
     "subheading": "Nothing was open at capture time",
@@ -66,6 +88,7 @@ GOLDEN_CASES = [
     ("ranked_list", RANKED, "card_ranked_list"),
     ("countdown", COUNTDOWN, "card_countdown"),
     ("changed", CHANGED, "card_changed"),
+    ("changed", CHANGED_FIVE, "card_changed_five"),
     ("ranked_list", EMPTY_RANKED, "card_ranked_list_empty"),
 ]
 
@@ -234,6 +257,20 @@ def test_countdown_keeps_the_items_in_list_order():
         < html.index("TRON Lightcycle / Run")
 
 
+def test_countdown_without_ranks_counts_down_to_one_instead_of_up_from_one():
+    """The rank is the caller's, but a countdown that omits it must still count down."""
+    data = dict(COUNTDOWN, items=[{"label": "A", "value": 85}, {"label": "B", "value": 105},
+                                  {"label": "C", "value": 130}])
+    html = cards.card_html("countdown", data, cards.brand_tokens(BRAND))
+    assert re.findall(r'<div class="rank">([^<]+)</div>', html) == ["#3", "#2", "#1"]
+
+
+def test_ranked_list_without_ranks_counts_up_from_one():
+    data = dict(RANKED, items=[{"label": "A", "value": 5}, {"label": "B", "value": 10}])
+    html = cards.card_html("ranked_list", data, cards.brand_tokens(BRAND))
+    assert re.findall(r'<div class="rank">([^<]+)</div>', html) == ["1", "2"]
+
+
 # --- changed --------------------------------------------------------------------------
 
 def test_changed_rows_carry_a_label_and_a_sentence_and_no_rank():
@@ -249,9 +286,42 @@ def test_changed_sentences_are_allowed_to_wrap():
     assert re.search(r"\.note\{[^}]*white-space:normal", html), "the sentence column must wrap"
 
 
-def test_changed_fixture_sentences_match_the_callers_60_to_120_character_contract():
-    for item in CHANGED["items"]:
-        assert 60 <= len(item["value"]) <= 120, item
+@pytest.mark.parametrize("length", [60, 120])
+def test_changed_renders_both_ends_of_the_callers_sentence_window(length):
+    """The caller's contract is a 60-120 character sentence; both ends must survive intact."""
+    sentence = ("Reopened on Tuesday after a long refurbishment, and it is already the busiest "
+                "ride in the whole of the park by a very wide margin.")[:length]
+    assert len(sentence) == length
+    html = cards.card_html("changed", dict(CHANGED, items=[{"label": "Test Track",
+                                                            "value": sentence}]),
+                           cards.brand_tokens(BRAND))
+    assert f'<div class="note">{sentence}</div>' in html
+    assert re.search(r"\.note\{[^}]*white-space:normal", html)
+
+
+def test_changed_renders_the_full_five_row_card():
+    html = cards.card_html("changed", CHANGED_FIVE, cards.brand_tokens(BRAND))
+    assert html.count('<li class="row changed">') == 5
+    assert "Haunted Mansion" in html
+
+
+def test_changed_rejects_more_rows_than_stay_readable():
+    """Six sentences on one 9:16 card shrink the note text past readable - reject, don't render."""
+    data = dict(CHANGED, items=[{"label": f"Ride {i}", "value": "A sentence of roughly the "
+                                                               "right length for this card."}
+                                for i in range(6)])
+    with pytest.raises(ValueError) as e:
+        cards.card_html("changed", data, cards.brand_tokens(BRAND))
+    assert "5" in str(e.value)
+
+
+@pytest.mark.parametrize("n", [1, 2, 3, 4, 5])
+def test_changed_note_text_never_drops_below_30px_on_the_9_16_canvas(n):
+    data = dict(CHANGED, items=[{"label": f"Ride {i}", "value": "x" * 120} for i in range(n)])
+    html = cards.card_html("changed", data, cards.brand_tokens(BRAND), 1296, 2304)
+    row_px = float(re.search(r"\.row\{[^}]*font-size:([\d.]+)px", html).group(1))
+    note_em = float(re.search(r"\.note\{[^}]*font-size:([\d.]+)em", html).group(1))
+    assert row_px * note_em >= 30, f"{n} rows gives {row_px * note_em:.1f}px note text"
 
 
 # --- goldens --------------------------------------------------------------------------
