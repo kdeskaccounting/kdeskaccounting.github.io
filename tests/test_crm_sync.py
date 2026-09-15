@@ -1,8 +1,11 @@
 """scripts/sales/crm_sync.py — build and upsert the private KDesk CRM sheet through gws."""
 import json
+import os
 import stat
 import sys
 import types
+
+import pytest
 
 from sales import crm_sync as cs
 
@@ -111,7 +114,8 @@ def test_sync_dry_run_prints_the_diff_and_makes_no_gws_call(tmp_path, monkeypatc
     monkeypatch.setattr(cs, "_gws", lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("no gws call in --dry-run")))
     wanted = cs.merge(cs.from_gumroad(GUMROAD))
-    cs.sync(sheet_id="SHEET1", wanted=wanted, existing=[list(cs.COLUMNS)], dry_run=True)
+    cs.sync(sheet_id="SHEET1", wanted=wanted, existing=[list(cs.COLUMNS)], dry_run=True,
+            show_emails=True)
     out = capsys.readouterr().out
     assert "+ buyer@northstar.example" in out
     assert "2 to append" in out
@@ -444,3 +448,86 @@ def test_a_human_edit_survives_a_second_sync(tmp_path, monkeypatch):
     assert cs.sync(sheet_id="S", wanted=wanted, existing=rows, dry_run=False,
                    show_emails=False) == (0, 0)
     assert rows[1][COL["next_action"]] == "intro call booked"
+
+
+# --- fix round: failure handling, dry-run purity, and the counts-only default -------------
+
+
+def test_sync_defaults_to_counts_only():
+    """The CLI is the common caller; the safe default is the one that cannot leak."""
+    import inspect
+    assert inspect.signature(cs.sync).parameters["show_emails"].default is False
+
+
+def _fail(exc):
+    def boom(*_a, **_k):
+        raise exc
+    return boom
+
+
+def test_a_dry_run_failure_prints_the_card_to_stderr_and_writes_nothing(
+        tmp_path, monkeypatch, capsys):
+    """--dry-run performs zero writes - including the queue card. On Actions, where the
+    tokens are absent, writing one would dirty the checkout on every scheduled run."""
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", tmp_path / "crm-sheet-id.txt")
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", _fail(RuntimeError("no gumroad token on this box")))
+    assert cs.main(["--dry-run"]) == 1
+    err = capsys.readouterr().err
+    assert "no gumroad token on this box" in err
+    assert "gws auth login" in err, "the card body itself goes to stderr"
+    assert not (tmp_path / "marketing").exists(), "--dry-run must not write a queue card"
+
+
+def test_a_live_failure_still_writes_the_card(tmp_path, monkeypatch):
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", tmp_path / "crm-sheet-id.txt")
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", _fail(RuntimeError("boom")))
+    assert cs.main([]) == 1
+    assert len(list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))) == 1
+
+
+@pytest.mark.parametrize("exc", [
+    json.JSONDecodeError("Expecting value", "", 0),          # gws printed something odd
+    KeyError("spreadsheetId"),                               # gws printed a different shape
+    OSError("connection reset"),
+])
+def test_any_unexpected_failure_queues_a_card_rather_than_crashing(exc, tmp_path, monkeypatch):
+    """A traceback out of a scheduled job is a silent failure: nobody reads it."""
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", tmp_path / "crm-sheet-id.txt")
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", lambda: GUMROAD)
+    monkeypatch.setattr(cs, "_gws", _fail(exc))
+    assert cs.main([]) == 1
+    assert len(list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))) == 1
+
+
+def test_a_ledger_failure_is_never_swallowed_into_a_card(tmp_path, monkeypatch):
+    """The ledger is the audit trail; a lost entry must be loud, not queued."""
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", tmp_path / "crm-sheet-id.txt")
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", lambda: GUMROAD)
+    monkeypatch.setattr(cs, "_gws", lambda *a, **k: {"spreadsheetId": "SHEET1"})
+    monkeypatch.setattr(cs.ledger, "append", _fail(RuntimeError("ledger disk full")))
+    with pytest.raises(RuntimeError, match="ledger disk full"):
+        cs.main([])
+    assert not (tmp_path / "marketing").exists(), "a ledger failure is not a queue-card case"
+
+
+def test_an_empty_sheet_id_file_counts_as_absent(tmp_path, monkeypatch):
+    """ensure_sheet() and main() must agree, or a blank file makes main call gws on a
+    placeholder id during --dry-run."""
+    idfile = tmp_path / "crm-sheet-id.txt"
+    idfile.write_text("   \n")
+    monkeypatch.setattr(cs, "SHEET_ID_FILE", idfile)
+    monkeypatch.setattr(cs, "REPO", tmp_path)
+    monkeypatch.setattr(cs, "fetch_mailerlite", lambda: MAILERLITE)
+    monkeypatch.setattr(cs, "fetch_gumroad", lambda: GUMROAD)
+    monkeypatch.setattr(cs, "_gws", _fail(AssertionError("no gws call for a blank id file")))
+    assert cs.recorded_sheet_id() is None
+    assert cs.ensure_sheet(dry_run=True) == "(would create a new spreadsheet)"
+    assert cs.main(["--dry-run"]) == 0

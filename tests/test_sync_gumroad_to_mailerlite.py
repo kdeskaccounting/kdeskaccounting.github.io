@@ -48,3 +48,21 @@ def test_synced_hashes_still_recognises_a_legacy_plaintext_row(tmp_path, monkeyp
 
 def test_synced_hashes_tolerates_a_missing_file(tmp_path):
     assert sync.synced_hashes(tmp_path / "nope.jsonl") == set()
+
+
+def test_the_dry_run_prints_no_address_to_stdout(tmp_path, monkeypatch, capsys):
+    """stdout is a log, a terminal scrollback and a launchd job file. None of them are
+    private, so the digest prefix goes there instead of the person."""
+    import sys as _sys
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    monkeypatch.setattr(sync, "STATE", tmp_path / "state.jsonl")
+    monkeypatch.setattr(sync, "gumroad_sales", lambda days: [
+        {"email": "Buyer@NorthStar.EXAMPLE", "price": 0,
+         "product_name": "Month-End Close Checklist", "created_at": "2026-09-11T04:25:17Z"}])
+    monkeypatch.setattr(_sys, "argv", ["sync_gumroad_to_mailerlite.py", "--dry-run"])
+    sync.main()
+    out = capsys.readouterr().out
+    assert "@" not in out, "no address may reach stdout"
+    assert "northstar" not in out.lower()
+    assert privacy.email_hash("buyer@northstar.example")[:8] in out
+    assert "month-end close checklist" in out.lower()

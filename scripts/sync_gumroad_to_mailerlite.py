@@ -98,9 +98,11 @@ def main():
         if not prod: continue
         payload = {"email": email, "fields": {**prod, "name": (s.get("full_name") or "").split(" ")[0] if s.get("full_name") else None}, "groups": [gid] if not dry else []}
         payload["fields"] = {k: v for k, v in payload["fields"].items() if v}
-        if dry: print("would sync", email, "->", prod["product_name"]); continue
+        # stdout is a log, a scrollback and a launchd job file - none of them private - so
+        # the person is named by digest prefix, the same marker the repo uses.
+        if dry: print("would sync", digest[:8], "->", prod["product_name"]); continue
         ml("POST", "/subscribers", json=payload)
         with STATE.open("a") as f: f.write(json.dumps(state_row(email, prod["product_name"], s["created_at"])) + "\n")
-        done.add(digest); synced += 1; print("synced", email, "->", prod["product_name"])
+        done.add(digest); synced += 1; print("synced", digest[:8], "->", prod["product_name"])
     print("done:", synced, "new subscriber(s)")
 if __name__ == "__main__": main()

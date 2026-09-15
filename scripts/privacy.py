@@ -28,19 +28,47 @@ from typing import Iterable
 SALT_FILE = pathlib.Path.home() / "kdesk-analytics" / "email-hash-salt.txt"
 SALT_BYTES = 32
 
+# path -> salt. A sync hashes hundreds of addresses; without this each one re-read the file.
+_SALT_CACHE: dict[pathlib.Path, str] = {}
+
+
+def _read_salt(path: pathlib.Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
 
 def salt() -> str:
-    """Read the salt, creating it 0600 on first use."""
-    if SALT_FILE.exists():
-        existing = SALT_FILE.read_text(encoding="utf-8").strip()
-        if existing:
-            return existing
-    SALT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    """Read the salt, creating it 0600 on first use.
+
+    Creation is O_EXCL, so two processes starting together cannot each write a salt - the
+    loser re-reads the winner's rather than hashing every address under a salt nobody else
+    holds, which would silently orphan every digest it wrote.
+    """
+    path = SALT_FILE
+    cached = _SALT_CACHE.get(path)
+    if cached:
+        return cached
+    existing = _read_salt(path)
+    if existing:
+        _SALT_CACHE[path] = existing
+        return existing
+    path.parent.mkdir(parents=True, exist_ok=True)
     value = secrets.token_hex(SALT_BYTES)
-    fd = os.open(SALT_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        # Either a racing process just created it, or a crashed run left it empty.
+        existing = _read_salt(path)
+        if existing:
+            _SALT_CACHE[path] = existing
+            return existing
+        fd = os.open(path, os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(value + "\n")
-    os.chmod(SALT_FILE, 0o600)
+    os.chmod(path, 0o600)
+    _SALT_CACHE[path] = value
     return value
 
 

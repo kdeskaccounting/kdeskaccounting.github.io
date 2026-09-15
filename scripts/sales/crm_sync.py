@@ -275,9 +275,24 @@ def _record_sheet_id(sheet_id: str) -> None:
     os.chmod(SHEET_ID_FILE, 0o600)
 
 
+def recorded_sheet_id() -> str | None:
+    """The id we have already recorded, or None. Blank counts as absent.
+
+    ensure_sheet() and main() both need this answer and must agree: when they disagreed, a
+    blank file made ensure_sheet return the dry-run placeholder while main went on to call
+    gws with that placeholder as a spreadsheet id.
+    """
+    try:
+        value = SHEET_ID_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
 def ensure_sheet(dry_run: bool) -> str:
-    if SHEET_ID_FILE.exists() and SHEET_ID_FILE.read_text().strip():
-        return SHEET_ID_FILE.read_text().strip()
+    recorded = recorded_sheet_id()
+    if recorded:
+        return recorded
     if dry_run:
         return "(would create a new spreadsheet)"
     created = _gws(["sheets", "spreadsheets", "create"], _create_body())
@@ -312,7 +327,7 @@ def _breakdown(people: list[Person]) -> str:
 
 
 def sync(sheet_id: str, wanted: dict[str, Person], existing: list[list[str]], dry_run: bool,
-         show_emails: bool = True) -> tuple[int, int]:
+         show_emails: bool = False) -> tuple[int, int]:
     updates, appends = diff(existing, wanted)
     if show_emails:
         for _row, person in updates:
@@ -340,18 +355,11 @@ def sync(sheet_id: str, wanted: dict[str, Person], existing: list[list[str]], dr
     return len(updates), len(appends)
 
 
-def queue_card(detail: str, repo: pathlib.Path | None = None,
-               now: dt.datetime | None = None) -> pathlib.Path:
-    """Queues, not silent failures: a paste-ready card with the exact remaining manual step.
-
-    Carries no addresses - this card lives in the public repo. The detail is machine text
-    (a gws stderr tail) so it goes through redact_secrets before it is written.
-    """
+def card_body(detail: str, now: dt.datetime | None = None) -> str:
+    """The card text. Carries no addresses - this card lives in the public repo. The detail
+    is machine text (a gws stderr tail) so it goes through redact_secrets first."""
     now = now or dt.datetime.now().astimezone()
-    root = pathlib.Path(repo or REPO) / "marketing" / "publish-queue" / "manual"
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / f"crm-sync-{now.strftime('%Y-%m-%d-%H%M')}.md"
-    path.write_text(
+    return (
         f"# CRM sync — needs one manual step\n\n"
         f"Queued {now.strftime('%Y-%m-%d %H:%M %z')} by scripts/sales/crm_sync.py\n\n"
         f"## Why it is here\n\n{session.redact_secrets(detail)}\n\n"
@@ -363,7 +371,17 @@ def queue_card(detail: str, repo: pathlib.Path | None = None,
         f"3. Re-run `python3 scripts/sales/crm_sync.py`. The upsert is keyed on email, so\n"
         f"   re-running is safe — it will only write what is still missing.\n\n"
         f"## Privacy\n\nNo customer addresses appear in this card; they exist only in the\n"
-        f"private \"{SHEET_TITLE}\" sheet.\n", encoding="utf-8")
+        f"private \"{SHEET_TITLE}\" sheet.\n")
+
+
+def queue_card(detail: str, repo: pathlib.Path | None = None,
+               now: dt.datetime | None = None) -> pathlib.Path:
+    """Queues, not silent failures: a paste-ready card with the exact remaining manual step."""
+    now = now or dt.datetime.now().astimezone()
+    root = pathlib.Path(repo or REPO) / "marketing" / "publish-queue" / "manual"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"crm-sync-{now.strftime('%Y-%m-%d-%H%M')}.md"
+    path.write_text(card_body(detail, now), encoding="utf-8")
     return path
 
 
@@ -423,12 +441,24 @@ def main(argv: list[str] | None = None) -> int:
         tracked = from_seo_tracking(REPO, known_emails=set(subscribers) | set(buyers))
         wanted = merge(tracked, subscribers, buyers)
         sheet_id = ensure_sheet(a.dry_run)
-        existing = [] if a.dry_run and not SHEET_ID_FILE.exists() else read_people(sheet_id)
+        existing = [] if a.dry_run and recorded_sheet_id() is None else read_people(sheet_id)
         print(f"{SHEET_TITLE} ({sheet_id}) — {len(wanted)} people "
               f"from Gumroad + MailerLite + trackers")
-        updated, appended = sync(sheet_id, wanted, existing, a.dry_run, show_emails=False)
-    except (RuntimeError, OSError) as exc:
-        card = queue_card(f"`crm_sync.py` could not finish: {exc}")
+        updated, appended = sync(sheet_id, wanted, existing, a.dry_run)
+    except Exception as exc:  # noqa: BLE001
+        # A traceback out of a scheduled job is a silent failure: nobody reads it. Everything
+        # that can go wrong above (a gws non-zero exit, a timeout, a malformed JSON reply, a
+        # missing key in one, a dead socket) becomes the same visible thing - a card with the
+        # manual step and a non-zero exit. ledger.append stays outside this block: a lost
+        # audit entry must be loud, not queued.
+        detail = f"`crm_sync.py` could not finish: {type(exc).__name__}: {exc}"
+        if a.dry_run:
+            # --dry-run performs zero writes, and that includes the card. On Actions, where
+            # the tokens are absent, writing one would dirty the checkout on every run.
+            print(card_body(detail), file=sys.stderr)
+            print("(--dry-run: card printed, not written)", file=sys.stderr)
+            return 1
+        card = queue_card(detail)
         print(f"queued -> {card.relative_to(REPO)}", file=sys.stderr)
         return 1
     if a.dry_run or not (updated or appended):

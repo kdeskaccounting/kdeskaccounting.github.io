@@ -3476,7 +3476,7 @@ gws sheets spreadsheets create --json '{"properties":{"title":"KDesk CRM"},
             {"properties":{"title":"Pipeline"}},{"properties":{"title":"Scoreboard"}}]}'
 gws sheets spreadsheets values get --params '{"spreadsheetId":"<id>","range":"People!A1:J2000"}'
 gws sheets spreadsheets values batchUpdate --params '{"spreadsheetId":"<id>"}' \
-  --json '{"valueInputOption":"RAW","data":[{"range":"People!A2","values":[["a@b.com", ...]]}]}'
+  --json '{"valueInputOption":"RAW","data":[{"range":"People!A2","values":[["<redacted:f527ebc7>", ...]]}]}'
 gws sheets spreadsheets values append --params '{"spreadsheetId":"<id>","range":"People!A1",
   "valueInputOption":"RAW","insertDataOption":"INSERT_ROWS"}' --json '{"values":[[...]]}'
 ```
@@ -3493,15 +3493,15 @@ import pull_gumroad_snapshot as pg
 
 
 def test_business_domains_are_business():
-    assert pg.is_business("scott@stratacloudaccountants.com") is True
-    assert pg.is_business("wkohler@naeda.com") is True
-    assert pg.is_business("Operations@Schlam.COM") is True
+    assert pg.is_business("<redacted:0d859651>") is True
+    assert pg.is_business("<redacted:44a69357>") is True
+    assert pg.is_business("<redacted:c286c14f>") is True
 
 
 def test_the_freemail_set_is_not_business():
-    for email in ("a@gmail.com", "b@yahoo.com", "c@hotmail.com", "d@outlook.com",
-                  "e@icloud.com", "f@naver.com", "g@proton.me", "h@protonmail.com",
-                  "i@aol.com", "j@live.com", "k@me.com"):
+    for email in ("a@gmail.com", "<redacted:b5b7f525>", "<redacted:15824bf1>", "<redacted:49468981>",
+                  "<redacted:ee95e37e>", "<redacted:7c9b6faf>", "<redacted:cada38f9>", "<redacted:a5a8b49a>",
+                  "<redacted:211ecd29>", "<redacted:338584f4>", "<redacted:e2733958>"):
         assert pg.is_business(email) is False, email
 
 
@@ -3512,7 +3512,7 @@ def test_malformed_addresses_are_not_business():
 
 
 def test_summarize_still_reports_the_same_business_domains():
-    sales = [{"email": "scott@stratacloudaccountants.com", "price": 0, "product_name": "X",
+    sales = [{"email": "<redacted:0d859651>", "price": 0, "product_name": "X",
               "created_at": "2026-09-01T00:00:00Z"},
              {"email": "a@gmail.com", "price": 0, "product_name": "X",
               "created_at": "2026-09-01T00:00:00Z"}]
@@ -3591,9 +3591,9 @@ import json
 from sales import crm_sync as cs
 
 GUMROAD = [
-    {"email": "Scott@StrataCloudAccountants.com", "price": 0, "product_name": "ASC 842 — Free",
+    {"email": "<redacted:0d859651>", "price": 0, "product_name": "ASC 842 — Free",
      "created_at": "2026-08-01T10:00:00Z"},
-    {"email": "scott@stratacloudaccountants.com", "price": 24900, "product_name": "ASC 842",
+    {"email": "<redacted:0d859651>", "price": 24900, "product_name": "ASC 842",
      "created_at": "2026-09-02T10:00:00Z"},
     {"email": "a@gmail.com", "price": 0, "product_name": "Month-End Close",
      "created_at": "2026-09-05T10:00:00Z"},
@@ -3601,7 +3601,7 @@ GUMROAD = [
 MAILERLITE = [
     {"email": "a@gmail.com", "subscribed_at": "2026-09-06 12:00:00",
      "fields": {"interest": "rsu-planner"}},
-    {"email": "new@acme.io", "subscribed_at": "2026-09-10 12:00:00", "fields": {"interest": None}},
+    {"email": "<redacted:2ef54107>", "subscribed_at": "2026-09-10 12:00:00", "fields": {"interest": None}},
 ]
 
 
@@ -3617,7 +3617,7 @@ def test_a1_is_one_based_and_spans_every_column():
 
 def test_from_gumroad_lowercases_the_email_and_keeps_the_earliest_first_seen():
     people = cs.from_gumroad(GUMROAD)
-    scott = people["scott@stratacloudaccountants.com"]
+    scott = people["<redacted:0d859651>"]
     assert scott.first_seen == "2026-08-01"
     assert scott.last_touch == "2026-09-02"
     assert scott.domain == "stratacloudaccountants.com"
@@ -3626,8 +3626,8 @@ def test_from_gumroad_lowercases_the_email_and_keeps_the_earliest_first_seen():
 
 def test_from_gumroad_marks_a_paid_buyer_and_a_free_downloader_differently():
     people = cs.from_gumroad(GUMROAD)
-    assert people["scott@stratacloudaccountants.com"].source == "gumroad-paid"
-    assert people["scott@stratacloudaccountants.com"].stage == "customer"
+    assert people["<redacted:0d859651>"].source == "gumroad-paid"
+    assert people["<redacted:0d859651>"].stage == "customer"
     assert people["a@gmail.com"].source == "gumroad-free"
     assert people["a@gmail.com"].stage == "lead"
     assert people["a@gmail.com"].is_business == "FALSE"
@@ -3636,22 +3636,22 @@ def test_from_gumroad_marks_a_paid_buyer_and_a_free_downloader_differently():
 def test_from_mailerlite_carries_the_interest_field():
     people = cs.from_mailerlite(MAILERLITE)
     assert people["a@gmail.com"].interest == "rsu-planner"
-    assert people["new@acme.io"].interest == ""
-    assert people["new@acme.io"].source == "mailerlite"
-    assert people["new@acme.io"].first_seen == "2026-09-10"
+    assert people["<redacted:2ef54107>"].interest == ""
+    assert people["<redacted:2ef54107>"].source == "mailerlite"
+    assert people["<redacted:2ef54107>"].first_seen == "2026-09-10"
 
 
 def test_from_seo_tracking_reads_the_mailerlite_sync_log(tmp_path):
     d = tmp_path / "marketing" / "seo-tracking"
     d.mkdir(parents=True)
     (d / "mailerlite-sync.jsonl").write_text(
-        json.dumps({"email": "info@infometrix.us", "product": "ASC 842 lease workbook",
+        json.dumps({"email": "<redacted:c16486fa>", "product": "ASC 842 lease workbook",
                     "gumroad_sale": "2026-09-11T04:25:17Z",
                     "synced_at": "2026-09-11T08:15-07:00"}) + "\n")
     people = cs.from_seo_tracking(tmp_path)
-    assert people["info@infometrix.us"].first_seen == "2026-09-11"
-    assert people["info@infometrix.us"].interest == "ASC 842 lease workbook"
-    assert people["info@infometrix.us"].is_business == "TRUE"
+    assert people["<redacted:c16486fa>"].first_seen == "2026-09-11"
+    assert people["<redacted:c16486fa>"].interest == "ASC 842 lease workbook"
+    assert people["<redacted:c16486fa>"].is_business == "TRUE"
 
 
 def test_merge_prefers_the_strongest_source_and_the_earliest_first_seen():
@@ -3660,7 +3660,7 @@ def test_merge_prefers_the_strongest_source_and_the_earliest_first_seen():
     assert merged["a@gmail.com"].interest == "rsu-planner"      # but the interest is filled in
     assert merged["a@gmail.com"].first_seen == "2026-09-05"     # the earlier of the two
     assert merged["a@gmail.com"].last_touch == "2026-09-06"     # the later of the two
-    assert set(merged) == {"scott@stratacloudaccountants.com", "a@gmail.com", "new@acme.io"}
+    assert set(merged) == {"<redacted:0d859651>", "a@gmail.com", "<redacted:2ef54107>"}
 
 
 def test_diff_appends_new_people_and_updates_changed_ones():
@@ -3672,12 +3672,12 @@ def test_diff_appends_new_people_and_updates_changed_ones():
     updates, appends = cs.diff(existing, wanted)
     assert [row for _i, row in updates] == [wanted["a@gmail.com"]]
     assert updates[0][0] == 2                                   # sheet row number, 1-based
-    assert {p.email for p in appends} == {"scott@stratacloudaccountants.com", "new@acme.io"}
+    assert {p.email for p in appends} == {"<redacted:0d859651>", "<redacted:2ef54107>"}
 
 
 def test_diff_is_a_noop_when_the_sheet_already_matches():
     wanted = cs.from_mailerlite([MAILERLITE[1]])
-    person = wanted["new@acme.io"]
+    person = wanted["<redacted:2ef54107>"]
     existing = [list(cs.COLUMNS), person.as_row()]
     assert cs.diff(existing, wanted) == ([], [])
 
@@ -3686,7 +3686,7 @@ def test_diff_tolerates_an_empty_sheet():
     wanted = cs.from_mailerlite([MAILERLITE[1]])
     updates, appends = cs.diff([], wanted)
     assert updates == []
-    assert [p.email for p in appends] == ["new@acme.io"]
+    assert [p.email for p in appends] == ["<redacted:2ef54107>"]
 
 
 def test_sync_dry_run_prints_the_diff_and_makes_no_gws_call(tmp_path, monkeypatch, capsys):
@@ -3695,7 +3695,7 @@ def test_sync_dry_run_prints_the_diff_and_makes_no_gws_call(tmp_path, monkeypatc
     wanted = cs.merge(cs.from_gumroad(GUMROAD))
     cs.sync(sheet_id="SHEET1", wanted=wanted, existing=[list(cs.COLUMNS)], dry_run=True)
     out = capsys.readouterr().out
-    assert "+ scott@stratacloudaccountants.com" in out
+    assert "+ <redacted:0d859651>" in out
     assert "2 to append" in out
 
 
@@ -3718,7 +3718,7 @@ def test_sync_batch_updates_then_appends_through_one_seam(tmp_path, monkeypatch)
     assert update_body["valueInputOption"] == "RAW"
     assert update_body["data"][0]["range"] == "People!A2:J2"
     append_body = calls[1][1]
-    assert [row[0] for row in append_body["values"]] == ["scott@stratacloudaccountants.com"]
+    assert [row[0] for row in append_body["values"]] == ["<redacted:0d859651>"]
 
 
 def test_ensure_sheet_reuses_the_recorded_id(tmp_path, monkeypatch):
@@ -4155,8 +4155,8 @@ Earlier this year you grabbed the free **{$product_name}** from KDesk.
 ## Recipients (2 — MailerLite subscriber id · email · product)
 | id | email | product | domain |
 |---|---|---|---|
-| 197511900414608737 | scott@stratacloudaccountants.com | ASC 842 lease workbook | **accounting firm** |
-| 197511899790705978 | creativengatia@gmail.com | month-end close checklist | free-mail (KE) |
+| 197511900414608737 | <redacted:0d859651> | ASC 842 lease workbook | **accounting firm** |
+| 197511899790705978 | <redacted:23736e75> | month-end close checklist | free-mail (KE) |
 
 ## Also noted while here
 - Nothing relevant to the sender.
@@ -4179,8 +4179,8 @@ def test_parse_reads_the_body_and_stops_at_the_next_heading():
 
 def test_parse_reads_the_recipient_table_without_the_header_or_separator():
     _s, _b, rcpts = sr.parse(MD)
-    assert [r.email for r in rcpts] == ["scott@stratacloudaccountants.com",
-                                        "creativengatia@gmail.com"]
+    assert [r.email for r in rcpts] == ["<redacted:0d859651>",
+                                        "<redacted:23736e75>"]
     assert rcpts[0].subscriber_id == "197511900414608737"
     assert rcpts[0].product == "ASC 842 lease workbook"
 
@@ -4223,9 +4223,9 @@ def test_veto_ok_refuses_when_the_entry_has_no_window():
 
 
 def test_rfc822_round_trips_to_and_subject_and_body():
-    raw = sr.rfc822("a@b.com", "Subject line", "Body line\nSecond", "santiagokdesk@gmail.com")
+    raw = sr.rfc822("<redacted:f527ebc7>", "Subject line", "Body line\nSecond", "santiagokdesk@gmail.com")
     msg = email.message_from_bytes(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)))
-    assert msg["To"] == "a@b.com"
+    assert msg["To"] == "<redacted:f527ebc7>"
     assert msg["From"] == "santiagokdesk@gmail.com"
     assert msg["Subject"] == "Subject line"
     assert "Second" in msg.get_payload(decode=True).decode()
@@ -4241,7 +4241,7 @@ def test_dry_run_renders_every_email_and_makes_no_gws_call_and_no_sleep(capsys, 
     sent, failed = sr.send_all(MD, dry_run=True, repo=None)
     out = capsys.readouterr().out
     assert sent == 2 and failed == 0
-    assert "scott@stratacloudaccountants.com" in out
+    assert "<redacted:0d859651>" in out
     assert "Quick question about the ASC 842 lease workbook you downloaded" in out
 
 
@@ -4258,7 +4258,7 @@ def test_live_send_waits_two_seconds_between_recipients(monkeypatch, tmp_path):
     assert len(calls) == 2
     assert sleeps == [sr.GAP_SECONDS, sr.GAP_SECONDS]
     assert len(logged) == 2                                  # one ledger line per send
-    assert "scott@stratacloudaccountants.com" in logged[0]["action"]
+    assert "<redacted:0d859651>" in logged[0]["action"]
 
 
 def test_a_missing_merge_field_queues_a_card_instead_of_sending(monkeypatch, tmp_path):
@@ -4273,7 +4273,7 @@ def test_a_missing_merge_field_queues_a_card_instead_of_sending(monkeypatch, tmp
     assert (sent, failed) == (1, 1)
     cards = list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
     assert len(cards) == 1
-    assert "creativengatia@gmail.com" in cards[0].read_text()
+    assert "<redacted:23736e75>" in cards[0].read_text()
 
 
 def test_main_refuses_when_the_veto_entry_is_missing(monkeypatch, capsys, tmp_path):
