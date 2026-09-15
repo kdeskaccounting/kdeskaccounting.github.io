@@ -164,3 +164,40 @@ def test_scrub_handles_none_and_non_strings(tmp_path, monkeypatch):
     monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
     assert gws.scrub(None) == ""
     assert gws.scrub(12) == "12"
+
+
+# --- Google document / Drive handles ------------------------------------------------------
+#
+# A 33-character Drive folder id is under the bare 40-char floor and has no "sheet" next to
+# it, so the base64 rule alone let it through. The Google URL beside it is the evidence: it
+# says outright that the token opens a private file.
+
+HANDLE_33 = "1AbC2dEf3GhI4jKl5" + "MnO6pQr7StU8vWx9"
+
+
+def test_scrub_elides_a_drive_handle_next_to_a_google_url(tmp_path, monkeypatch):
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    for url in (f"https://docs.google.com/document/d/{HANDLE_33}/edit",
+                f"https://drive.google.com/drive/folders/{HANDLE_33}",
+                f"https://docs.google.com/spreadsheets/d/{HANDLE_33}/edit#gid=0",
+                f"the notes doc is {HANDLE_33} — see docs.google.com"):
+        out = gws.scrub(f"failed on {url}")
+        assert HANDLE_33 not in out, url
+        assert gws.B64_PLACEHOLDER in out, url
+
+
+def test_scrub_leaves_a_short_token_alone_without_google_context(tmp_path, monkeypatch):
+    """The 33-char floor applies only under the Google-URL rule. Eliding every 33-character
+    run everywhere would swallow commit shas, build ids and slugs in ordinary messages."""
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    out = gws.scrub(f"build id {HANDLE_33} finished")
+    assert HANDLE_33 in out
+
+
+def test_scrub_keeps_the_google_url_readable_around_the_elided_handle(tmp_path, monkeypatch):
+    """The point is the handle, not the fact that a Google URL was mentioned - a human
+    reading the card still needs to know which service failed."""
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    out = gws.scrub(f"403 on https://docs.google.com/document/d/{HANDLE_33}/edit")
+    assert "docs.google.com" in out and "403" in out
+    assert HANDLE_33 not in out

@@ -110,3 +110,38 @@ def test_a_slow_concurrent_creator_is_waited_for_not_truncated(tmp_path, monkeyp
     assert privacy.salt() == "the-winners-salt"
     assert reads["n"] >= 3, "the read must be retried, not taken at face value once"
     assert saltfile.read_text() == "", "the winner's file must not be rewritten"
+
+
+# --- handles are not addresses -----------------------------------------------------------
+
+def test_handle_hash_is_case_sensitive_unlike_email_hash(tmp_path, monkeypatch):
+    """A Google Drive id is case-significant - `...AbC` and `...abc` are different files -
+    so the address normaliser (strip + lower) is the wrong hash for one. Two handles that
+    differ only in case must not share a marker."""
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    privacy._SALT_CACHE.clear()
+    upper = "1AbC2dEf3GhI4jKl5" + "MnO6pQr7StU8vWx9"
+    lower = upper.lower()
+    assert privacy.handle_hash(upper) != privacy.handle_hash(lower)
+    assert privacy.email_hash(upper) == privacy.email_hash(lower), "the contrast being drawn"
+
+
+def test_handle_hash_is_salted_and_stable(tmp_path, monkeypatch):
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    privacy._SALT_CACHE.clear()
+    handle = "1AbC2dEf3GhI4jKl5" + "MnO6pQr7StU8vWx9"
+    first = privacy.handle_hash(handle)
+    assert first == privacy.handle_hash(handle)
+    assert len(first) == 64 and handle not in first
+    other = tmp_path / "other-salt.txt"
+    other.write_text("a-different-salt\n")
+    monkeypatch.setattr(privacy, "SALT_FILE", other)
+    privacy._SALT_CACHE.clear()
+    assert privacy.handle_hash(handle) != first, "a different salt gives a different digest"
+
+
+def test_handle_hash_is_empty_in_empty_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    privacy._SALT_CACHE.clear()
+    assert privacy.handle_hash("") == ""
+    assert privacy.handle_hash(None) == ""

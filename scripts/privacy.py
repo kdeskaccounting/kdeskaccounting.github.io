@@ -104,6 +104,21 @@ def email_hash(email: str | None) -> str:
     return hashlib.sha256(f"{salt()}:{normalised}".encode("utf-8")).hexdigest()
 
 
+def handle_hash(value: str | None) -> str:
+    """Salted SHA-256 of an opaque handle, WITHOUT the address normalisation.
+
+    email_hash lowercases, because addresses are case-insensitive in practice and two
+    spellings of one address must land on one pseudonym. A Google Drive or Docs id is the
+    opposite: it is case-significant, so `...AbC` and `...abc` are different files and must
+    not share a marker. Same salt, same 8-hex-prefix convention (`<redacted-doc:XXXXXXXX>`
+    rather than `<redacted:XXXXXXXX>`, so a reader can tell which kind of thing was removed).
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(f"{salt()}:handle:{text}".encode("utf-8")).hexdigest()
+
+
 def hash_index(emails: Iterable[str | None]) -> dict[str, str]:
     """digest -> address, for joining a pseudonymised state file back to addresses we hold.
 

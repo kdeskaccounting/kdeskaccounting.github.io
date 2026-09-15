@@ -1,7 +1,7 @@
 # Follow-up to Bill Hanna after the 2026-09-10 call
 
 **The draft lives in Google Docs, not here** (Stephen's preference, 2026-09-10):
-https://docs.google.com/document/d/1rltTIKIjCfxDVnGTxauuUCFgk6NS8Y3cngqpm-c6MIc/edit
+https://docs.google.com/document/d/<redacted-doc:4b109dae>/edit
 
 Owner `santiagokdesk@gmail.com`, in the same Drive folder as the ASC 842 guest post
 (`16OrYK-H2x3JYaUYsBbZCNGdzXQ-ziguw`). Edit there — this file is a pointer only, so

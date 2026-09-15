@@ -17,8 +17,11 @@ So there are exactly two rules here and both are enforced in one place:
    CI step summary: known credentials are masked, base64-shaped runs of 40+ characters are
    elided (a MIME body has no `@`, so the address pattern alone would let it through
    undecoded but perfectly decodable — and a Google spreadsheet id is exactly that shape),
-   and anything still shaped like an address becomes `<redacted:XXXXXXXX>`, the salted
-   marker from scripts/privacy.py that the rest of the repo uses.
+   id-shaped runs of 33+ characters next to a Google document/Drive URL are elided too (a
+   Drive folder id is commonly 33, under the bare floor, and the URL is what says the token
+   opens a private file), and anything still shaped like an address becomes
+   `<redacted:XXXXXXXX>`, the salted marker from scripts/privacy.py that the rest of the
+   repo uses.
 
 Stdlib only, so it imports cleanly inside `uv run --with pytest pytest tests/`.
 """
@@ -44,6 +47,16 @@ ADDRESS_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 # far below a MIME body, and above any English word or hyphenated path segment in this repo.
 B64_RE = re.compile(r"[A-Za-z0-9_-]{40,}")
 B64_PLACEHOLDER = "<b64 elided>"
+# A Drive folder id is commonly 33 characters - under the floor above, and with no "sheet"
+# next to it nothing else marks it as a handle. What does mark it is the URL it sits in: a
+# Google document/spreadsheet/folder link says outright that the token opens a private file.
+# So the floor drops to 33, but only inside that window; eliding every 33-character run
+# everywhere would swallow commit shas, build ids and slugs out of ordinary messages.
+GOOGLE_URL_RE = re.compile(
+    r"docs\.google\.com|drive\.google\.com|document/d|spreadsheets/d|/folders/", re.I)
+GOOGLE_HANDLE_RE = re.compile(r"(?=[A-Za-z0-9_-]*[a-z])(?=[A-Za-z0-9_-]*[A-Z])"
+                              r"(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{33,}")
+GOOGLE_WINDOW = 100          # characters either side of the token that count as "adjacent"
 # How much of argv may appear in an error. The verb ("sheets spreadsheets values append") is
 # useful; the tail is `--params {"spreadsheetId": ...}`, a private handle.
 ARGV_WORDS_IN_ERROR = 4
@@ -84,6 +97,24 @@ def run_json(argv: list[str], body: dict | None = None, *, timeout: float) -> di
     return json.loads(out) if out else {}
 
 
+def _elide_google_handles(text: str) -> str:
+    """Elide id-shaped runs of 33+ characters that sit next to a Google document URL.
+
+    Written as a scan rather than one regex because the evidence and the token are two
+    separate things: the URL can precede the token (the usual case) or follow it in prose
+    ("the doc is <id> - see docs.google.com"). Replacing from the end keeps the offsets of
+    the matches still to be processed valid.
+    """
+    if not GOOGLE_URL_RE.search(text):
+        return text
+    out = text
+    for match in reversed(list(GOOGLE_HANDLE_RE.finditer(text))):
+        window = text[max(0, match.start() - GOOGLE_WINDOW):match.end() + GOOGLE_WINDOW]
+        if GOOGLE_URL_RE.search(window):
+            out = out[:match.start()] + B64_PLACEHOLDER + out[match.end():]
+    return out
+
+
 def marker(email: str) -> str:
     """`<redacted:XXXXXXXX>` — the first 8 hex of the salted digest, the repo's convention."""
     return f"<redacted:{privacy.email_hash(email)[:8]}>"
@@ -109,6 +140,7 @@ def scrub(text: object, *, extra_secrets: Iterable[str] = (),
     if extras:
         out = session.redact_secrets(out, secrets=extras)
     out = B64_RE.sub(B64_PLACEHOLDER, out)
+    out = _elide_google_handles(out)
     kept = {str(k).strip().lower() for k in keep if str(k).strip()}
 
     def swap(match: "re.Match") -> str:

@@ -6,7 +6,7 @@
 
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
 2. **`marketing/plan-2026-09-14-automation.md`** — the automation plan (2026-09-14, ledger #69–#71): how the plan of record above gets executed with less of Stephen's time (< 30 min/wk), plus a **second, separate brand** (`parksheet`, a subscription living Google Sheet). It does **not** replace the revenue plan of record. Its session runbook is **`marketing/runbooks/automation-2026-09.md`** — pipeline map, one command per stage, current phase, open vetoes, the "if X is broken do Y" table, and (Phase 1, 2026-09-15) the two GitHub Actions schedules: what runs on Actions, what only runs on the Mac and why, the exact `gh secret set` commands, the launchd handover, and the weekly selector canary. Read both before touching publishing, the video pipeline, or the venture.
-3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#79** (79 entries, ids contiguous 1–79). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
+3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#80** (80 entries, ids contiguous 1–80). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
 4. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers. The venture has its own MOC, `~/CommandCenter/02-Projects/ParkSheet.md`.
 5. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
 6. The **Currently working on** section below.
@@ -195,8 +195,6 @@ draft per article; one outreach batch; nothing sends without Stephen.
 
 **Next builds (Claude, in order):** once #69 closes unvetoed — first live `publish.py` run from the Saturday batch, then the re-engagement send (`send_reengage.py --dry-run` first, always) · reconcile the Actions artifact's ledger rows into the Mac's copy · re-upload the 20 locked videos through Upload-Post (`reupload_locked.py`, free tier is 10/mo so it takes two months) · Shorts at ~5/week, including card-only data Shorts · cross-link the ASC 340-40 kit from the three commission posts and the ASC 606 page · Phase 2 items live in the runbook, not here.
 
-**Weekly cadence (mechanics unchanged, new scoreboard):** Monday launchd pulls GSC + GA4 + target queries + Gumroad **+ YouTube**; the scoreboard adds subs, 28-day views and the Shorts/long-form split. **Always run the second-agent GAAP fact-check before publishing** (all four articles so far came back FIX FIRST). One LinkedIn draft per article; one outreach batch; nothing sends without Stephen.
-
 **Recent decision context:** the ledger is the record — `python3 scripts/ledger.py --tail 10`. The ones that still shape the work: **51** portfolio pivot · **52/61** repricing executed (ASC 842 $249 · ASC 606 $249 · bundle $599) · **63** RSU Tax Planner live · **69/70** the two open vetoes above · **71** the YouTube uploads are locked and must be re-uploaded · **76–79** the privacy containment rounds (public repo: addresses and the CRM sheet id out of tracked files).
 
 ## Privacy (this repo is PUBLIC)
@@ -219,17 +217,34 @@ yourself adding to it, use a reserved domain instead.
 every address at a domain that could belong to anyone. An entry there needs ownership *and* a
 tracked file that uses it.
 
-**No private handle in a tracked file either.** `tests/test_no_private_ids.py` fails on a Google
-Sheet-id-shaped token (40+ base64url characters mixing case and digits) anywhere near the word
-"sheet". The private "KDesk CRM" sheet's id lives only in `~/kdesk-analytics/crm-sheet-id.txt`
-(0600); anything tracked refers to the sheet by title. It got in once through a ledger line
-(entry 75, redacted in place by entry 79) and out again through the digest, which re-emits ledger
-lines into `$GITHUB_STEP_SUMMARY` — a public workflow log.
+**No private handle in a tracked file either.** A Google file id — a spreadsheet, document or
+Drive folder handle — is the whole access story for the file it names, and a *folder* handle is
+an index of everything ever put in it. `tests/test_no_private_ids.py` fails on two shapes, and
+only these two: a base64url token mixing case and digits that is **40+ characters within 100
+characters of the word "sheet"**, or **33+ characters within 100 characters of a Google
+document/spreadsheet/Drive-folder URL** (the URL is the evidence that a shorter token opens a
+private file; a folder id is commonly 33). It is not a general secret scanner — a handle with
+neither kind of context next to it goes unnoticed.
+
+The private "KDesk CRM" sheet's id lives only in `~/kdesk-analytics/crm-sheet-id.txt` (0600);
+anything tracked refers to the sheet by title. Four handles have already had to be redacted in
+place: the CRM sheet id out of ledger entry 75 (entry 79), and a Doc handle, its Drive folder
+handle and two outreach notes' Doc handles (entry 80). Redacted handles become
+`<redacted-doc:XXXXXXXX>` — `privacy.handle_hash`, which unlike `email_hash` does **not**
+lowercase, because a Drive id is case-significant — with the originals in
+`~/kdesk-analytics/private/redaction-map-2026-09-14.json`, so the edits are reversible.
+
+Two things to know before redacting the next one. The sheet id got out through the **digest**,
+which re-emits ledger lines into `$GITHUB_STEP_SUMMARY`, a public workflow log — so a tracked
+audit log is a leak with a delivery mechanism attached. And the window rule is **order-dependent**:
+shortening one handle to a marker can pull a second token into the same URL's 100-character
+window, so a redaction pass must iterate to a fixed point (that is how entry 66's second handle
+was found, after the first pass declared itself done).
 
 **One scrubber, one `gws` seam.** `scripts/gws.py` owns both: `run()` keeps only the FIRST line of
 `gws` stderr (it echoes the request it choked on, `--json` body and all), and `scrub()` masks known
-credentials, elides base64-shaped runs of 40+ characters and swaps every remaining address for a
-`<redacted:XXXXXXXX>` marker. Anything that becomes a queue card, a ledger line, stdout or CI
+credentials, elides base64-shaped runs of 40+ characters (and 33+ next to a Google document URL)
+and swaps every remaining address for a `<redacted:XXXXXXXX>` marker. Anything that becomes a queue card, a ledger line, stdout or CI
 output goes through it.
 
 **Where personal data lives:** `~/kdesk-analytics/private/` (dir `0700`, files `0600`), outside the
