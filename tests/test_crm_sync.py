@@ -324,3 +324,20 @@ def test_fetch_mailerlite_pages_until_the_cursor_stops_moving(tmp_path, monkeypa
     assert [s["email"] for s in subscribers] == ["one@acme.io", "two@acme.io"]
     assert len(seen) == 2, "a repeated cursor must stop the loop, not spin"
     assert seen[0][0]["Authorization"] == "Bearer FAKE-ML-TOKEN"
+
+
+def test_read_people_returns_the_rows_below_the_cap(monkeypatch):
+    rows = [list(cs.COLUMNS)] + [["p%d@acme.io" % i] for i in range(5)]
+    monkeypatch.setattr(cs, "_gws", lambda *a, **k: {"values": rows})
+    assert cs.read_people("SHEET1") == rows
+
+
+def test_read_people_refuses_to_silently_duplicate_past_the_row_cap(monkeypatch):
+    full = [["p%d@acme.io" % i] for i in range(cs.ROW_CAP)]
+    monkeypatch.setattr(cs, "_gws", lambda *a, **k: {"values": full})
+    try:
+        cs.read_people("SHEET1")
+    except RuntimeError as exc:
+        assert "row read cap" in str(exc)
+    else:
+        raise AssertionError("a full People tab must stop the sync, not duplicate it")

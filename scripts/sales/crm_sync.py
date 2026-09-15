@@ -49,6 +49,7 @@ LAST_COL = chr(ord("A") + len(COLUMNS) - 1)          # "J"
 SOURCE_RANK = {"gumroad-paid": 3, "gumroad-free": 2, "calculator": 2, "mailerlite": 1, "": 0}
 PAID_CENTS = 1                                        # any non-zero price is a purchase
 MAX_PAGES = 200                                       # paging guard on both public APIs
+ROW_CAP = 2000                                        # how far read_people looks down the tab
 GWS_BIN = shutil.which("gws") or "/opt/homebrew/bin/gws"
 
 
@@ -245,8 +246,17 @@ def ensure_sheet(dry_run: bool) -> str:
 
 def read_people(sheet_id: str) -> list[list[str]]:
     payload = _gws(["sheets", "spreadsheets", "values", "get", "--params",
-                    json.dumps({"spreadsheetId": sheet_id, "range": f"People!A1:{LAST_COL}2000"})])
-    return payload.get("values", [])
+                    json.dumps({"spreadsheetId": sheet_id,
+                                "range": f"People!A1:{LAST_COL}{ROW_CAP}"})])
+    rows = payload.get("values", [])
+    if len(rows) >= ROW_CAP:
+        # Everyone past the cap would look absent and be appended a second time. A silent
+        # duplicate in a CRM is worse than a stop, so this becomes a queued failure.
+        raise RuntimeError(
+            f"People tab has reached the {ROW_CAP}-row read cap; widen ROW_CAP in "
+            f"scripts/sales/crm_sync.py before syncing again, or the upsert would duplicate "
+            f"every person below row {ROW_CAP}.")
+    return rows
 
 
 def _breakdown(people: list[Person]) -> str:
