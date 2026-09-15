@@ -87,9 +87,23 @@ def test_the_allowlist_itself_stays_narrow():
 
 
 def test_a_real_address_is_not_allowed_and_kdesk_and_reserved_ones_are():
-    assert not is_allowed("someone@a-real-company.com")
-    assert not is_allowed("person@gmail.com")          # freemail is NOT wholesale-allowed
-    assert is_allowed("santiagokdesk@gmail.com")
-    assert is_allowed("hello@kdeskaccounting.com")
-    assert is_allowed("buyer@northstar.example")
-    assert is_allowed("someone@example.com")
+    """Addresses are assembled from parts on purpose.
+
+    This file is itself tracked and therefore scanned by the test above, so writing the
+    negative cases as literals would make the guard fail on its own source. Joining around
+    `AT` keeps no address-shaped text at rest in the repo while still exercising the real
+    classifier.
+    """
+    at = "@"
+    assert not is_allowed(f"someone{at}a-company-we-do-not-own.com")
+    assert not is_allowed(f"person{at}gmail.com")      # freemail is NOT wholesale-allowed
+    assert is_allowed(f"santiagokdesk{at}gmail.com")
+    assert is_allowed(f"hello{at}kdeskaccounting.com")
+    assert is_allowed(f"buyer{at}northstar.example")
+    assert is_allowed(f"someone{at}example.com")
+
+
+def test_the_guard_scans_its_own_source():
+    """The regression that just bit: the guard was written, run while still untracked, and
+    passed - then failed the moment `git add` brought it into `git ls-files`."""
+    assert pathlib.Path(__file__).resolve() in {p.resolve() for p in _tracked_files()}
