@@ -1,48 +1,526 @@
 #!/usr/bin/env python3
 """
-Synthesize per-scene narration WAVs with Kokoro TTS (local, no API keys).
-Run with the pipeline venv:  scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec ... --out ...
-Caches by (voice, speed, text) hash so re-runs only synthesize changed scenes.
+Synthesize per-scene narration WAVs. Two providers, selected by the spec's `tts:` block:
+
+  tts:
+    provider: elevenlabs        # or kokoro (the default when the block is absent)
+    voice: pNInz6obpgDQGcFmaJgB # ElevenLabs voice_id; for kokoro, the Kokoro voice name
+    model: eleven_multilingual_v2
+    stability: 0.5              # optional voice_settings; sensible defaults applied
+    similarity_boost: 0.75
+
+A legacy top-level `voice: am_michael` (what every marketing/video/*/scenes.yaml carries)
+still means Kokoro, unchanged.
+
+  scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec … --out …
+  …/narrate.py --spec … --tts-check          # GET /v1/voices, prove the voice_id, exit 0/2
+  …/narrate.py --spec … --dry-run            # character counts + credit estimate, no network
+
+Output is identical for both providers: 24 kHz mono WAVs plus durations.json, so assemble.py
+and make_short.py never learn which provider spoke. ElevenLabs returns MP3, which ffmpeg
+converts; both paths then get the same silence trim and 0.3 s lead-in.
+
+Caches by a hash of (provider, voice, model, voice_settings, speed, text): switching provider
+re-synthesizes, and unchanged text is never re-billed. Pre-existing Kokoro caches keyed by the
+old (voice, speed, text) shape are still hits.
+
+Key: ELEVENLABS_API_KEY, else ~/kdesk-analytics/elevenlabs-api-key.txt (0600). It is never
+printed: every error string goes through scripts/browser/session.redact_secrets first.
+
+Run with the pipeline venv (yaml, numpy, soundfile, kokoro, requests live there). Every one of
+those imports is inside the function that needs it, so this module imports with the standard
+library alone and tests/test_narrate.py can drive it.
 """
-import os, sys, json, hashlib, pathlib, argparse
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import hashlib
+import json
+import math
+import os
+import pathlib
+import subprocess
+import sys
+
 HERE = pathlib.Path(__file__).resolve().parent
-# spaCy (inside Kokoro's G2P) auto-installs its English model via `uv pip`; it needs to see the venv.
+REPO = HERE.parents[1]
+# spaCy (inside Kokoro's G2P) auto-installs its English model via `uv pip`; it needs the venv.
 os.environ.setdefault("VIRTUAL_ENV", str(HERE / ".venv-tts"))
-import yaml, numpy as np, soundfile as sf
+sys.path.insert(0, str(REPO / "scripts"))
+from browser import session  # noqa: E402  (scripts/browser/session.py — the one scrubber)
 
 SR = 24000
+KOKORO = "kokoro"
+ELEVENLABS = "elevenlabs"
+PROVIDERS = (KOKORO, ELEVENLABS)
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--spec", required=True); ap.add_argument("--out", required=True)
-    ap.add_argument("--voice"); ap.add_argument("--speed", type=float, default=1.0)
-    a = ap.parse_args()
-    spec = yaml.safe_load(open(a.spec)); voice = a.voice or spec.get("voice", "am_michael")
-    out = pathlib.Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    from kokoro import KPipeline
-    pipe = None
+DEFAULT_KOKORO_VOICE = "am_michael"
+DEFAULT_EL_MODEL = "eleven_multilingual_v2"
+#: Applied unless the spec overrides them. ElevenLabs' own console defaults.
+DEFAULT_VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.75}
+#: Other voice_settings keys a spec may set. An unknown key is a 422, so the set is closed.
+OPTIONAL_VOICE_SETTINGS = ("style", "use_speaker_boost", "speed")
+
+API_BASE = "https://api.elevenlabs.io/v1"
+OUTPUT_FORMAT = "mp3_44100_128"
+KEY_ENV = "ELEVENLABS_API_KEY"
+KEY_FILE = pathlib.Path.home() / "kdesk-analytics" / "elevenlabs-api-key.txt"
+TTS_TIMEOUT_S = 180          # a paragraph of speech, not an API ping
+VOICES_TIMEOUT_S = 30
+FFMPEG = next((p for p in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg")
+               if os.path.exists(p)), "ffmpeg")
+
+
+class TTSError(RuntimeError):
+    """A provider failure. The message is already redacted — print it as it arrives."""
+
+
+def redact(text, key: str | None = None) -> str:
+    """Mask credentials before `text` reaches stdout, a log or a queue card.
+
+    session.redact_secrets(secrets=…) REPLACES the known set rather than adding to it, so the
+    union is passed explicitly: the key in hand may have come from somewhere the file/env
+    sweep does not look (a --key flag one day, a key file moved for a test).
+    """
+    secrets = session.known_secrets()
+    if key:
+        secrets = secrets | {str(key)}
+    return session.redact_secrets(text, secrets=secrets)
+
+
+# ---------------------------------------------------------------- configuration from the spec
+
+@dataclasses.dataclass(frozen=True)
+class TTSConfig:
+    """Everything that decides what the audio sounds like — and what it costs.
+
+    `settings` is a sorted tuple of pairs rather than a dict so the config stays hashable and
+    the cache key cannot change with dict ordering.
+
+    `kokoro_voice` is not part of the cache key: it is the local voice to use if ElevenLabs
+    is unavailable. It has to be carried separately because tts.voice is an ElevenLabs id,
+    which Kokoro cannot speak.
+    """
+    provider: str
+    voice: str
+    speed: float = 1.0
+    model: str = ""
+    settings: tuple = ()
+    kokoro_voice: str = DEFAULT_KOKORO_VOICE
+
+    def voice_settings(self) -> dict:
+        return dict(self.settings)
+
+    def fallback(self) -> "TTSConfig":
+        """The same spec narrated locally by Kokoro."""
+        return dataclasses.replace(self, provider=KOKORO, voice=self.kokoro_voice,
+                                   model="", settings=())
+
+
+def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSConfig:
+    block = spec.get("tts") or {}
+    if not isinstance(block, dict):
+        raise SystemExit(f"spec `tts:` must be a mapping, got {type(block).__name__}")
+    provider = str(block.get("provider", KOKORO)).strip().lower()
+    if provider not in PROVIDERS:
+        raise SystemExit(f"unknown tts provider {provider!r}: choose one of "
+                         f"{', '.join(PROVIDERS)}")
+    legacy_voice = spec.get("voice")
+    if provider == KOKORO:
+        chosen = str(voice or block.get("voice") or legacy_voice or DEFAULT_KOKORO_VOICE)
+        return TTSConfig(provider=KOKORO, voice=chosen, speed=float(speed),
+                         kokoro_voice=chosen)
+    chosen = voice or block.get("voice")
+    if not chosen:
+        raise SystemExit("tts.provider is elevenlabs but no tts.voice was given. Set the "
+                         "ElevenLabs voice_id in the spec (or pass --voice); a guessed id "
+                         "is a billed request in somebody else's voice.")
+    settings = dict(DEFAULT_VOICE_SETTINGS)
+    for name in tuple(DEFAULT_VOICE_SETTINGS) + OPTIONAL_VOICE_SETTINGS:
+        if name in block:
+            settings[name] = block[name]
+    return TTSConfig(provider=ELEVENLABS, voice=str(chosen), speed=float(speed),
+                     model=str(block.get("model") or DEFAULT_EL_MODEL),
+                     settings=tuple(sorted(settings.items())),
+                     kokoro_voice=str(legacy_voice or DEFAULT_KOKORO_VOICE))
+
+
+def narration_text(scene: dict) -> str:
+    """One scene's narration, whitespace-collapsed exactly as the synthesiser receives it."""
+    return " ".join(str(scene.get("narration") or "").split())
+
+
+# ------------------------------------------------------------------------------- the cache key
+
+def cache_hash(cfg: TTSConfig, text: str) -> str:
+    """Every parameter that changes the audio (or the bill), in one stable digest."""
+    payload = json.dumps({"provider": cfg.provider, "voice": cfg.voice, "model": cfg.model,
+                          "voice_settings": cfg.voice_settings(), "speed": float(cfg.speed),
+                          "text": text},
+                         sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def legacy_kokoro_hash(voice: str, speed: float, text: str) -> str:
+    """The pre-provider cache key: sha1("voice|speed|text")."""
+    return hashlib.sha1(f"{voice}|{speed}|{text}".encode()).hexdigest()
+
+
+def hash_matches(stored: str | None, cfg: TTSConfig, text: str) -> bool:
+    """Is a cached WAV still valid for this config and text?
+
+    The legacy shape is accepted for Kokoro only, so the six existing walkthroughs do not all
+    re-narrate the first time this lands. An ElevenLabs config never matches it — a WAV whose
+    provenance is unknown must not be assumed to be ElevenLabs audio.
+    """
+    if not stored:
+        return False
+    if stored == cache_hash(cfg, text):
+        return True
+    return cfg.provider == KOKORO and stored == legacy_kokoro_hash(cfg.voice, cfg.speed, text)
+
+
+# ----------------------------------------------------------------------------------- the key
+
+def api_key() -> str | None:
+    """The ElevenLabs key: environment first, then the 0600 file. Never logged."""
+    from_env = (os.environ.get(KEY_ENV) or "").strip()
+    if from_env:
+        return from_env
+    try:
+        value = pathlib.Path(KEY_FILE).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return value or None
+
+
+def no_key_message() -> str:
+    return (f"no ElevenLabs key — set {KEY_ENV} in the environment or put the key in "
+            f"{KEY_FILE} (chmod 600)")
+
+
+# ---------------------------------------------------------------------------- credit estimate
+
+def credits_per_char(model: str) -> float:
+    """ElevenLabs bills 1 credit/character, halved on the flash and turbo models."""
+    name = (model or "").lower()
+    return 0.5 if ("flash" in name or "turbo" in name) else 1.0
+
+
+def estimate_credits(model: str, chars: int) -> int:
+    """Rounded up: the meter counts whole credits."""
+    return int(math.ceil(chars * credits_per_char(model)))
+
+
+def dry_run_lines(spec: dict, cfg: TTSConfig) -> list[str]:
+    scenes = spec.get("scenes") or []
+    lines, total = [], 0
+    for i, scene in enumerate(scenes):
+        n = len(narration_text(scene))
+        total += n
+        lines.append(f"scene {i:02d}: {n:>5} characters" + ("" if n else "   (no narration)"))
+    lines.append(f"total: {total} characters across {len(scenes)} scenes")
+    if cfg.provider == ELEVENLABS:
+        rate = credits_per_char(cfg.model)
+        lines.append(f"provider elevenlabs · voice {cfg.voice} · model {cfg.model} · "
+                     f"{rate:g} credit/char -> ~{estimate_credits(cfg.model, total)} credits")
+    else:
+        lines.append(f"provider kokoro · voice {cfg.voice} · local synthesis -> 0 credits")
+    lines.append("(dry run: nothing was sent and nothing was written)")
+    return lines
+
+
+# -------------------------------------------------------------------------- the network seams
+
+def request_body(cfg: TTSConfig, text: str) -> dict:
+    return {"text": text, "model_id": cfg.model, "voice_settings": cfg.voice_settings()}
+
+
+def _post_tts(voice_id: str, key: str, body: dict,
+              *, output_format: str = OUTPUT_FORMAT) -> tuple[int, bytes]:
+    """The one synthesis network seam. Returns (status, body bytes). Tests monkeypatch this."""
+    import requests  # lazy: absent outside the TTS venv
+    resp = requests.post(f"{API_BASE}/text-to-speech/{voice_id}",
+                         headers={"xi-api-key": key, "accept": "audio/mpeg",
+                                  "content-type": "application/json"},
+                         params={"output_format": output_format},
+                         json=body, timeout=TTS_TIMEOUT_S)
+    return resp.status_code, resp.content
+
+
+def _get_voices(key: str) -> tuple[int, dict]:
+    """The read-only network seam (--tts-check). Tests monkeypatch this."""
+    import requests  # lazy: absent outside the TTS venv
+    resp = requests.get(f"{API_BASE}/voices", headers={"xi-api-key": key},
+                        timeout=VOICES_TIMEOUT_S)
+    try:
+        return resp.status_code, resp.json()
+    except ValueError:
+        return resp.status_code, {"detail": resp.text[:500]}
+
+
+HTTP_HINTS = {
+    401: "the key was rejected (401) — check the key in the environment or the key file",
+    402: "the account is out of credits (402) — top up, or set tts.provider: kokoro",
+    403: "this key may not use that voice or model (403)",
+    422: "the request body was refused (422) — usually an unknown model_id or a "
+         "voice_settings key this model does not take",
+    429: "rate limited (429) — re-run; the cache keeps every scene that already synthesized",
+}
+
+
+def http_error_message(status: int, body, key: str | None = None, limit: int = 300) -> str:
+    """One clear sentence per failure mode, with the provider's own text appended.
+
+    Redacted BEFORE it is truncated: trimming first can cut a token in half and leave a
+    usable prefix behind (the lesson session.fail_card learned the hard way).
+    """
+    hint = HTTP_HINTS.get(status)
+    if hint is None:
+        hint = (f"server error ({status}) — ElevenLabs' side, not ours; retry later"
+                if status >= 500 else f"HTTP {status}")
+    raw = body.decode("utf-8", "replace") if isinstance(body, (bytes, bytearray)) else str(body or "")
+    safe = redact(raw, key).strip()
+    if len(safe) > limit:
+        safe = safe[:limit] + " […truncated]"
+    return f"ElevenLabs: {hint}. {safe}".strip()
+
+
+# ------------------------------------------------------------------------------- audio plumbing
+
+def run(cmd: list) -> None:
+    """The single subprocess seam (ffmpeg), as in make_short.py. Tests monkeypatch this."""
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise TTSError(redact(f"ffmpeg failed ({r.returncode}): {' '.join(str(c) for c in cmd)}"
+                              f"\n{(r.stderr or '')[-800:]}"))
+
+
+def ffmpeg_cmd(mp3: pathlib.Path, wav: pathlib.Path) -> list:
+    """ElevenLabs MP3 -> the pipeline's format: 24 kHz, mono, 16-bit PCM WAV."""
+    return [FFMPEG, "-y", "-loglevel", "error", "-i", str(mp3),
+            "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", "-f", "wav", str(wav)]
+
+
+def finish(audio):
+    """Trim the silence either side and prepend 0.3 s — what the Kokoro path has always done.
+
+    Both providers go through here, so an ElevenLabs scene lines up against the frames exactly
+    as a Kokoro one does and assemble.py needs no change.
+    """
+    import numpy as np  # lazy: absent outside the TTS venv
+    audio = np.asarray(audio, dtype=np.float32)
+    idx = np.where(np.abs(audio) > 0.01)[0]
+    if len(idx):
+        audio = audio[max(0, idx[0] - int(0.1 * SR)): idx[-1] + int(0.25 * SR)]
+    return np.concatenate([np.zeros(int(0.3 * SR), dtype=np.float32), audio])
+
+
+def write_wav(path: pathlib.Path, audio) -> None:
+    """Write through a temp file so a crash never leaves a half-written scene in the cache."""
+    import soundfile as sf  # lazy: absent outside the TTS venv
+    path = pathlib.Path(path)
+    tmp = path.with_suffix(".part.wav")
+    sf.write(str(tmp), audio, SR)
+    os.replace(tmp, path)
+
+
+def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path) -> float:
+    """MP3 bytes -> a finished scene WAV. Returns its length in seconds."""
+    import soundfile as sf  # lazy: absent outside the TTS venv
+    wav_path = pathlib.Path(wav_path)
+    mp3 = wav_path.with_suffix(".mp3")
+    raw = wav_path.with_suffix(".raw.wav")
+    mp3.write_bytes(mp3_bytes)
+    try:
+        run(ffmpeg_cmd(mp3, raw))
+        audio, sr = sf.read(str(raw), dtype="float32")
+        if sr != SR:
+            raise TTSError(f"ffmpeg produced {sr} Hz audio, expected {SR} Hz")
+        if getattr(audio, "ndim", 1) > 1:
+            audio = audio.mean(axis=1)
+        audio = finish(audio)
+        write_wav(wav_path, audio)
+        return len(audio) / SR
+    finally:
+        for scratch in (mp3, raw):
+            try:
+                scratch.unlink()
+            except OSError:
+                pass
+
+
+# ------------------------------------------------------------------------------- synthesis
+
+_KOKORO_PIPE = None
+
+
+def _kokoro_pipeline():
+    global _KOKORO_PIPE
+    if _KOKORO_PIPE is None:
+        from kokoro import KPipeline  # lazy: absent outside the TTS venv
+        _KOKORO_PIPE = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
+    return _KOKORO_PIPE
+
+
+def synth_kokoro(cfg: TTSConfig, text: str, wav_path: pathlib.Path) -> float:
+    import numpy as np  # lazy: absent outside the TTS venv
+    pipe = _kokoro_pipeline()
+    chunks = [audio for _, _, audio in pipe(text, voice=cfg.voice, speed=cfg.speed)]
+    audio = finish(np.concatenate(chunks).astype(np.float32))
+    write_wav(wav_path, audio)
+    return len(audio) / SR
+
+
+def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path, key: str) -> float:
+    status, content = _post_tts(cfg.voice, key, request_body(cfg, text))
+    if status >= 300:
+        raise TTSError(http_error_message(status, content, key))
+    if not content:
+        raise TTSError("ElevenLabs: HTTP 200 with an empty body — no audio to decode")
+    return decode_to_wav(content, wav_path)
+
+
+def synth_scene(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
+                key: str | None = None) -> float:
+    """One scene, whichever provider the config names. Returns its length in seconds."""
+    if cfg.provider == ELEVENLABS:
+        return synth_elevenlabs(cfg, text, wav_path, key)
+    return synth_kokoro(cfg, text, wav_path)
+
+
+# ------------------------------------------------------------------------------- --tts-check
+
+def tts_check(cfg: TTSConfig) -> int:
+    """Prove the configured voice_id exists on this account. 0 = yes, 2 = anything else."""
+    if cfg.provider != ELEVENLABS:
+        print(f"--tts-check checks the ElevenLabs API, but this spec's provider is "
+              f"{cfg.provider!r}. Add a `tts: {{provider: elevenlabs, voice: …}}` block.",
+              file=sys.stderr)
+        return 2
+    key = api_key()
+    if not key:
+        print(f"--tts-check: {no_key_message()}", file=sys.stderr)
+        return 2
+    try:
+        status, payload = _get_voices(key)
+    except Exception as exc:  # noqa: BLE001 — a transport error is a failed check, not a crash
+        print(redact(f"--tts-check: GET {API_BASE}/voices failed: "
+                     f"{type(exc).__name__}: {exc}", key), file=sys.stderr)
+        return 2
+    if status >= 300:
+        print(f"--tts-check: {http_error_message(status, json.dumps(payload), key)}",
+              file=sys.stderr)
+        return 2
+    voices = payload.get("voices") or []
+    match = next((v for v in voices if str(v.get("voice_id")) == cfg.voice), None)
+    if match is None:
+        listed = ", ".join(f"{v.get('name')} ({v.get('voice_id')})" for v in voices[:8]) or "(none)"
+        print(f"--tts-check: voice_id {cfg.voice!r} is not on this account "
+              f"({len(voices)} voices available: {listed}). Fix tts.voice in the spec.",
+              file=sys.stderr)
+        return 2
+    print(f"OK  elevenlabs voice {cfg.voice} = {match.get('name')} · "
+          f"category {match.get('category')} · model {cfg.model} · "
+          f"{len(voices)} voices on the account")
+    return 0
+
+
+# ------------------------------------------------------------------------------------- main
+
+def main(argv: list | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1] if __doc__ else None)
+    ap.add_argument("--spec", required=True)
+    ap.add_argument("--out", help="directory for scene WAVs + durations.json "
+                                  "(required unless --dry-run or --tts-check)")
+    ap.add_argument("--voice", help="override the spec's voice for the selected provider")
+    ap.add_argument("--speed", type=float, default=1.0)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print character counts and the credit estimate; send nothing")
+    ap.add_argument("--tts-check", action="store_true",
+                    help="confirm the configured ElevenLabs voice_id exists, then exit")
+    ap.add_argument("--allow-fallback", action="store_true",
+                    help="on an ElevenLabs failure, narrate that scene with Kokoro instead "
+                         "of failing the build (mixes voices — off by default)")
+    a = ap.parse_args(argv)
+
+    import yaml  # lazy: absent outside the TTS venv
+    with open(a.spec) as fh:
+        spec = yaml.safe_load(fh)
+    cfg = tts_config(spec, a.voice, a.speed)
+
+    if a.tts_check:
+        return tts_check(cfg)
+    if a.dry_run:
+        for line in dry_run_lines(spec, cfg):
+            print(line)
+        return 0
+    if not a.out:
+        ap.error("--out is required unless --dry-run or --tts-check")
+
+    key = api_key() if cfg.provider == ELEVENLABS else None
+    if cfg.provider == ELEVENLABS and not key:
+        # One loud line, then carry on locally: every dry run, test and CI path in this repo
+        # must keep working on a machine that has no ElevenLabs key.
+        print(f"!!! ELEVENLABS FALLBACK: {no_key_message()}. Narrating with Kokoro "
+              f"({cfg.fallback().voice}) instead — this build will NOT sound like an "
+              f"ElevenLabs one. Run with --tts-check to diagnose.",
+              file=sys.stderr, flush=True)
+        cfg = cfg.fallback()
+
+    out = pathlib.Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
     durations = {}
-    for i, sc in enumerate(spec["scenes"]):
-        text = " ".join((sc.get("narration") or "").split())
+    for i, scene in enumerate(spec["scenes"]):
+        text = narration_text(scene)
         wav, meta = out / f"scene_{i:02d}.wav", out / f"scene_{i:02d}.json"
         if not text:
-            durations[i] = 0.0; continue
-        h = hashlib.sha1(f"{voice}|{a.speed}|{text}".encode()).hexdigest()
-        if wav.exists() and meta.exists() and json.load(open(meta)).get("hash") == h:
-            durations[i] = json.load(open(meta))["seconds"]; print(f"scene {i:02d}: cached {durations[i]:.1f}s"); continue
-        if pipe is None:
-            pipe = KPipeline(lang_code="a", repo_id="hexgrad/Kokoro-82M")
-        chunks = [audio for _, _, audio in pipe(text, voice=voice, speed=a.speed)]
-        audio = np.concatenate(chunks).astype(np.float32)
-        idx = np.where(np.abs(audio) > 0.01)[0]
-        if len(idx):
-            audio = audio[max(0, idx[0] - int(0.1 * SR)): idx[-1] + int(0.25 * SR)]
-        audio = np.concatenate([np.zeros(int(0.3 * SR), dtype=np.float32), audio])
-        sf.write(wav, audio, SR)
-        sec = len(audio) / SR; durations[i] = sec
-        json.dump({"hash": h, "seconds": sec, "voice": voice, "text": text}, open(meta, "w"))
-        print(f"scene {i:02d}: {sec:.1f}s  peak={float(np.abs(audio).max()):.2f}", flush=True)
-    json.dump(durations, open(out / "durations.json", "w"), indent=1)
+            durations[i] = 0.0
+            continue
+        if wav.exists() and meta.exists():
+            try:
+                stored = json.loads(meta.read_text())
+            except (OSError, ValueError):
+                stored = {}
+            if hash_matches(stored.get("hash"), cfg, text):
+                durations[i] = stored["seconds"]
+                print(f"scene {i:02d}: cached {durations[i]:.1f}s "
+                      f"[{stored.get('provider_used', KOKORO)}]")
+                continue
+        # Drop the meta BEFORE synthesizing: a crash then leaves a scene with no meta, which
+        # re-synthesizes next run. Leaving a stale meta beside a new WAV would instead cache a
+        # wrong duration, and assemble.py would cut the audio against the wrong frame length.
+        scene_cfg = cfg
+        try:
+            meta.unlink()
+        except OSError:
+            pass
+        try:
+            seconds = synth_scene(scene_cfg, text, wav, key)
+        except TTSError as exc:
+            print(f"scene {i:02d}: {exc}", file=sys.stderr, flush=True)
+            if not (scene_cfg.provider == ELEVENLABS and a.allow_fallback):
+                print("Refusing to build half an ElevenLabs video and half a Kokoro one. "
+                      "Fix the error, or pass --allow-fallback to narrate the failed scenes "
+                      "locally. Scenes already synthesized stay cached.",
+                      file=sys.stderr, flush=True)
+                return 2
+            scene_cfg = scene_cfg.fallback()
+            print(f"scene {i:02d}: --allow-fallback — narrating with kokoro "
+                  f"({scene_cfg.voice})", file=sys.stderr, flush=True)
+            seconds = synth_scene(scene_cfg, text, wav, None)
+        durations[i] = seconds
+        meta.write_text(json.dumps({"hash": cache_hash(scene_cfg, text), "seconds": seconds,
+                                    "voice": scene_cfg.voice,
+                                    "provider_used": scene_cfg.provider,
+                                    "model": scene_cfg.model, "speed": scene_cfg.speed,
+                                    "text": text}))
+        print(f"scene {i:02d}: {seconds:.1f}s  [{scene_cfg.provider}]", flush=True)
+    with open(out / "durations.json", "w") as fh:
+        json.dump(durations, fh, indent=1)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

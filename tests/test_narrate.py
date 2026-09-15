@@ -1,0 +1,609 @@
+"""narrate.py's provider selection, cache key, credit estimate and CLI — no network, no venv.
+
+narrate.py is run by the TTS venv (`scripts/video/.venv-tts/bin/python`), which has yaml,
+numpy, soundfile, kokoro and requests. This test environment has none of them, so every one
+of those imports lives inside the function that needs it and the module imports with the
+standard library alone — the same rule make_short.py follows.
+
+The seams stubbed here:
+  _post_tts / _get_voices  the two HTTP calls (nothing else does network I/O)
+  run                      the single subprocess seam (ffmpeg), as in make_short.py
+  synth_scene              one scene's audio, so main() can be driven without either
+
+RFC 2606 domains and obviously-fake keys only. A real key never appears in a test.
+"""
+import json
+import pathlib
+import sys
+import types
+
+import pytest
+
+import narrate as N
+
+FAKE_KEY = "sk_fake_elevenlabs_key_0123456789"
+VOICE_ID = "pNInz6obpgDQGcFmaJgB"          # the ElevenLabs id used in the docs example
+
+
+def spec_with(tts=None, voice=None, scenes=None):
+    spec = {"slug": "demo", "scenes": scenes if scenes is not None else [
+        {"narration": "First scene."}, {"narration": "Second scene."}]}
+    if tts is not None:
+        spec["tts"] = tts
+    if voice is not None:
+        spec["voice"] = voice
+    return spec
+
+
+# --- provider selection from the spec --------------------------------------------------
+
+def test_a_spec_with_no_tts_block_is_kokoro_on_the_historical_default_voice():
+    cfg = N.tts_config(spec_with())
+    assert cfg.provider == N.KOKORO
+    assert cfg.voice == N.DEFAULT_KOKORO_VOICE == "am_michael"
+    assert cfg.model == ""
+
+
+def test_a_legacy_top_level_voice_still_selects_kokoro():
+    """Every scenes.yaml in marketing/video/ is `voice: am_michael` with no tts: block."""
+    cfg = N.tts_config(spec_with(voice="af_heart"))
+    assert (cfg.provider, cfg.voice) == (N.KOKORO, "af_heart")
+
+
+def test_the_tts_block_selects_elevenlabs_with_the_documented_defaults():
+    cfg = N.tts_config(spec_with(tts={"provider": "elevenlabs", "voice": VOICE_ID}))
+    assert cfg.provider == N.ELEVENLABS
+    assert cfg.voice == VOICE_ID
+    assert cfg.model == N.DEFAULT_EL_MODEL == "eleven_multilingual_v2"
+    assert cfg.voice_settings() == {"stability": 0.5, "similarity_boost": 0.75}
+
+
+def test_the_tts_block_carries_model_and_voice_settings_through():
+    cfg = N.tts_config(spec_with(tts={"provider": "elevenlabs", "voice": VOICE_ID,
+                                      "model": "eleven_flash_v2_5", "stability": 0.2,
+                                      "similarity_boost": 0.9, "style": 0.1,
+                                      "use_speaker_boost": True}))
+    assert cfg.model == "eleven_flash_v2_5"
+    assert cfg.voice_settings() == {"stability": 0.2, "similarity_boost": 0.9,
+                                    "style": 0.1, "use_speaker_boost": True}
+
+
+def test_provider_kokoro_in_the_tts_block_uses_that_blocks_voice():
+    cfg = N.tts_config(spec_with(tts={"provider": "kokoro", "voice": "bf_emma"}))
+    assert (cfg.provider, cfg.voice) == (N.KOKORO, "bf_emma")
+    assert cfg.voice_settings() == {}, "kokoro has no ElevenLabs voice_settings"
+
+
+@pytest.mark.parametrize("given", ["ElevenLabs", "  elevenlabs  ", "ELEVENLABS"])
+def test_the_provider_name_is_read_case_and_whitespace_insensitively(given):
+    cfg = N.tts_config(spec_with(tts={"provider": given, "voice": VOICE_ID}))
+    assert cfg.provider == N.ELEVENLABS
+
+
+def test_an_unknown_provider_is_refused_by_name():
+    with pytest.raises(SystemExit) as e:
+        N.tts_config(spec_with(tts={"provider": "openai", "voice": "x"}))
+    assert "openai" in str(e.value) and "elevenlabs" in str(e.value)
+
+
+def test_elevenlabs_without_a_voice_id_is_refused_rather_than_guessed():
+    """A wrong voice_id is a billed request in someone else's voice."""
+    with pytest.raises(SystemExit) as e:
+        N.tts_config(spec_with(tts={"provider": "elevenlabs"}))
+    assert "voice" in str(e.value).lower()
+
+
+def test_the_cli_voice_flag_overrides_the_spec_for_the_selected_provider():
+    cfg = N.tts_config(spec_with(tts={"provider": "elevenlabs", "voice": VOICE_ID}),
+                       voice="OTHERVOICEID12345678")
+    assert cfg.voice == "OTHERVOICEID12345678"
+
+
+def test_an_elevenlabs_spec_remembers_which_kokoro_voice_to_fall_back_to():
+    """tts.voice is an ElevenLabs id — Kokoro cannot speak it, so the fallback needs its own."""
+    cfg = N.tts_config(spec_with(tts={"provider": "elevenlabs", "voice": VOICE_ID},
+                                 voice="af_heart"))
+    assert cfg.kokoro_voice == "af_heart"
+    back = cfg.fallback()
+    assert (back.provider, back.voice) == (N.KOKORO, "af_heart")
+    assert back.model == "" and back.voice_settings() == {}
+    assert back.speed == cfg.speed
+
+
+def test_the_fallback_voice_defaults_when_the_spec_names_no_kokoro_voice():
+    cfg = N.tts_config(spec_with(tts={"provider": "elevenlabs", "voice": VOICE_ID}))
+    assert cfg.fallback().voice == N.DEFAULT_KOKORO_VOICE
+
+
+# --- the cache key ---------------------------------------------------------------------
+
+EL = {"provider": "elevenlabs", "voice": VOICE_ID}
+
+
+@pytest.mark.parametrize("a,b", [
+    # provider
+    (N.tts_config(spec_with(tts=EL)), N.tts_config(spec_with(voice="am_michael"))),
+    # model
+    (N.tts_config(spec_with(tts=EL)),
+     N.tts_config(spec_with(tts=dict(EL, model="eleven_flash_v2_5")))),
+    # voice id
+    (N.tts_config(spec_with(tts=EL)), N.tts_config(spec_with(tts=dict(EL, voice="OTHER")))),
+    # voice_settings
+    (N.tts_config(spec_with(tts=EL)), N.tts_config(spec_with(tts=dict(EL, stability=0.9)))),
+])
+def test_the_cache_key_changes_when_any_of_the_billed_parameters_changes(a, b):
+    assert N.cache_hash(a, "Same words.") != N.cache_hash(b, "Same words.")
+
+
+def test_the_provider_alone_changes_the_cache_key():
+    """The parametrized pair above also differs by model (kokoro has none), so a hash that
+    dropped `provider` would still pass it. Construct two configs identical but for provider."""
+    a = N.TTSConfig(provider=N.KOKORO, voice="same", speed=1.0)
+    b = N.TTSConfig(provider=N.ELEVENLABS, voice="same", speed=1.0)
+    assert N.cache_hash(a, "Words.") != N.cache_hash(b, "Words.")
+
+
+def test_the_cache_key_changes_with_speed_and_with_text():
+    cfg = N.tts_config(spec_with(tts=EL))
+    fast = N.tts_config(spec_with(tts=EL), speed=1.2)
+    assert N.cache_hash(cfg, "Words.") != N.cache_hash(fast, "Words.")
+    assert N.cache_hash(cfg, "Words.") != N.cache_hash(cfg, "Other words.")
+
+
+def test_the_cache_key_is_stable_across_runs_so_unchanged_text_is_never_re_billed():
+    cfg = N.tts_config(spec_with(tts=dict(EL, similarity_boost=0.75, stability=0.5)))
+    other = N.tts_config(spec_with(tts=dict(EL, stability=0.5, similarity_boost=0.75)))
+    assert N.cache_hash(cfg, "Words.") == N.cache_hash(other, "Words.")
+
+
+def test_a_kokoro_wav_cached_under_the_old_voice_speed_text_hash_is_still_a_hit():
+    """The pre-provider cache format. Re-synthesis is free but not instant; keep the hits."""
+    cfg = N.tts_config(spec_with(voice="am_michael"))
+    legacy = N.legacy_kokoro_hash("am_michael", 1.0, "Words.")
+    assert N.hash_matches(legacy, cfg, "Words.")
+    assert N.hash_matches(N.cache_hash(cfg, "Words."), cfg, "Words.")
+
+
+def test_the_legacy_hash_is_not_accepted_for_an_elevenlabs_config():
+    cfg = N.tts_config(spec_with(tts=EL))
+    assert not N.hash_matches(N.legacy_kokoro_hash(VOICE_ID, 1.0, "Words."), cfg, "Words.")
+
+
+# --- the key -------------------------------------------------------------------------
+
+def test_the_environment_variable_wins_over_the_key_file(tmp_path, monkeypatch):
+    kf = tmp_path / "elevenlabs-api-key.txt"
+    kf.write_text("from_the_file_9999\n")
+    monkeypatch.setattr(N, "KEY_FILE", kf)
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "from_the_env_9999")
+    assert N.api_key() == "from_the_env_9999"
+
+
+def test_the_key_file_is_read_and_stripped_when_the_environment_is_empty(tmp_path, monkeypatch):
+    kf = tmp_path / "elevenlabs-api-key.txt"
+    kf.write_text("  from_the_file_9999\n")
+    monkeypatch.setattr(N, "KEY_FILE", kf)
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    assert N.api_key() == "from_the_file_9999"
+
+
+def test_no_key_anywhere_reads_as_absent_rather_than_raising(tmp_path, monkeypatch):
+    monkeypatch.setattr(N, "KEY_FILE", tmp_path / "nothing-here.txt")
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    assert N.api_key() is None
+
+
+# --- credit arithmetic -----------------------------------------------------------------
+
+@pytest.mark.parametrize("model,rate", [
+    ("eleven_multilingual_v2", 1.0),
+    ("eleven_v3", 1.0),
+    ("eleven_flash_v2_5", 0.5),
+    ("eleven_turbo_v2_5", 0.5),
+])
+def test_flash_and_turbo_bill_half_a_credit_per_character(model, rate):
+    assert N.credits_per_char(model) == rate
+
+
+def test_estimated_credits_round_up_because_the_meter_is_whole_credits():
+    assert N.estimate_credits("eleven_multilingual_v2", 412) == 412
+    assert N.estimate_credits("eleven_flash_v2_5", 412) == 206
+    assert N.estimate_credits("eleven_flash_v2_5", 101) == 51
+
+
+def test_scene_text_collapses_whitespace_the_way_the_synthesiser_sees_it():
+    assert N.narration_text({"narration": "  two   lines\nof  text "}) == "two lines of text"
+    assert N.narration_text({}) == ""
+    assert N.narration_text({"narration": None}) == ""
+
+
+# --- the two HTTP seams ----------------------------------------------------------------
+
+class _Resp:
+    def __init__(self, status=200, content=b"", payload=None, text=""):
+        self.status_code, self.content, self._payload, self.text = status, content, payload, text
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("not json")
+        return self._payload
+
+
+def test_post_tts_sends_the_documented_request(monkeypatch):
+    seen = {}
+
+    def post(url, headers=None, params=None, json=None, timeout=None):
+        seen.update(url=url, headers=headers, params=params, body=json, timeout=timeout)
+        return _Resp(200, b"ID3fake")
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(post=post))
+    status, content = N._post_tts(VOICE_ID, FAKE_KEY, {"text": "hi", "model_id": "m"})
+    assert (status, content) == (200, b"ID3fake")
+    assert seen["url"] == f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
+    assert seen["headers"]["xi-api-key"] == FAKE_KEY
+    assert seen["headers"]["accept"] == "audio/mpeg"
+    assert seen["params"] == {"output_format": "mp3_44100_128"}
+    assert seen["body"] == {"text": "hi", "model_id": "m"}
+    assert seen["timeout"] == N.TTS_TIMEOUT_S
+
+
+def test_get_voices_hits_the_voices_endpoint_with_the_key_header(monkeypatch):
+    seen = {}
+
+    def get(url, headers=None, timeout=None):
+        seen.update(url=url, headers=headers, timeout=timeout)
+        return _Resp(200, payload={"voices": []})
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=get))
+    assert N._get_voices(FAKE_KEY) == (200, {"voices": []})
+    assert seen["url"] == "https://api.elevenlabs.io/v1/voices"
+    assert seen["headers"] == {"xi-api-key": FAKE_KEY}
+
+
+def test_get_voices_survives_a_non_json_body(monkeypatch):
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(
+        get=lambda *a, **k: _Resp(502, text="<html>bad gateway</html>")))
+    status, payload = N._get_voices(FAKE_KEY)
+    assert status == 502 and "bad gateway" in payload["detail"]
+
+
+def test_the_request_body_is_text_model_id_and_voice_settings():
+    cfg = N.tts_config(spec_with(tts=EL))
+    assert N.request_body(cfg, "Hello.") == {
+        "text": "Hello.", "model_id": "eleven_multilingual_v2",
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}}
+
+
+# --- error text ------------------------------------------------------------------------
+
+@pytest.mark.parametrize("status,needle", [
+    (401, "key was rejected"), (402, "out of credits"), (429, "rate limited"),
+    (500, "server error"), (503, "server error"), (422, "refused"),
+])
+def test_each_documented_failure_gets_its_own_sentence(status, needle):
+    assert needle in N.http_error_message(status, b"{}")
+
+
+def test_an_error_body_that_echoes_the_key_never_reaches_the_caller():
+    """ElevenLabs 401 bodies quote the request. The key must not survive into stdout."""
+    body = json.dumps({"detail": {"message": f"Invalid API key: {FAKE_KEY}"}}).encode()
+    out = N.http_error_message(401, body, FAKE_KEY)
+    assert FAKE_KEY not in out
+    assert "***" in out
+
+
+def test_a_long_error_body_is_redacted_before_it_is_truncated():
+    body = ("x" * 400 + FAKE_KEY).encode()
+    out = N.http_error_message(401, body, FAKE_KEY, limit=500)
+    assert FAKE_KEY not in out
+
+
+def test_the_env_key_is_masked_even_when_it_is_not_handed_in(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk_env_fake_key_01234567")
+    N.session.known_secrets.cache_clear()
+    try:
+        out = N.http_error_message(401, b"bad key sk_env_fake_key_01234567")
+        assert "sk_env_fake_key_01234567" not in out
+    finally:
+        N.session.known_secrets.cache_clear()
+
+
+# --- ffmpeg --------------------------------------------------------------------------
+
+def test_the_ffmpeg_command_produces_the_pipelines_own_wav_format(tmp_path):
+    cmd = N.ffmpeg_cmd(tmp_path / "a.mp3", tmp_path / "a.wav")
+    assert cmd[0] == N.FFMPEG
+    assert cmd[-1] == str(tmp_path / "a.wav")
+    for flag, value in (("-ac", "1"), ("-ar", "24000"), ("-c:a", "pcm_s16le")):
+        assert cmd[cmd.index(flag) + 1] == value
+    assert str(tmp_path / "a.mp3") in cmd
+
+
+def test_a_failed_ffmpeg_raises_a_redacted_tts_error(monkeypatch):
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk_env_fake_key_01234567")
+    N.session.known_secrets.cache_clear()
+    monkeypatch.setattr(N.subprocess, "run", lambda *a, **k: types.SimpleNamespace(
+        returncode=1, stderr="boom sk_env_fake_key_01234567"))
+    try:
+        with pytest.raises(N.TTSError) as e:
+            N.run([N.FFMPEG, "-i", "x"])
+        assert "sk_env_fake_key_01234567" not in str(e.value)
+        assert "ffmpeg failed" in str(e.value)
+    finally:
+        N.session.known_secrets.cache_clear()
+
+
+# --- synth_elevenlabs error handling ---------------------------------------------------
+
+def test_a_non_2xx_becomes_a_tts_error_and_decodes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (402, b'{"detail":"no credits"}'))
+    monkeypatch.setattr(N, "decode_to_wav", lambda *a, **k: pytest.fail("must not decode"))
+    cfg = N.tts_config(spec_with(tts=EL))
+    with pytest.raises(N.TTSError) as e:
+        N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY)
+    assert "out of credits" in str(e.value)
+
+
+def test_an_empty_200_body_is_a_failure_not_a_silent_scene(tmp_path, monkeypatch):
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, b""))
+    cfg = N.tts_config(spec_with(tts=EL))
+    with pytest.raises(N.TTSError) as e:
+        N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY)
+    assert "empty body" in str(e.value)
+
+
+def test_a_2xx_decodes_the_mp3_it_was_handed(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(N, "_post_tts", lambda v, k, b, **kw: (200, b"ID3audio"))
+    monkeypatch.setattr(N, "decode_to_wav",
+                        lambda content, path: seen.update(content=content, path=path) or 3.25)
+    cfg = N.tts_config(spec_with(tts=EL))
+    assert N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY) == 3.25
+    assert seen["content"] == b"ID3audio"
+
+
+# --- main(): the synthesis loop --------------------------------------------------------
+
+MAIN_SPEC_SCENES = [{"narration": "First scene."}, {"narration": ""},
+                    {"narration": "Third scene."}]
+
+
+@pytest.fixture
+def drive(tmp_path, monkeypatch):
+    """Run main() with yaml stubbed, no key on the machine, and synth_scene recorded."""
+    holder = types.SimpleNamespace(spec=spec_with(scenes=[dict(s) for s in MAIN_SPEC_SCENES]),
+                                   calls=[], out=tmp_path / "audio", seconds=2.5, fail_on=None)
+    monkeypatch.setitem(sys.modules, "yaml",
+                        types.SimpleNamespace(safe_load=lambda fh: holder.spec))
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("# parsed by the stubbed yaml\n")
+
+    def fake_synth(cfg, text, wav_path, key=None):
+        holder.calls.append(types.SimpleNamespace(cfg=cfg, text=text, key=key))
+        if holder.fail_on is not None and text == holder.fail_on and cfg.provider == N.ELEVENLABS:
+            raise N.TTSError("ElevenLabs: rate limited (429) — re-run")
+        pathlib.Path(wav_path).write_bytes(b"RIFFfake")
+        return holder.seconds
+
+    monkeypatch.setattr(N, "synth_scene", fake_synth)
+    monkeypatch.setattr(N, "api_key", lambda: holder.key)
+    holder.key = None
+    holder.run = lambda *extra: N.main(["--spec", str(spec_path), "--out", str(holder.out),
+                                        *extra])
+    holder.meta = lambda i: json.loads((holder.out / f"scene_{i:02d}.json").read_text())
+    holder.durations = lambda: json.loads((holder.out / "durations.json").read_text())
+    return holder
+
+
+def test_a_kokoro_spec_narrates_every_scene_that_has_words(drive):
+    assert drive.run() == 0
+    assert [c.text for c in drive.calls] == ["First scene.", "Third scene."]
+    assert drive.durations() == {"0": 2.5, "1": 0.0, "2": 2.5}
+    assert drive.meta(0)["provider_used"] == "kokoro"
+
+
+def test_an_elevenlabs_spec_with_no_key_prints_one_loud_line_and_uses_kokoro(drive, capsys):
+    drive.spec["tts"] = dict(EL)
+    assert drive.run() == 0
+    err = capsys.readouterr().err
+    loud = [ln for ln in err.splitlines() if "ELEVENLABS FALLBACK" in ln]
+    assert len(loud) == 1, f"expected exactly one loud line, got {err!r}"
+    assert all(c.cfg.provider == N.KOKORO for c in drive.calls)
+    assert all(c.cfg.voice == N.DEFAULT_KOKORO_VOICE for c in drive.calls)
+    assert drive.meta(0)["provider_used"] == "kokoro"
+    assert drive.meta(2)["provider_used"] == "kokoro"
+
+
+def test_an_elevenlabs_spec_with_a_key_synthesises_through_elevenlabs(drive, capsys):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    assert drive.run() == 0
+    assert "ELEVENLABS FALLBACK" not in capsys.readouterr().err
+    assert [c.cfg.provider for c in drive.calls] == [N.ELEVENLABS, N.ELEVENLABS]
+    assert all(c.key == FAKE_KEY for c in drive.calls)
+    assert drive.meta(0)["provider_used"] == "elevenlabs"
+    assert drive.meta(0)["model"] == "eleven_multilingual_v2"
+
+
+def test_a_second_run_over_unchanged_text_bills_nothing(drive):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.run()
+    drive.calls.clear()
+    assert drive.run() == 0
+    assert drive.calls == [], "cached scenes must not be re-synthesized"
+    assert drive.durations() == {"0": 2.5, "1": 0.0, "2": 2.5}
+
+
+def test_switching_provider_invalidates_the_cache(drive):
+    drive.key = FAKE_KEY
+    drive.run()                       # kokoro
+    drive.calls.clear()
+    drive.spec["tts"] = dict(EL)      # now elevenlabs, same words
+    assert drive.run() == 0
+    assert [c.cfg.provider for c in drive.calls] == [N.ELEVENLABS, N.ELEVENLABS]
+
+
+def test_changing_only_the_model_invalidates_the_cache(drive):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.run()
+    drive.calls.clear()
+    drive.spec["tts"] = dict(EL, model="eleven_flash_v2_5")
+    assert drive.run() == 0
+    assert len(drive.calls) == 2
+
+
+def test_a_failed_scene_exits_2_and_never_starts_the_next_one(drive, capsys):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.fail_on = "First scene."
+    assert drive.run() == 2
+    assert [c.text for c in drive.calls] == ["First scene."]
+    err = capsys.readouterr().err
+    assert "429" in err and "--allow-fallback" in err
+
+
+def test_a_failed_scene_leaves_no_meta_so_the_cache_stays_consistent(drive):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.run()                                   # everything cached and good
+    drive.spec["scenes"][0]["narration"] = "First scene, reworded."
+    drive.fail_on = "First scene, reworded."
+    assert drive.run() == 2
+    assert not (drive.out / "scene_00.json").exists(), "a stale meta would cache a wrong duration"
+    assert (drive.out / "scene_02.json").exists(), "untouched scenes stay cached"
+
+
+def test_allow_fallback_narrates_only_the_failed_scene_with_kokoro(drive, capsys):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.fail_on = "First scene."
+    assert drive.run("--allow-fallback") == 0
+    providers = [(c.text, c.cfg.provider) for c in drive.calls]
+    assert providers == [("First scene.", N.ELEVENLABS), ("First scene.", N.KOKORO),
+                         ("Third scene.", N.ELEVENLABS)]
+    assert drive.meta(0)["provider_used"] == "kokoro"
+    assert drive.meta(2)["provider_used"] == "elevenlabs"
+
+
+def test_a_fallback_scene_is_cached_under_the_kokoro_key_not_the_elevenlabs_one(drive):
+    """Otherwise the next run, with the API healthy, would keep the Kokoro audio forever."""
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.fail_on = "First scene."
+    drive.run("--allow-fallback")
+    kokoro_cfg = N.tts_config(drive.spec).fallback()
+    assert drive.meta(0)["hash"] == N.cache_hash(kokoro_cfg, "First scene.")
+    drive.calls.clear()
+    drive.fail_on = None
+    assert drive.run() == 0
+    assert [c.text for c in drive.calls] == ["First scene."], "scene 0 re-synthesizes on ElevenLabs"
+
+
+# --- main(): --dry-run -----------------------------------------------------------------
+
+def test_dry_run_prints_per_scene_counts_the_total_and_the_credit_estimate(drive, capsys,
+                                                                           monkeypatch):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    monkeypatch.setattr(N, "_post_tts",
+                        lambda *a, **k: pytest.fail("a dry run must not touch the network"))
+    assert drive.run("--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "scene 00:    12 characters" in out
+    assert "scene 01:     0 characters   (no narration)" in out
+    assert "total: 24 characters across 3 scenes" in out
+    assert "1 credit/char -> ~24 credits" in out
+    assert drive.calls == []
+    assert not drive.out.exists(), "a dry run writes nothing"
+
+
+def test_dry_run_halves_the_estimate_on_a_flash_model(drive, capsys):
+    drive.spec["tts"] = dict(EL, model="eleven_flash_v2_5")
+    assert drive.run("--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "0.5 credit/char -> ~12 credits" in out
+
+
+def test_dry_run_on_a_kokoro_spec_says_zero_credits(drive, capsys):
+    assert drive.run("--dry-run") == 0
+    assert "local synthesis -> 0 credits" in capsys.readouterr().out
+
+
+# --- main(): --tts-check ---------------------------------------------------------------
+
+VOICES = {"voices": [{"voice_id": VOICE_ID, "name": "Adam", "category": "premade"},
+                     {"voice_id": "OTHER1234567890ABCDE", "name": "Rachel",
+                      "category": "premade"}]}
+
+
+def test_tts_check_names_the_voice_and_exits_zero(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(tts=EL))
+    monkeypatch.setattr(N, "api_key", lambda: FAKE_KEY)
+    monkeypatch.setattr(N, "_get_voices", lambda key: (200, VOICES))
+    assert N.tts_check(cfg) == 0
+    out = capsys.readouterr().out
+    assert "Adam" in out and "premade" in out and VOICE_ID in out
+    assert FAKE_KEY not in out
+
+
+def test_tts_check_exits_2_when_the_configured_voice_is_not_on_the_account(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(tts=dict(EL, voice="NOSUCHVOICEID1234567")))
+    monkeypatch.setattr(N, "api_key", lambda: FAKE_KEY)
+    monkeypatch.setattr(N, "_get_voices", lambda key: (200, VOICES))
+    assert N.tts_check(cfg) == 2
+    err = capsys.readouterr().err
+    assert "NOSUCHVOICEID1234567" in err and "Adam" in err
+
+
+def test_tts_check_exits_2_with_no_key(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(tts=EL))
+    monkeypatch.setattr(N, "api_key", lambda: None)
+    monkeypatch.setattr(N, "_get_voices", lambda key: pytest.fail("no key means no request"))
+    assert N.tts_check(cfg) == 2
+    assert "ELEVENLABS_API_KEY" in capsys.readouterr().err
+
+
+def test_tts_check_exits_2_on_an_http_error(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(tts=EL))
+    monkeypatch.setattr(N, "api_key", lambda: FAKE_KEY)
+    monkeypatch.setattr(N, "_get_voices", lambda key: (401, {"detail": f"bad {FAKE_KEY}"}))
+    assert N.tts_check(cfg) == 2
+    err = capsys.readouterr().err
+    assert "key was rejected" in err and FAKE_KEY not in err
+
+
+def test_tts_check_exits_2_on_a_transport_error(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(tts=EL))
+    monkeypatch.setattr(N, "api_key", lambda: FAKE_KEY)
+
+    def boom(key):
+        raise OSError(f"connection refused while sending {FAKE_KEY}")
+
+    monkeypatch.setattr(N, "_get_voices", boom)
+    assert N.tts_check(cfg) == 2
+    err = capsys.readouterr().err
+    assert FAKE_KEY not in err and "connection refused" in err
+
+
+def test_tts_check_on_a_kokoro_spec_says_so_rather_than_calling_the_api(monkeypatch, capsys):
+    cfg = N.tts_config(spec_with(voice="am_michael"))
+    monkeypatch.setattr(N, "_get_voices", lambda key: pytest.fail("kokoro has no API"))
+    assert N.tts_check(cfg) == 2
+    assert "kokoro" in capsys.readouterr().err
+
+
+def test_tts_check_runs_from_main_without_an_out_directory(drive, monkeypatch):
+    drive.spec["tts"] = dict(EL)
+    monkeypatch.setattr(N, "_get_voices", lambda key: (200, VOICES))
+    drive.key = FAKE_KEY
+    spec_path = drive.out.parent / "scenes.yaml"
+    assert N.main(["--spec", str(spec_path), "--tts-check"]) == 0
+
+
+def test_synthesis_without_an_out_directory_is_an_argparse_error(drive):
+    spec_path = drive.out.parent / "scenes.yaml"
+    with pytest.raises(SystemExit) as e:
+        N.main(["--spec", str(spec_path)])
+    assert e.value.code == 2
