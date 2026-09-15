@@ -24,6 +24,7 @@ import abc
 import dataclasses
 import datetime as dt
 import pathlib
+import re
 import shutil
 import sys
 
@@ -80,15 +81,40 @@ def link_or_copy(asset: pathlib.Path, dest: pathlib.Path) -> str:
         return "copy"
 
 
-def card_slug(meta: dict, asset: pathlib.Path) -> str:
-    """Filename stem for the queue card — a name, never a path.
+_SLUG_UNSAFE = re.compile(r"[^a-z0-9]+")
 
-    `slug` comes from an author-written meta.json, so a stray separator (or a `..`) must
-    not steer the write out of marketing/publish-queue/<platform>/.
+
+def sanitize_slug(raw: str) -> str:
+    """Reduce a slug to `[a-z0-9-]` — safe as a filename and as a URL path component."""
+    return _SLUG_UNSAFE.sub("-", str(raw or "").lower()).strip("-")
+
+
+def slug_holds_a_secret(slug: str) -> bool:
+    """True when a known credential literal appears inside the slug.
+
+    The safety net for the one case sanitising cannot fix: a slug that genuinely contains a
+    token must not become a public URL, and masking it would publish `***` instead.
     """
-    raw = session.redact_secrets(meta.get("slug") or asset.stem)
-    cleaned = raw.replace("/", "-").replace("\\", "-").strip(". ")
-    return cleaned or asset.stem
+    text = str(slug or "")
+    return any(s and str(s) in text for s in session.known_secrets())
+
+
+def card_slug(meta: dict, asset: pathlib.Path) -> str:
+    """Filename stem for the queue card — a name, never a path, and never redacted.
+
+    `slug` is authored copy, not machine error text, and site.py reuses it for the post
+    filename and the public permalink; running it through redact_secrets risked publishing
+    https://kdeskaccounting.com/shorts/<date>-***/ off one false positive. Sanitising covers
+    the real hazard (a stray separator or a `..` steering the write out of the queue dir);
+    a slug that truly holds a credential falls back to the asset name here and is refused
+    outright by SitePublisher, which is the one that would make it public.
+    """
+    for candidate in (meta.get("slug"), asset.stem):
+        if candidate and not slug_holds_a_secret(candidate):
+            cleaned = sanitize_slug(candidate)
+            if cleaned:
+                return cleaned
+    return "untitled"
 
 
 class Publisher(abc.ABC):

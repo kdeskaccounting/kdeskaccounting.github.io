@@ -4,6 +4,7 @@
   python3 scripts/publishers/publish.py --platform youtube --asset X.mp4 --meta meta.json [--dry-run]
   python3 scripts/publishers/publish.py --platform youtube,instagram,site --asset X.mp4 --meta meta.json
   python3 scripts/publishers/publish.py --capabilities
+  python3 scripts/publishers/publish.py --whoami        # which Upload-Post profile would we post as?
 
 meta.json: {"slug": "...", "title": "...", "description": "...", "privacy": "public",
             "tags": ["..."], "product": "asc842", "video_url": "(filled by a video publisher)"}
@@ -86,7 +87,8 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None) -> 
     if a.whoami:
         return whoami()
     if not (a.platform and a.asset and a.meta):
-        ap.error("--platform, --asset and --meta are required unless --capabilities is given")
+        ap.error("--platform, --asset and --meta are required unless "
+                 "--capabilities or --whoami is given")
     # Fail on the caller's own mistake before any publisher runs, rather than half way
     # through a platform list with a traceback.
     for label, path in (("--asset", a.asset), ("--meta", a.meta)):

@@ -119,3 +119,42 @@ def test_queue_card_body_masks_the_machine_detail_but_not_the_authors_copy():
     assert "abc123def456" not in body
     assert "The secret: a faster month-end close" in body         # author copy: verbatim
     assert "Your key: the PV formula. Password: none needed." in body
+
+
+# --- card_slug ran the slug through redact_secrets. A slug is authored copy, never machine
+# error text, and site.py uses the same slug for the post FILENAME and the public permalink
+# — so one false-positive mask would have published https://kdeskaccounting.com/shorts/
+# 2026-09-14-***/ . Sanitize instead, and refuse outright if a slug really holds a secret.
+
+def test_card_slug_never_redacts_an_authored_slug(tmp_path, monkeypatch):
+    monkeypatch.setattr(base.session, "redact_secrets", lambda *a, **k: "***")
+    asset = tmp_path / "x.mp4"
+    assert base.card_slug({"slug": "asc842-liability"}, asset) == "asc842-liability"
+
+
+@pytest.mark.parametrize("raw,want", [
+    ("ASC 842 Liability!", "asc-842-liability"),
+    ("asc842_liability", "asc842-liability"),
+    ("../../etc/passwd", "etc-passwd"),
+    ("  spaced   out  ", "spaced-out"),
+    ("Lease—liability", "lease-liability"),
+])
+def test_card_slug_sanitizes_to_a_url_safe_name(tmp_path, raw, want):
+    assert base.card_slug({"slug": raw}, tmp_path / "fallback.mp4") == want
+
+
+def test_card_slug_falls_back_to_the_asset_when_the_slug_holds_a_known_secret(tmp_path,
+                                                                              monkeypatch):
+    secret = "up_live_SECRETVALUE1"
+    monkeypatch.setattr(base.session, "known_secrets", lambda: frozenset({secret}))
+    asset = tmp_path / "asc842-short.mp4"
+    got = base.card_slug({"slug": f"launch-{secret}"}, asset)
+    assert secret not in got
+    assert got == "asc842-short"
+
+
+def test_slug_holds_a_secret_sees_a_known_literal(monkeypatch):
+    secret = "up_live_SECRETVALUE1"
+    monkeypatch.setattr(base.session, "known_secrets", lambda: frozenset({secret}))
+    assert base.slug_holds_a_secret(f"launch-{secret}") is True
+    assert base.slug_holds_a_secret("asc842-liability") is False

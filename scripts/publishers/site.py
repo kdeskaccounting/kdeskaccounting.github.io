@@ -16,10 +16,13 @@ import json
 import pathlib
 import urllib.parse
 
-from publishers.base import REPO, Publisher, PublishResult, card_slug
+from publishers.base import REPO, Publisher, PublishResult, card_slug, slug_holds_a_secret
 
 SITE_BASE = "https://kdeskaccounting.com"
 _PATH_MARKERS = ("/shorts/", "/embed/", "/live/")
+# An explicit allow-list, never a suffix match (the same rule session.Site.alt_hosts follows):
+# 'youtube.com.evil.test' and 'notyoutube.com' must not read as YouTube.
+_YOUTUBE_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"})
 
 
 def video_id(url: str) -> str | None:
@@ -28,10 +31,15 @@ def video_id(url: str) -> str | None:
     Parsed rather than string-sliced: Upload-Post returns the watch?v= form (see the
     documented success body), and a naive `url.split("?")[0]` scan drops the id entirely
     for exactly that shape — the site post would then embed an empty player.
+
+    The host must be YouTube. Without that check any `?v=` yielded an "id", so an Instagram
+    permalink threaded in by publish.py would have been embedded in a YouTube player.
     """
     if not url:
         return None
     parts = urllib.parse.urlsplit(str(url))
+    if (parts.hostname or "").lower() not in _YOUTUBE_HOSTS:
+        return None
     v = urllib.parse.parse_qs(parts.query).get("v")
     if v and v[0]:
         return v[0]
@@ -39,7 +47,7 @@ def video_id(url: str) -> str | None:
     for marker in _PATH_MARKERS:
         if marker in path:
             return path.rsplit("/", 1)[-1] or None
-    if parts.netloc.rsplit("@", 1)[-1].lower().endswith("youtu.be"):
+    if (parts.hostname or "").lower() == "youtu.be":
         tail = path.strip("/").split("/")[0]
         return tail or None
     return None
@@ -109,6 +117,13 @@ class SitePublisher(Publisher):
                                  detail=(f"no YouTube video id in video_url {video_url!r} — "
                                          "the embed would be an empty player; publish to "
                                          "YouTube first, or paste the post by hand"))
+        # card_slug quietly falls back to the asset name for a slug holding a credential.
+        # That is right for a private queue card and wrong here: this slug becomes a public
+        # URL, so publishing something Stephen did not name would be worse than refusing.
+        if slug_holds_a_secret(meta.get("slug") or ""):
+            return PublishResult(platform="site", ok=False, url=None, queued_path=None,
+                                 detail="the slug in meta.json contains a credential — "
+                                        "refusing to put it in a public URL; rename it")
         slug = card_slug(meta, asset)
         path = post_path(self.repo, self.today, slug)
         path.parent.mkdir(parents=True, exist_ok=True)

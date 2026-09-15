@@ -1,7 +1,9 @@
 """scripts/publishers/site.py — cross-post a Short to the Hugo site."""
 import datetime as dt
 
-from publishers import site
+import pytest
+
+from publishers import base, site
 
 DATE = dt.date(2026, 9, 14)
 META = {"slug": "asc842-liability", "title": "ASC 842 Lease Liability in Excel",
@@ -111,3 +113,60 @@ def test_a_multiline_description_gives_a_one_line_summary():
     md = site.post_markdown(DATE, "s", {**META, "description": "First line.\nSecond line."})
     assert 'summary: "First line. Second line."' in md
     assert 'description: "First line."' in md
+
+
+# ============================ fix round 2 ============================
+
+# --- The slug becomes the post filename AND the public permalink, so a slug that really
+# holds a credential must be refused, never masked into https://.../shorts/2026-09-14-***/.
+
+def test_site_publisher_refuses_a_slug_that_contains_a_credential(tmp_path, monkeypatch):
+    secret = "up_live_SECRETVALUE1"
+    monkeypatch.setattr(base.session, "known_secrets", lambda: frozenset({secret}))
+    (tmp_path / "x.mp4").write_bytes(b"v")
+    meta = {**META, "slug": f"launch-{secret}"}
+    res = site.SitePublisher(repo=tmp_path, today=DATE).publish(tmp_path / "x.mp4", meta,
+                                                                dry_run=False)
+    assert res.ok is False
+    assert "credential" in res.detail
+    assert secret not in res.detail
+    assert not (tmp_path / "content").exists()
+    card = tmp_path / res.queued_path
+    assert card.exists()
+    assert secret not in str(card)
+
+
+def test_site_publisher_sanitizes_the_slug_into_the_permalink(tmp_path):
+    (tmp_path / "x.mp4").write_bytes(b"v")
+    meta = {**META, "slug": "ASC 842 Lease Liability!"}
+    res = site.SitePublisher(repo=tmp_path, today=DATE).publish(tmp_path / "x.mp4", meta,
+                                                                dry_run=False)
+    assert res.ok is True
+    assert res.url == "https://kdeskaccounting.com/shorts/2026-09-14-asc-842-lease-liability/"
+    assert site.post_path(tmp_path, DATE, "asc-842-lease-liability").exists()
+
+
+# --- video_id was host-agnostic: ANY url with ?v= (or a /embed/ path) yielded an "id", so
+# an Instagram or Vimeo link could still be embedded in a YouTube player.
+
+@pytest.mark.parametrize("url,want", [
+    ("https://youtube.com/watch?v=ABC123", "ABC123"),
+    ("https://www.youtube.com/watch?v=ABC123", "ABC123"),
+    ("https://m.youtube.com/watch?v=ABC123", "ABC123"),
+    ("https://www.youtube.com/shorts/ABC123", "ABC123"),
+    ("https://youtu.be/ABC123", "ABC123"),
+    ("https://YouTube.com/watch?v=ABC123", "ABC123"),
+])
+def test_video_id_accepts_the_youtube_hosts(url, want):
+    assert site.video_id(url) == want
+
+
+@pytest.mark.parametrize("url", [
+    "https://www.instagram.com/reel/Cx1y2z3AbCd/?v=1",
+    "https://vimeo.com/embed/123456",
+    "https://evil.example.com/watch?v=ABC123",
+    "https://notyoutube.com/shorts/ABC123",
+    "https://youtube.com.evil.test/watch?v=ABC123",
+])
+def test_video_id_rejects_every_other_host(url):
+    assert site.video_id(url) is None

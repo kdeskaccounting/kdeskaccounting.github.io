@@ -1,5 +1,6 @@
 """scripts/browser/session.py — per-site preflight, queue cards, trace paths."""
 import datetime as dt
+import os
 import re
 
 import pytest
@@ -388,3 +389,47 @@ def test_redact_secrets_masks_an_apikey_authorization_header():
 def test_redact_secrets_masks_an_apikey_scheme_in_a_plain_header_line():
     out = session.redact_secrets("Authorization: Apikey up_live_SECRETVALUE1")
     assert "up_live_SECRETVALUE1" not in out
+
+
+# ============================ fix round 4 ============================
+
+# --- _CREDENTIAL_KEY matched TOKEN|KEY|SECRET|PASSWORD|PASS ANYWHERE in a name, so
+# COMPASS_MODE, MONKEY_NAME and KEYBOARD_LAYOUT were swept as credentials and their values
+# masked out of queue cards. Anchor to whole underscore-delimited components.
+
+@pytest.mark.parametrize("name", ["UPLOAD_POST_KEY", "GUMROAD_ACCESS_TOKEN", "MY_PASS",
+                                  "MAILERLITE_API_KEY", "SOME_SECRET", "DB_PASSWORD",
+                                  "TOKEN_ENDPOINT", "KEY"])
+def test_is_credential_name_accepts_a_whole_component(name):
+    assert session.is_credential_name(name)
+
+
+@pytest.mark.parametrize("name", ["COMPASS_MODE", "MONKEY_NAME", "KEYBOARD_LAYOUT",
+                                  "PASSAGE", "TOKENIZER_PATH", "BASE_DIR", "PRODUCT_URL"])
+def test_is_credential_name_rejects_a_word_that_merely_contains_one(name):
+    assert not session.is_credential_name(name)
+
+
+def test_the_environment_sweep_leaves_an_innocent_lookalike_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("COMPASS_MODE", "north-by-northwest")
+    monkeypatch.setenv("MONKEY_NAME", "the one with the cymbals")
+    monkeypatch.setenv("UPLOAD_POST_KEY", "up_live_abcdefghijkl")
+    session.known_secrets.cache_clear()
+    try:
+        secrets = session.known_secrets()
+        assert "up_live_abcdefghijkl" in secrets
+        assert "north-by-northwest" not in secrets
+        assert "the one with the cymbals" not in secrets
+        survives = session.redact_secrets("failed while heading north-by-northwest")
+        assert "north-by-northwest" in survives
+    finally:
+        session.known_secrets.cache_clear()
+
+
+# --- Tests read the ambient environment through _env_secrets(), so a developer's or CI's
+# real credentials could change what a test masks. conftest strips them for every test.
+
+def test_the_ambient_environment_is_hidden_from_every_test():
+    leaked = [n for n in os.environ if session.is_credential_name(n)]
+    assert leaked == [], f"credential-named variables visible to tests: {leaked}"

@@ -94,10 +94,21 @@ _SECRET_COLON = re.compile(
     re.IGNORECASE)
 # Shorter than this and a "secret" would mask ordinary words; a real token is far longer.
 _MIN_SECRET_LEN = 8
-# .env holds configuration as well as credentials. Only these key shapes contribute a
-# literal to mask - masking a product URL or a base path would corrupt the very evidence
-# a queue card exists to carry.
-_CREDENTIAL_KEY = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|PASS)", re.IGNORECASE)
+# .env and the environment hold configuration as well as credentials. Only these key shapes
+# contribute a literal to mask - masking a product URL or a base path would corrupt the very
+# evidence a queue card exists to carry. Anchored to whole underscore-delimited components:
+# an unanchored match swept COMPASS_MODE, MONKEY_NAME and KEYBOARD_LAYOUT as credentials.
+_CREDENTIAL_KEY = re.compile(
+    r"(^|_)(TOKEN|KEY|SECRET|PASSWORD|PASS|APIKEY|API_KEY)(_|$)", re.IGNORECASE)
+
+
+def is_credential_name(name: str) -> bool:
+    """True when an environment or .env key name looks like it holds a credential.
+
+    Public so tests and conftest can isolate the ambient environment with exactly the rule
+    the sweep uses, instead of a second copy that could drift out of step with it.
+    """
+    return bool(_CREDENTIAL_KEY.search(name or ""))
 
 
 def _env_secrets() -> frozenset:
@@ -112,7 +123,7 @@ def _env_secrets() -> frozenset:
     found: set[str] = set()
     for name, value in os.environ.items():
         value = (value or "").strip()
-        if not _CREDENTIAL_KEY.search(name) or len(value) < _MIN_SECRET_LEN:
+        if not is_credential_name(name) or len(value) < _MIN_SECRET_LEN:
             continue
         if value.startswith(("/", "~", ".")) or "://" in value:
             continue
@@ -131,7 +142,7 @@ def _file_secrets() -> frozenset:
             if "=" not in line or line.lstrip().startswith("#"):
                 continue
             key, value = line.split("=", 1)
-            if _CREDENTIAL_KEY.search(key):
+            if is_credential_name(key):
                 found.add(value.strip().strip("\"'"))
     except (OSError, UnicodeDecodeError):
         pass
