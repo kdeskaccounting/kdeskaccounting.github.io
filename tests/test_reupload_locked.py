@@ -3,6 +3,7 @@ import json
 import pathlib
 
 import reupload_locked as rl
+import youtube_publish as yp
 
 
 def _repo(tmp_path):
@@ -95,3 +96,31 @@ def test_meta_for_builds_the_publisher_payload(tmp_path):
     assert meta == {"slug": "asc842-liability", "title": "Lease liability #Shorts",
                     "description": "PV of payments.", "privacy": "public", "product": "asc842",
                     "tags": []}
+
+
+def test_scan_fills_a_missing_walkthrough_title_from_youtube_publish_meta(tmp_path):
+    """youtube.json never stored title/description; scan() must rebuild them the same way
+    youtube_publish.walkthrough_job() did, from its META dict, rather than leaving them blank."""
+    mv = tmp_path / "marketing" / "video" / "asc842"
+    mv.mkdir(parents=True)
+    (mv / "youtube.json").write_text(json.dumps({
+        "url": "https://youtu.be/5lkrHbWlb4c", "video_id": "5lkrHbWlb4c",
+        "uploaded": "2026-09-04 22:21", "via": "data-api"}))          # no title, no description
+    item = rl.scan(tmp_path)[0]
+    expected_title, expected_blurb = yp.META["asc842"]
+    assert item.title == expected_title
+    # no scenes.yaml / durations.json in this tmp repo -> the chapters-based description isn't
+    # buildable, so the fallback degrades to the blurb alone rather than failing outright.
+    assert item.description == expected_blurb
+
+
+def test_scan_flags_a_walkthrough_with_no_title_and_no_meta_fallback(tmp_path):
+    """A slug outside youtube_publish.META has no fallback at all; scan() must not invent one,
+    so main() can refuse to upload it live instead of publishing a blank title."""
+    mv = tmp_path / "marketing" / "video" / "unknown-product"
+    mv.mkdir(parents=True)
+    (mv / "youtube.json").write_text(json.dumps({
+        "url": "https://youtu.be/ZZZ999", "video_id": "ZZZ999",
+        "uploaded": "2026-09-04 22:21", "via": "data-api"}))
+    item = rl.scan(tmp_path)[0]
+    assert item.title == ""

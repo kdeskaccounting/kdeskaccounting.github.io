@@ -14,6 +14,15 @@ the original title and description, then rewrites the record with the new url an
 mp4 resolution order: scripts/video/build/<slug>/<name>.mp4 (local renders), then any mp4
 downloaded from the GitHub release media-2026-09 into that same folder:
   gh release download media-2026-09 --pattern '<slug>.mp4' --dir scripts/video/build/<slug>
+
+marketing/video/<slug>/youtube.json (the long-form walkthroughs) never stored a title or
+description — youtube_publish.py's walkthrough_job() built them fresh from META/LINKS and the
+scenes.yaml chapters every run instead of persisting them. scan() rebuilds them the same way
+(youtube_publish.META for the title and blurb, chapters()+walkthrough_description() over
+scenes.yaml/durations.json for the full description when both are on disk, else the blurb
+alone). A slug missing from META has no fallback at all: its LockedVideo.title stays "" and
+--dry-run prints it as NO METADATA rather than a resolvable item; main() refuses to upload it
+live (title-less would mean uploading blank) and counts it as failed instead.
 Stdlib only at import time.
 """
 from __future__ import annotations
@@ -48,6 +57,42 @@ def _locked(entry: dict) -> bool:
     return isinstance(entry, dict) and entry.get("via") == "data-api" and bool(entry.get("url"))
 
 
+def _walkthrough_fallback(repo: pathlib.Path, slug: str) -> tuple[str, str] | None:
+    """Rebuild a missing walkthrough title/description the way youtube_publish.py built them
+    at upload time (it never persisted them to youtube.json). Returns None when `slug` is not
+    in youtube_publish.META at all — there is nothing to fall back to, and the caller must
+    treat that record as having no usable metadata rather than inventing one.
+
+    The full chapters-based description needs scenes.yaml + durations.json on disk and PyYAML
+    to parse the former; when either is missing (as in a test fixture, or the tests-only
+    stdlib environment where PyYAML itself is absent) this degrades to the blurb alone rather
+    than raising — a shorter real description beats crashing scan() or uploading blank.
+    """
+    import youtube_publish as yp  # scripts/video/youtube_publish.py; stdlib-only at import time
+
+    meta = yp.META.get(slug)
+    if not meta:
+        return None
+    title, blurb = meta
+    description = blurb
+    links = yp.LINKS.get(slug)
+    scenes_path = pathlib.Path(repo) / "marketing" / "video" / slug / "scenes.yaml"
+    durations_path = (pathlib.Path(repo) / "scripts" / "video" / "build" / slug
+                       / "audio" / "durations.json")
+    if links and scenes_path.exists() and durations_path.exists():
+        try:
+            import yaml  # lazy: absent in the stdlib-only test environment
+            spec = yaml.safe_load(scenes_path.read_text(encoding="utf-8"))
+            durs = json.loads(durations_path.read_text(encoding="utf-8"))
+            page, free = links
+            chapters_text = yp.chapters(spec, durs)
+            description = yp.walkthrough_description(
+                blurb, f"https://kdeskaccounting.com/templates/{page}/", free, chapters_text)
+        except Exception:  # noqa: BLE001 — a best-effort upgrade; the blurb is still a real description
+            description = blurb
+    return title, description
+
+
 def scan(repo: pathlib.Path = REPO) -> list[LockedVideo]:
     out: list[LockedVideo] = []
     base = pathlib.Path(repo) / "marketing" / "video"
@@ -62,9 +107,15 @@ def scan(repo: pathlib.Path = REPO) -> list[LockedVideo]:
             for key, entry in items:
                 if not _locked(entry):
                     continue
+                title = entry.get("title", "")
+                description = entry.get("description", "")
+                if kind == "youtube" and not title:
+                    fallback = _walkthrough_fallback(repo, slug_dir.name)
+                    if fallback is not None:
+                        title, description = fallback
                 out.append(LockedVideo(
                     rec_path=path, key=key, slug=slug_dir.name, kind=kind,
-                    title=entry.get("title", ""), description=entry.get("description", ""),
+                    title=title, description=description,
                     old_url=entry["url"], video_id=entry.get("video_id", "")))
     return out
 
@@ -116,14 +167,23 @@ def main() -> int:
                 f"MISSING — gh release download {RELEASE_TAG} --pattern "
                 f"'{expected_mp4_name(item.slug, item.kind, item.key)}' "
                 f"--dir scripts/video/build/{item.slug}")
+            title_line = (f"title: {item.title[:80]}" if item.title else
+                          f"NO METADATA — {item.rec_path.relative_to(REPO)} has no title and "
+                          f"none could be reconstructed from youtube_publish.META")
             print(f"  {item.slug:<15} {item.kind:<8} {str(item.key):<12} {item.old_url}\n"
-                  f"      -> {where}\n      title: {item.title[:80]}")
+                  f"      -> {where}\n      {title_line}")
         return 0
 
     from publishers.youtube import YouTubePublisher
     pub = YouTubePublisher(repo=REPO)
     done = failed = 0
     for item in items:
+        if not item.title:
+            failed += 1
+            print(f"  {item.slug}/{item.key or item.kind}: NO METADATA — "
+                  f"{item.rec_path.relative_to(REPO)} has no title and none could be "
+                  f"reconstructed from youtube_publish.META; skipping rather than uploading blank")
+            continue
         if a.limit is not None and done >= a.limit:
             print(f"stopping at --limit {a.limit}")
             break
