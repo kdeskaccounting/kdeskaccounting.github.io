@@ -6,7 +6,7 @@
 
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
 2. **`marketing/plan-2026-09-14-automation.md`** — the automation plan (2026-09-14, ledger #69–#71): how the plan of record above gets executed with less of Stephen's time (< 30 min/wk), plus a **second, separate brand** (`parksheet`, a subscription living Google Sheet). It does **not** replace the revenue plan of record. Its session runbook is **`marketing/runbooks/automation-2026-09.md`** — pipeline map, one command per stage, current phase, open vetoes, the "if X is broken do Y" table, and (Phase 1, 2026-09-15) the two GitHub Actions schedules: what runs on Actions, what only runs on the Mac and why, the exact `gh secret set` commands, the launchd handover, and the weekly selector canary. Read both before touching publishing, the video pipeline, or the venture.
-3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#80** (80 entries, ids contiguous 1–80). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
+3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#82** (82 entries, ids contiguous 1–82). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
 4. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers. The venture has its own MOC, `~/CommandCenter/02-Projects/ParkSheet.md`.
 5. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
 6. The **Currently working on** section below.
@@ -131,6 +131,27 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/s
 # Past those caps cards.card_html raises rather than render type too small to read on a
 # phone. Worked example of all three: marketing/video/card-demo/scenes.yaml.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/card-demo/scenes.yaml
+
+# Narration provider — per spec (2026-09-15). No `tts:` block, or a legacy top-level
+# `voice: am_michael`, still means Kokoro (local, free), so every existing spec is unchanged.
+#   tts:
+#     provider: elevenlabs           # or kokoro
+#     voice: pNInz6obpgDQGcFmaJgB    # ElevenLabs voice_id; for kokoro, the Kokoro voice name
+#     model: eleven_multilingual_v2  # flash/turbo bill 0.5 credit/char, everything else 1
+#     stability: 0.5                 # optional voice_settings; these two are the defaults
+#     similarity_boost: 0.75
+# Key: ELEVENLABS_API_KEY, else ~/kdesk-analytics/elevenlabs-api-key.txt (0600). Never printed —
+# every error string goes through session.redact_secrets first. NO KEY = one loud stderr line and
+# Kokoro narrates instead, so dry runs and CI keep working; each scene's meta JSON records
+# `provider_used`. An ElevenLabs HTTP failure (401/402/429/5xx) exits 2 rather than mixing voices
+# in one video — pass --allow-fallback to narrate only the failed scenes locally. The cache key
+# covers provider/voice/model/voice_settings/speed/text, so unchanged text is never re-billed.
+
+# Prove the ElevenLabs path BEFORE spending credits: does the configured voice_id exist? (exit 0/2)
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --tts-check
+
+# What a render would cost: per-scene character counts, the total, the credit estimate. No network.
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --dry-run
 
 # DO NOT RUN — youtube_publish.py uploads land LOCKED PRIVATE and cannot be recovered (ledger #71).
 # Anything it uploads is dead on arrival: no appeal, no Studio flip, re-upload is the only fix.

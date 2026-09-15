@@ -83,6 +83,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug daily-2026
 scripts/video/.venv-tts/bin/python scripts/video/build_video.py --spec marketing/video/<slug>/scenes.yaml
 scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
   --spec marketing/video/card-demo/scenes.yaml --frames-only      # `card` scene kind, no TTS
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --tts-check   # ElevenLabs voice_id exists? (0/2)
 
 # ── 4. Publish (T1 after 2026-09-16; ALWAYS --dry-run first) ──────────────────
 python3 scripts/publishers/publish.py --capabilities               # which platforms are actually connected
@@ -195,9 +196,13 @@ secret costs one legible line, not a stack trace from inside a Google token refr
 - **The ledger.** For KDesk **the Mac commits the ledger** — `daily-publish.yml` has `contents: read` and never
   pushes. Its publish stdout and any queue cards leave as a workflow artifact
   (`kdesk-publish-<slug>-<run id>`); download it, then append the ledger rows locally.
-- **Rendering** (`build_video.py`, `make_short.py`) — LibreOffice, Kokoro TTS and the Playwright Chromium
+- **Rendering** (`build_video.py`, `make_short.py`) — LibreOffice, TTS and the Playwright Chromium
   shell, and `scripts/video/build/` is gitignored so the mp4s exist nowhere else. The Mac renders on Saturday
-  and pushes the `media-daily-<ISO week>` release the daily job reads.
+  and pushes the `media-daily-<ISO week>` release the daily job reads. **Narration is per-spec (2026-09-15):
+  a `tts:` block picks `elevenlabs` (paid, needs `ELEVENLABS_API_KEY` or `~/kdesk-analytics/elevenlabs-api-key.txt`)
+  or `kokoro` (local, the default and the automatic fallback when no key is present — one loud stderr line,
+  never a failed build). Run `narrate.py --spec <spec> --tts-check` before a paid batch and `--dry-run` for the
+  credit estimate; an ElevenLabs HTTP failure exits 2 rather than shipping half a video in each voice.**
 - **Every Chrome driver** (`scripts/browser/`, the two Gumroad UI scripts) — spec Chrome rule 1: Chrome is
   never on the recurring path.
 
