@@ -15,6 +15,7 @@ instead of these assertions quietly drifting into fiction.
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
@@ -249,8 +250,17 @@ def script_flags(path: pathlib.Path) -> dict[str, set[str]]:
 
 
 def script_help(script: str) -> subprocess.CompletedProcess:
+    """Ask a script what flags it takes. Only ever called for a script the workflow
+    passes at least one flag to — see `_flag_check`.
+
+    A script with no argparse does not answer --help, it *ignores* it and runs. Two belts
+    on top of never calling this for a flagless script: KDESK_SEO_SKIP_COMMIT=1, so the
+    one script that git-commits on its own cannot, and a 10 s timeout, so a network call
+    that does start becomes a loud failure rather than a hung suite.
+    """
     return subprocess.run([sys.executable, str(ROOT / script), "--help"],
-                          cwd=ROOT, capture_output=True, text=True, timeout=120)
+                          cwd=ROOT, capture_output=True, text=True, timeout=10,
+                          env={**os.environ, "KDESK_SEO_SKIP_COMMIT": "1"})
 
 
 # --------------------------------------------------------------------------------------
@@ -397,7 +407,10 @@ def test_weekly_does_not_let_pull_seo_snapshot_commit_and_push_on_its_own():
 def test_weekly_commits_what_it_already_pulled_even_if_a_later_step_failed():
     commit = next(s for s in steps_of(WEEKLY) if "git commit" in s.get("run", ""))
 
-    assert "always()" in commit["if"]
+    # !cancelled(), not always(): a cancelled job should stop, not race to commit into a
+    # checkout whose steps were killed part-way. always() would have run it anyway.
+    assert "!cancelled()" in commit["if"]
+    assert "always()" not in commit["if"]
     assert "inputs.dry_run != true" in commit["if"]
 
 
@@ -547,11 +560,77 @@ def test_each_workflow_preflights_its_required_secrets_and_exits_2(path):
 
 
 def test_the_weekly_push_retries_a_racing_push():
+    """Both halves of the retry have to sit inside one `if … && …` guard.
+
+    GitHub runs every `run` body as `bash -e`. An unguarded `git pull --rebase` that loses
+    the race therefore kills the step on attempt 1 and the loop never reaches attempt 2 —
+    a retry loop that cannot retry. Putting pull and push inside the `if` condition
+    suppresses -e for both.
+    """
     commit = next(run for _n, run in run_blocks(WEEKLY) if "git push" in run)
 
     assert "for attempt in 1 2 3" in commit
-    assert "git pull --rebase --autostash" in commit
-    assert "git push origin" in commit
+    assert 'if git pull --rebase --autostash origin "$GITHUB_REF_NAME" \\' in commit
+    assert '&& git push origin "HEAD:$GITHUB_REF_NAME"; then' in commit
+    # A rebase that stopped on a conflict leaves the tree mid-rebase; the next attempt's
+    # pull would refuse to start until it is cleared.
+    assert "git rebase --abort" in commit
+    assert "exit 1" in commit, "give up loudly after three attempts"
+
+    for line in commit.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("git pull", "git push")):
+            raise AssertionError(f"unguarded under bash -e: {stripped}")
+
+
+def test_weekly_checks_out_the_full_history_the_seo_pull_annotates_from():
+    """pull_seo_snapshot.py's git_changes_since() runs `git log --since=<last pull>`. The
+    default shallow checkout has one commit, so every row's annotation would be empty."""
+    checkout = next(s for s in steps_of(WEEKLY) if s.get("uses", "").startswith("actions/checkout"))
+
+    assert checkout["with"]["fetch-depth"] == 0
+
+
+def test_weekly_restore_reuses_the_preflight_answer_about_bing():
+    """One place decides whether a Bing key exists. The restore step asks the preflight
+    rather than re-testing the secret, so the two can never disagree."""
+    restore = next(s for s in steps_of(WEEKLY) if "google-token.json" in s.get("run", ""))
+
+    assert restore["env"]["HAVE_BING"] == "${{ steps.preflight.outputs.bing }}"
+    assert '[ -n "$HAVE_BING" ]' in restore["run"]
+    # It still writes the key's value — it just does not re-decide whether there is one.
+    assert '[ -n "$BING_API_KEY" ]' not in restore["run"]
+
+
+def test_daily_fails_the_run_when_nothing_published_and_nothing_queued():
+    """Every publish step is continue-on-error, so without this a morning on which all
+    three platforms hard-failed is green with an empty summary. A queued platform is a
+    legitimate outcome — it leaves a paste-ready card. Zero of both is a silent drop."""
+    guard = next(s for s in steps_of(DAILY) if "nothing was queued" in s.get("run", ""))
+    workflow_steps = steps_of(DAILY)
+
+    assert "inputs.dry_run != true" in guard["if"]
+    assert "publish-stdout.txt" in guard["run"]
+    assert "marketing/publish-queue/" in guard["run"]
+    assert "exit 1" in guard["run"]
+    # After all three publish steps, so it sees every outcome.
+    last_publish = max(i for i, s in enumerate(workflow_steps)
+                       if "publishers/publish.py" in s.get("run", ""))
+    assert workflow_steps.index(guard) > last_publish
+
+
+def test_daily_release_lookup_scans_enough_releases_and_names_an_unusable_timestamp():
+    resolve = next(s for s in steps_of(DAILY) if "gh release list" in s.get("run", ""))
+    run = resolve["run"]
+
+    # 20 is one week of daily tags away from missing a media-daily-* behind a run of
+    # unrelated releases.
+    assert "--limit 50" in run
+    # An empty or unparseable createdAt would otherwise become a bash arithmetic syntax
+    # error — a failure whose message says nothing about releases.
+    assert 'has no createdAt' in run
+    assert "cannot parse createdAt" in run
+    assert run.count("exit 2") >= 4
 
 
 @pytest.mark.parametrize("path", [WEEKLY, DAILY], ids=["weekly", "daily"])
@@ -566,21 +645,49 @@ def test_neither_workflow_hardcodes_a_secret(path):
 # --------------------------------------------------------------------------------------
 # Every flag a workflow passes must be a flag the script actually accepts.
 # --------------------------------------------------------------------------------------
-@pytest.mark.parametrize("path", [WEEKLY, DAILY], ids=["weekly", "daily"])
-def test_every_flag_the_workflow_passes_is_a_flag_the_script_accepts(path):
+def _flag_check(path: pathlib.Path, probe) -> None:
     calls = script_flags(path)
     assert calls, f"{path.name} runs no repo script?"
     for script, flags in sorted(calls.items()):
         assert (ROOT / script).exists(), f"{path.name} calls a script that is not here: {script}"
-        helped = script_help(script)
+        if not flags:
+            # Nothing to verify — and verifying it would be actively harmful. Three of
+            # these scripts (pull_seo_snapshot.py, pull_gumroad_snapshot.py,
+            # pull_youtube_snapshot.py) have no argparse, so `--help` is not a question to
+            # them, it is an ignored argument: they would pull live data for real, and
+            # pull_seo_snapshot.py would git-commit and push. Never execute them.
+            continue
+        helped = probe(script)
         if helped.returncode != 0:
-            # pull_seo_snapshot.py, pull_gumroad_snapshot.py and pull_youtube_snapshot.py
-            # have no argparse at all, so they cannot answer --help and would silently
-            # ignore an unknown flag. The workflow must therefore pass them none.
+            # A script with no argparse cannot accept a flag, so passing it one is a bug
+            # in the workflow, not in this test.
             assert not flags, f"{script} has no argparse; it cannot accept {sorted(flags)}"
             continue
         for flag in sorted(flags):
             assert flag in helped.stdout, f"{script} --help does not list {flag}"
+
+
+@pytest.mark.parametrize("path", [WEEKLY, DAILY], ids=["weekly", "daily"])
+def test_every_flag_the_workflow_passes_is_a_flag_the_script_accepts(path):
+    _flag_check(path, script_help)
+
+
+@pytest.mark.parametrize("path", [WEEKLY, DAILY], ids=["weekly", "daily"])
+def test_a_script_the_workflow_passes_no_flags_to_is_never_executed(path):
+    """The check above must not become a way to run production scripts for real."""
+    probed: list[str] = []
+
+    def recording_probe(script: str) -> subprocess.CompletedProcess:
+        probed.append(script)
+        return script_help(script)
+
+    _flag_check(path, recording_probe)
+
+    for script, flags in script_flags(path).items():
+        assert (script in probed) is bool(flags), script
+    for flagless in ("scripts/pull_seo_snapshot.py", "scripts/pull_gumroad_snapshot.py",
+                     "scripts/pull_youtube_snapshot.py"):
+        assert flagless not in probed
 
 
 def test_publish_py_accepts_the_dry_run_flag_the_daily_job_injects_through_a_variable():

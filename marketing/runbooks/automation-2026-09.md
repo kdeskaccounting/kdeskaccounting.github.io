@@ -119,6 +119,9 @@ python3 scripts/video/gumroad_covers_ui.py --check                 # read-only; 
 KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py
 python3 scripts/pull_gumroad_snapshot.py
 uv run scripts/pull_youtube_snapshot.py --print                    # READ-only YouTube API use is fine
+# ^ --print is read straight out of sys.argv (this script has no argparse), so an unknown flag is
+#   silently ignored rather than rejected. data-weekly.yml therefore runs it with NO flags, and
+#   tests/test_workflows.py enforces that: a flag may only be passed to a script whose --help lists it.
 uv run scripts/pull_bing_snapshot.py --print
 uv run --with pytest pytest tests/
 ```
@@ -163,9 +166,11 @@ gh secret set MAILERLITE_TOKEN  --repo "$R" < ~/kdesk-analytics/mailerlite-token
 gh secret set GUMROAD_ACCESS_TOKEN --repo "$R" \
   --body "$(grep -m1 '^GUMROAD_ACCESS_TOKEN=' ~/kdeskaccountingtemplates/.env | cut -d= -f2- | tr -d "\"'")"
 
-# Optional. Stephen mints the key first: bing.com/webmasters → Settings → API Access → API Key.
-# Until it exists the Bing step is SKIPPED, not failed — leave the secret unset rather than empty-ish.
-gh secret set BING_API_KEY --repo "$R" < ~/kdesk-analytics/bing-api-key.txt
+# Optional, and COMMENTED OUT on purpose: ~/kdesk-analytics/bing-api-key.txt does not exist yet, so
+# running this line today sets the secret to nothing, which is worse than leaving it unset. Stephen
+# mints the key first (bing.com/webmasters → Settings → API Access → API Key), saves it to that path
+# 0600, and only then uncomments this. Until the secret exists the Bing step is SKIPPED, not failed.
+# gh secret set BING_API_KEY --repo "$R" < ~/kdesk-analytics/bing-api-key.txt
 
 # From https://www.upload-post.com/ after connecting YouTube, TikTok and Instagram.
 gh secret set UPLOAD_POST_KEY --repo "$R"        # prompts, so the key never reaches shell history
@@ -284,6 +289,20 @@ Two different messages, two different causes — read which one it printed.
    morning, and nobody would notice for a month.
 
 Either way the digest step still runs (`if: always()`), so the run summary tells you what else is open.
+
+### `daily-publish.yml` fails at "Fail the run if nothing published and nothing queued"
+
+Every publish step is `continue-on-error`, so this is the step that turns "all three platforms failed and
+none of them queued a card" into a red run instead of a green one with an empty summary.
+
+1. Download the run's artifact (`kdesk-publish-<slug>-<run id>`) — `publish-stdout.txt` has the per-platform
+   line and the reason.
+2. A **QUEUED** line is not this failure: a queued platform wrote a card, and a card is a legitimate outcome.
+   This fires only when there were zero successes **and** zero cards, which means the publisher did not even
+   get as far as its own fallback.
+3. Usual causes in order: `UPLOAD_POST_KEY` revoked or out of quota (free tier is 10 uploads/mo); the asset or
+   meta file missing from the release (publish.py exits 2 on a bad `--asset`/`--meta`); Upload-Post itself down.
+4. **Do not fall back to `scripts/video/youtube_publish.py`** — that is what created 20 dead videos (#71).
 
 ### A scheduled job exits 2 at "Preflight the secrets"
 

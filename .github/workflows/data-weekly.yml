@@ -53,6 +53,11 @@ jobs:
       KDESK_SEO_SKIP_COMMIT: '1'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pull_seo_snapshot.py annotates each row with `git log --since=<last pull>`
+          # (git_changes_since). The default shallow checkout has a single commit, so
+          # every row's annotation would come back empty.
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5
         with:
@@ -86,6 +91,9 @@ jobs:
       - name: Restore the credential files the scripts read by path
         env:
           GOOGLE_TOKEN_JSON: ${{ secrets.GOOGLE_TOKEN_JSON }}
+          # One place decides whether a Bing key exists — the preflight. Re-testing the
+          # secret here is how the restore and the Bing step's `if` would come to disagree.
+          HAVE_BING: ${{ steps.preflight.outputs.bing }}
         # These scripts open fixed paths rather than reading the environment:
         # pull_seo_snapshot.py and pull_youtube_snapshot.py both open
         # ~/kdesk-analytics/google-token.json, crm_sync.py opens
@@ -98,7 +106,7 @@ jobs:
           printf '%s' "$GOOGLE_TOKEN_JSON" > ~/kdesk-analytics/google-token.json
           printf '%s\n' "$MAILERLITE_TOKEN" > ~/kdesk-analytics/mailerlite-token.txt
           chmod 600 ~/kdesk-analytics/google-token.json ~/kdesk-analytics/mailerlite-token.txt
-          if [ -n "$BING_API_KEY" ]; then
+          if [ -n "$HAVE_BING" ]; then
             printf '%s\n' "$BING_API_KEY" > ~/kdesk-analytics/bing-api-key.txt
             chmod 600 ~/kdesk-analytics/bing-api-key.txt
           fi
@@ -129,11 +137,12 @@ jobs:
         run: uv run --with requests scripts/sales/crm_sync.py --dry-run
 
       - name: Commit the snapshot rows
-        # always(), so rows that were already pulled are committed even when a later step
-        # failed. A manual dispatch commits nothing unless dry_run is explicitly false;
-        # on a schedule the inputs context is empty, so `!= true` is already correct and
-        # the event check just says so out loud.
-        if: ${{ always() && (github.event_name == 'schedule' || inputs.dry_run != true) }}
+        # !cancelled(), so rows that were already pulled are committed even when a later
+        # step failed — but a cancelled job stops rather than racing to commit a checkout
+        # whose steps were killed part-way. A manual dispatch commits nothing unless
+        # dry_run is explicitly false; on a schedule the inputs context is empty, so
+        # `!= true` is already correct and the event check just says so out loud.
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.dry_run != true) }}
         run: |
           git config user.name 'kdesk-bot'
           git config user.email 'santiagokdesk@gmail.com'
@@ -152,11 +161,20 @@ jobs:
           git commit -m "chore(data): weekly snapshots $(date -u +%F)"
           # Three attempts: this job, the Mac and anything else pushing to the same
           # branch append to the same files, and a lost race here silently drops a week.
+          #
+          # Both halves live inside the `if` condition on purpose. This body runs under
+          # `bash -e`, so an unguarded `git pull --rebase` that loses the race would kill
+          # the step on attempt 1 and the loop would never reach attempt 2 — a retry loop
+          # that cannot retry. A condition suppresses -e for everything in it.
           for attempt in 1 2 3; do
-            git pull --rebase --autostash origin "$GITHUB_REF_NAME"
-            if git push origin "HEAD:$GITHUB_REF_NAME"; then
+            if git pull --rebase --autostash origin "$GITHUB_REF_NAME" \
+              && git push origin "HEAD:$GITHUB_REF_NAME"; then
               exit 0
             fi
+            # A rebase stopped on a conflict leaves the tree mid-rebase, and the next
+            # attempt's pull would refuse to start until it is cleared. `|| true` because
+            # there is usually no rebase in progress and that is not an error.
+            git rebase --abort || true
             echo "push attempt $attempt failed, retrying..." >&2
             sleep $((attempt * 5))
           done

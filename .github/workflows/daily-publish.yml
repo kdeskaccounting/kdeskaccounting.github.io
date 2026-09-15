@@ -86,7 +86,7 @@ jobs:
           # `// empty` matters: with no matching release `.[0].tagName` is null and jq
           # would print the four characters "null", a perfectly non-empty string that
           # would sail past the guard below into `gh release download null`.
-          TAG="$(gh release list --limit 20 --json tagName \
+          TAG="$(gh release list --limit 50 --json tagName \
             -q '[.[]|select(.tagName|startswith("media-daily-"))]|.[0].tagName // empty')"
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
             echo 'no media-daily-* release exists; run the Saturday Mac render batch first' >&2
@@ -98,7 +98,17 @@ jobs:
           # this runs daily, so the oldest legitimate release is 7 days old; 8 leaves a
           # day of slack for a batch that ran late.
           CREATED="$(gh release view "$TAG" --json createdAt -q .createdAt)"
-          AGE_DAYS=$(( ( $(date -u +%s) - $(date -u -d "$CREATED" +%s) ) / 86400 ))
+          # Without these two guards an empty or unparseable timestamp becomes a bash
+          # arithmetic syntax error — a failure whose message says nothing about releases.
+          if [ -z "$CREATED" ]; then
+            echo "release $TAG has no createdAt; cannot age-check it" >&2
+            exit 2
+          fi
+          if ! CREATED_EPOCH="$(date -u -d "$CREATED" +%s)"; then
+            echo "cannot parse createdAt '$CREATED' on release $TAG" >&2
+            exit 2
+          fi
+          AGE_DAYS=$(( ( $(date -u +%s) - CREATED_EPOCH ) / 86400 ))
           if [ "$AGE_DAYS" -gt 8 ]; then
             echo "newest media release is $AGE_DAYS days old; the Saturday batch did not run" >&2
             exit 2
@@ -174,6 +184,29 @@ jobs:
           if [ ${#cards[@]} -gt 0 ]; then
             printf '### Queued for Stephen\n' >> "$GITHUB_STEP_SUMMARY"
             for c in "${cards[@]}"; do printf -- '- %s\n' "$c" >> "$GITHUB_STEP_SUMMARY"; done
+          fi
+
+      - name: Fail the run if nothing published and nothing queued
+        # Every publish step is continue-on-error, so without this a morning on which all
+        # three platforms hard-failed (a dead Upload-Post, a revoked key) would finish
+        # green with an empty summary. A QUEUED platform is a legitimate outcome — it
+        # leaves a paste-ready card, which is the whole "queues, not silent failures"
+        # rule. Zero successes AND zero cards is the case that rule exists to catch.
+        if: ${{ !cancelled() && inputs.dry_run != true }}
+        run: |
+          if [ ! -f publish-stdout.txt ]; then
+            echo 'no publish was attempted; an earlier step already failed this run'
+            exit 0
+          fi
+          # publish.py prints "<platform padded to 10> ok   <url>  <detail>" on success
+          # and "... QUEUED <card path> ..." otherwise.
+          published="$(grep -c -E '^[a-z]+ +ok +' publish-stdout.txt || true)"
+          shopt -s nullglob
+          cards=(marketing/publish-queue/*/*.md)
+          echo "published=$published queued cards=${#cards[@]}"
+          if [ "$published" -eq 0 ] && [ ${#cards[@]} -eq 0 ]; then
+            echo 'every platform failed and nothing was queued - see the uploaded publish log' >&2
+            exit 1
           fi
 
       - name: Upload the publish log and any queue cards
