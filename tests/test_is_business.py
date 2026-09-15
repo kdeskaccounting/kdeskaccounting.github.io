@@ -9,10 +9,15 @@ def test_business_domains_are_business():
 
 
 def test_the_freemail_set_is_not_business():
-    for email in ("a@gmail.com", "b@yahoo.com", "c@hotmail.com", "d@outlook.com",
-                  "e@icloud.com", "f@naver.com", "g@proton.me", "h@protonmail.com",
-                  "i@aol.com", "j@live.com", "k@me.com"):
-        assert pg.is_business(email) is False, email
+    """Addresses are built from FREEMAIL itself: the rule and the set cannot drift apart, and
+    this file carries no address literal for tests/test_no_third_party_emails.py to trip on."""
+    for domain in sorted(pg.FREEMAIL):
+        assert pg.is_business(f"someone@{domain}") is False, domain
+
+
+def test_the_freemail_set_still_covers_every_consumer_host_we_listed():
+    assert {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "naver.com",
+            "proton.me", "protonmail.com", "aol.com", "live.com", "me.com"} <= pg.FREEMAIL
 
 
 def test_malformed_addresses_are_not_business():

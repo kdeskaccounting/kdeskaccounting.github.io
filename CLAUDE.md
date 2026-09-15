@@ -159,6 +159,43 @@ python3 scripts/video/reupload_locked.py --dry-run
 
 **Recent decision context:** 42 GSC/GA4 OAuth · 44, 46, 49 the three commission/deferred-rent articles · 47 roadmap (superseded) · 48 Free-vs-Full · 50 product #6 research · **51 portfolio pivot · 52 repricing (veto open) · 53 YouTube API + publisher + weekly pull · 54 first Shorts batch (12, private) · 55 RSU calculator live · 56 RSU Tax Planner $149 staged (veto open) · 57 ASC 340-40 Commission Kit $1,997 staged (veto open) · 58 kit fact-check applied (v1.1).**
 
+## Privacy (this repo is PUBLIC)
+
+`github.com/kdeskaccounting/kdeskaccounting.github.io` is public. Everything tracked here is
+world-readable, forever, including in history.
+
+**Never commit a third-party email address, name+address pair, or any other customer contact
+detail.** KDesk's own published addresses (`santiagokdesk@`, `@kdeskaccounting.com`) are fine —
+they are meant to be findable. This is enforced, not just advised: `tests/test_no_third_party_emails.py`
+scans every tracked file under `marketing/ decisions/ content/ scripts/ tests/` and fails on any
+address that is not KDesk-own or an RFC 2606 reserved domain (`example.com`, `*.example`, `*.test`,
+`*.invalid`). Its `ALLOWED_LITERALS` set is deliberately tiny — if you find yourself adding to it,
+use a reserved domain instead.
+
+**Where personal data lives:** `~/kdesk-analytics/private/` (dir `0700`, files `0600`), outside the
+repo and never synced to git.
+
+- `re-engage-2026-09-recipients.json` — the 14 re-engagement recipients (subscriber id, address,
+  product, merge fields) plus 1 excluded. **Task 7's `send_reengage.py` reads recipients from here,
+  never from the markdown.**
+- `outreach-contacts.json` — outreach addresses keyed by target org/person.
+- `redaction-map-2026-09-14.json` — `redaction_id -> address`, so an in-place redaction is reversible.
+
+**The hashing scheme** (`scripts/privacy.py`): a salted SHA-256, salt at
+`~/kdesk-analytics/email-hash-salt.txt` (`0600`, created on first use). Plain SHA-256 would be
+reversible here — the population "people who bought an accounting template" is small enough to
+enumerate — so the salt is what makes a digest a pseudonym rather than an encoding.
+
+- State files store `email_sha256` (full digest). `scripts/sync_gumroad_to_mailerlite.py` dedupes on it.
+- Prose and tables store a `<redacted:XXXXXXXX>` marker — the first 8 hex of the digest — which keeps
+  a row joinable to the private files without naming anyone.
+- **Back the salt up.** Lose it and every stored digest stops matching: past downloaders look new, and
+  the daily sync could re-trigger the 3-email automation to real customers.
+
+**Pending Stephen's decision:** rewriting git history to purge the addresses already committed
+(ledger 76, 77). Until he decides, they remain in history, in every clone and in any fork — containment
+stops new leaks, it does not undo old ones. Do not rewrite history or force-push on your own.
+
 ## Hard gates (never bypass)
 
 1. CPA license claims: Stephen's WA license is **inactive**. Content must never imply active CPA practice/licensure or constitute tax advice.

@@ -23,15 +23,15 @@ Goal: 10 referring domains by 2026-12-01 (roadmap rank milestone). Ordered by fe
 
 | Target | Page | Asset to offer | Contact | Feasibility |
 |---|---|---|---|---|
-| The Spreadsheet Page | spreadsheetpage.com/accounting/ (invites template submissions on its About page) | Month-end close checklist workbook (free) | admin@spreadsheetpage.com | Medium; they host files, so negotiate an author credit link to the product page |
-| UC San Diego Library, Accounting LibGuide | ucsd.libguides.com/accounting and /excel | Free calculator + free workbooks (non-commercial framing) | Adele Barsh, abarsh@ucsd.edu | Medium; .edu link, actively maintained |
+| The Spreadsheet Page | spreadsheetpage.com/accounting/ (invites template submissions on its About page) | Month-end close checklist workbook (free) | <redacted:e9318bf0> | Medium; they host files, so negotiate an author credit link to the product page |
+| UC San Diego Library, Accounting LibGuide | ucsd.libguides.com/accounting and /excel | Free calculator + free workbooks (non-commercial framing) | Adele Barsh, <redacted:f3845203> | Medium; .edu link, actively maintained |
 | The SaaS CFO (Ben Murray) | thesaascfo.com/saas-metrics/ (already links a third-party metrics tool) | Free SaaS metrics workbook, runway calculator | thesaascfo.com/contact/ | Medium; free, no-signup asset required |
 | The CFO Club | thecfoclub.com/operational-finance/month-end-close-checklist/ and /lease-accounting/ | Month-end close workbook; calculator | thecfoclub.com/contact/ ("if you think your product is relevant to our readers") and /write-for-us/ | Medium; editorial, updated 2026 |
-| COCPA blog | cocpa.org ASC 842 in Excel post (2025-11) | Contributed post citing the calculator | lindsay@cocpa.org (blog editor) | Medium for a guest post; existing outbound link is a sponsor |
-| FP&A Trends | fpa-trends.com contributed articles (800–1,200 words, no fee) | Practitioner article with the calculator as worked example | viktoria@fpa-trends.com | Medium to publish, low for a dofollow link |
+| COCPA blog | cocpa.org ASC 842 in Excel post (2025-11) | Contributed post citing the calculator | <redacted:39a19cef> (blog editor) | Medium for a guest post; existing outbound link is a sponsor |
+| FP&A Trends | fpa-trends.com contributed articles (800–1,200 words, no fee) | Practitioner article with the calculator as worked example | <redacted:baede762> | Medium to publish, low for a dofollow link |
 | Burkland Startup Finance Toolkit | burklandassociates.com/tools/startup-toolkit/ (links YC, Gusto, Ramp…) | Runway + SaaS metrics workbooks | Contact form | Medium-low |
-| Minnesota State Mankato accounting LibGuide | libguides.mnsu.edu (free open-access resources) | Free calculator / workbooks | lisa.baures@mnsu.edu | Low-medium; currently OER textbooks only |
-| Spreadsheet Daddy | spreadsheetdaddy.com/templates/month-end-close-checklist | Close workbook as a "related template" | daniel@spreadsheetdaddy.com | Low-medium |
+| Minnesota State Mankato accounting LibGuide | libguides.mnsu.edu (free open-access resources) | Free calculator / workbooks | <redacted:07605ef1> | Low-medium; currently OER textbooks only |
+| Spreadsheet Daddy | spreadsheetdaddy.com/templates/month-end-close-checklist | Close workbook as a "related template" | <redacted:3bf7e6f9> | Low-medium |
 | Business Accounting Basics (UK) | businessaccountingbasics.co.uk/depreciation-schedule/ | Fixed asset workbook | Site contact form | Low-medium (UK slant) |
 | Larson & Company | larsco.com ASC 842 template post | Calculator as a "check your numbers" companion | Contact form | Low |
 | OnlyCFO newsletter | onlycfo.io free templates post | Commission / SaaS metrics workbooks | Reply to newsletter | Low; relationship play |

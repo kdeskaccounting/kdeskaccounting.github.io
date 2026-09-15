@@ -19,7 +19,7 @@ GUMROAD = [
 MAILERLITE = [
     {"email": "a@gmail.com", "subscribed_at": "2026-09-06 12:00:00",
      "fields": {"interest": "rsu-planner"}},
-    {"email": "new@acme.io", "subscribed_at": "2026-09-10 12:00:00", "fields": {"interest": None}},
+    {"email": "new@acme.example", "subscribed_at": "2026-09-10 12:00:00", "fields": {"interest": None}},
 ]
 
 
@@ -54,9 +54,9 @@ def test_from_gumroad_marks_a_paid_buyer_and_a_free_downloader_differently():
 def test_from_mailerlite_carries_the_interest_field():
     people = cs.from_mailerlite(MAILERLITE)
     assert people["a@gmail.com"].interest == "rsu-planner"
-    assert people["new@acme.io"].interest == ""
-    assert people["new@acme.io"].source == "mailerlite"
-    assert people["new@acme.io"].first_seen == "2026-09-10"
+    assert people["new@acme.example"].interest == ""
+    assert people["new@acme.example"].source == "mailerlite"
+    assert people["new@acme.example"].first_seen == "2026-09-10"
 
 
 def test_from_seo_tracking_reads_the_mailerlite_sync_log(tmp_path):
@@ -78,7 +78,7 @@ def test_merge_prefers_the_strongest_source_and_the_earliest_first_seen():
     assert merged["a@gmail.com"].interest == "rsu-planner"      # but the interest is filled in
     assert merged["a@gmail.com"].first_seen == "2026-09-05"     # the earlier of the two
     assert merged["a@gmail.com"].last_touch == "2026-09-06"     # the later of the two
-    assert set(merged) == {"buyer@northstar.example", "a@gmail.com", "new@acme.io"}
+    assert set(merged) == {"buyer@northstar.example", "a@gmail.com", "new@acme.example"}
 
 
 def test_diff_appends_new_people_and_updates_changed_ones():
@@ -90,12 +90,12 @@ def test_diff_appends_new_people_and_updates_changed_ones():
     updates, appends = cs.diff(existing, wanted)
     assert [row for _i, row in updates] == [wanted["a@gmail.com"]]
     assert updates[0][0] == 2                                   # sheet row number, 1-based
-    assert {p.email for p in appends} == {"buyer@northstar.example", "new@acme.io"}
+    assert {p.email for p in appends} == {"buyer@northstar.example", "new@acme.example"}
 
 
 def test_diff_is_a_noop_when_the_sheet_already_matches():
     wanted = cs.from_mailerlite([MAILERLITE[1]])
-    person = wanted["new@acme.io"]
+    person = wanted["new@acme.example"]
     existing = [list(cs.COLUMNS), person.as_row()]
     assert cs.diff(existing, wanted) == ([], [])
 
@@ -104,7 +104,7 @@ def test_diff_tolerates_an_empty_sheet():
     wanted = cs.from_mailerlite([MAILERLITE[1]])
     updates, appends = cs.diff([], wanted)
     assert updates == []
-    assert [p.email for p in appends] == ["new@acme.io"]
+    assert [p.email for p in appends] == ["new@acme.example"]
 
 
 def test_sync_dry_run_prints_the_diff_and_makes_no_gws_call(tmp_path, monkeypatch, capsys):
@@ -231,8 +231,8 @@ def test_sync_without_show_emails_prints_counts_and_no_address(capsys, monkeypat
             show_emails=False)
     out = capsys.readouterr().out
     assert "3 to append" in out
-    assert "business domains 2/3" in out          # scott + new@acme.io, not a@gmail.com
-    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.io"):
+    assert "business domains 2/3" in out          # scott + new@acme.example, not a@gmail.com
+    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.example"):
         assert address not in out
 
 
@@ -248,7 +248,7 @@ def test_the_cli_dry_run_prints_counts_only_and_touches_nothing(tmp_path, monkey
     assert cs.main(["--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "3 to append" in out
-    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.io"):
+    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.example"):
         assert address not in out
     assert not (tmp_path / "crm-sheet-id.txt").exists()
     assert not (tmp_path / "marketing").exists()
@@ -267,7 +267,7 @@ def test_a_gws_failure_queues_a_card_and_exits_non_zero(tmp_path, monkeypatch):
     body = cards[0].read_text()
     assert "gws auth login" in body
     assert "insufficient authentication scopes" in body
-    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.io"):
+    for address in ("buyer@northstar.example", "a@gmail.com", "new@acme.example"):
         assert address not in body
 
 
@@ -285,7 +285,7 @@ def test_fetch_gumroad_sends_a_bearer_header_not_a_query_param(monkeypatch):
             return None
 
         def json(self):
-            return {"sales": [{"email": "x@y.com"}], "next_page_key": None}
+            return {"sales": [{"email": "x@y.example"}], "next_page_key": None}
 
     def fake_get(url, headers=None, params=None, timeout=None):
         seen.update(url=url, headers=headers, params=params)
@@ -293,7 +293,7 @@ def test_fetch_gumroad_sends_a_bearer_header_not_a_query_param(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=fake_get))
     monkeypatch.setenv("GUMROAD_ACCESS_TOKEN", "FAKE-GUMROAD-TOKEN")
-    assert cs.fetch_gumroad() == [{"email": "x@y.com"}]
+    assert cs.fetch_gumroad() == [{"email": "x@y.example"}]
     assert seen["headers"]["Authorization"] == "Bearer FAKE-GUMROAD-TOKEN"
     assert "access_token" not in (seen["params"] or {})
     assert "FAKE-GUMROAD-TOKEN" not in seen["url"]
@@ -303,8 +303,8 @@ def test_fetch_mailerlite_pages_until_the_cursor_stops_moving(tmp_path, monkeypa
     tokenfile = tmp_path / "mailerlite-token.txt"
     tokenfile.write_text("FAKE-ML-TOKEN\n")
     monkeypatch.setattr(cs, "MAILERLITE_TOKEN_FILE", tokenfile)
-    pages = [{"data": [{"email": "one@acme.io"}], "meta": {"next_cursor": "c2"}},
-             {"data": [{"email": "two@acme.io"}], "meta": {"next_cursor": "c2"}}]
+    pages = [{"data": [{"email": "one@acme.example"}], "meta": {"next_cursor": "c2"}},
+             {"data": [{"email": "two@acme.example"}], "meta": {"next_cursor": "c2"}}]
     seen = []
 
     class Response:
@@ -323,19 +323,19 @@ def test_fetch_mailerlite_pages_until_the_cursor_stops_moving(tmp_path, monkeypa
 
     monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=fake_get))
     subscribers = cs.fetch_mailerlite()
-    assert [s["email"] for s in subscribers] == ["one@acme.io", "two@acme.io"]
+    assert [s["email"] for s in subscribers] == ["one@acme.example", "two@acme.example"]
     assert len(seen) == 2, "a repeated cursor must stop the loop, not spin"
     assert seen[0][0]["Authorization"] == "Bearer FAKE-ML-TOKEN"
 
 
 def test_read_people_returns_the_rows_below_the_cap(monkeypatch):
-    rows = [list(cs.COLUMNS)] + [["p%d@acme.io" % i] for i in range(5)]
+    rows = [list(cs.COLUMNS)] + [["p%d@acme.example" % i] for i in range(5)]
     monkeypatch.setattr(cs, "_gws", lambda *a, **k: {"values": rows})
     assert cs.read_people("SHEET1") == rows
 
 
 def test_read_people_refuses_to_silently_duplicate_past_the_row_cap(monkeypatch):
-    full = [["p%d@acme.io" % i] for i in range(cs.ROW_CAP)]
+    full = [["p%d@acme.example" % i] for i in range(cs.ROW_CAP)]
     monkeypatch.setattr(cs, "_gws", lambda *a, **k: {"values": full})
     try:
         cs.read_people("SHEET1")
@@ -395,7 +395,7 @@ def test_the_column_ownership_split_covers_every_column():
 
 def test_diff_never_overwrites_a_next_action_a_human_typed():
     wanted = cs.from_mailerlite([MAILERLITE[1]])                  # next_action == ""
-    person = wanted["new@acme.io"]
+    person = wanted["new@acme.example"]
     row = person.as_row()
     row[COL["next_action"]] = "call them Tuesday"
     row[COL["stage"]] = "lead"
