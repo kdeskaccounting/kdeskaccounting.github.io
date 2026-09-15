@@ -1,0 +1,191 @@
+name: Daily publish
+
+# 14:00 UTC = 07:00 PDT / 06:00 PST. (Between the November and March changeovers this
+# runs an hour early — acceptable for a morning publish.)
+#
+# This job cannot render: TTS, ffmpeg and the Playwright card shell are Mac-only, and
+# scripts/video/build/ is gitignored, so the mp4s exist nowhere else. The Mac renders one
+# weekly batch on Saturday and uploads the week's assets and their publish meta to a
+# GitHub release tagged media-daily-<ISO week> (e.g. media-daily-2026-W38). This workflow
+# publishes from the NEWEST media-daily-* release that exists — it never recomputes the
+# tag from today's date, because the ISO week rolls over on Monday while the batch that
+# produced the media ran on the Saturday before, so a computed tag would point at a
+# release nobody created on six days out of seven.
+#
+# Two things this job deliberately cannot do. (1) digest.py --send needs gws, a local
+# Homebrew binary holding santiagokdesk credentials under ~/.config/gws, and --vault
+# appends to ~/CommandCenter — the vault is local, so neither can run on a runner. The
+# Mac's 07:30 job sends the real digest; this writes the same markdown into the run
+# summary, and the send_digest input is the switch for the day a non-gws Gmail path
+# exists. (2) It never commits: for KDesk the ledger is committed by the Mac, so
+# everything this job produces leaves as a workflow artifact or in the run summary.
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Compose and print, but publish nothing'
+        type: boolean
+        required: false
+        default: true
+      slug:
+        description: "Asset slug to publish (default: today's UTC date)"
+        type: string
+        required: false
+        default: ''
+      send_digest:
+        description: 'Email the digest (needs a non-gws Gmail path; off by default)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  # Read only on purpose — see the header: this job has nothing to write back.
+  contents: read
+
+concurrency:
+  # Serialize, never cancel: a cancelled publish can leave an upload half made with no
+  # queue card and no log. An overlapping run queues behind the one in flight.
+  group: daily-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      UPLOAD_POST_KEY: ${{ secrets.UPLOAD_POST_KEY }}
+      UPLOAD_POST_PROFILE: kdesk
+      GH_TOKEN: ${{ github.token }}
+      # The boolean comparison happens in the expression; the shell only ever sees the
+      # resulting flag or an empty string. On a schedule the inputs context is empty, so
+      # this is '' and the scheduled run publishes for real.
+      DRY: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run == true) && '--dry-run' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.11'
+
+      - name: Preflight the secrets
+        # Fail closed, once, naming the secret — rather than a publish.py that queues
+        # every platform for the one reason a queue card cannot help with.
+        run: |
+          if [ -z "$UPLOAD_POST_KEY" ]; then
+            echo 'missing required repository secret: UPLOAD_POST_KEY' >&2
+            echo "fix: gh secret set UPLOAD_POST_KEY --repo $GITHUB_REPOSITORY (see marketing/runbooks/automation-2026-09.md)" >&2
+            exit 2
+          fi
+
+      - name: Resolve the media release and the slug
+        id: media
+        env:
+          SLUG_INPUT: ${{ inputs.slug }}
+        run: |
+          # `// empty` matters: with no matching release `.[0].tagName` is null and jq
+          # would print the four characters "null", a perfectly non-empty string that
+          # would sail past the guard below into `gh release download null`.
+          TAG="$(gh release list --limit 20 --json tagName \
+            -q '[.[]|select(.tagName|startswith("media-daily-"))]|.[0].tagName // empty')"
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo 'no media-daily-* release exists; run the Saturday Mac render batch first' >&2
+            exit 2
+          fi
+          # Resolving "the newest release" fixes the weekday drift but on its own makes a
+          # SKIPPED Saturday batch silent: this schedule would re-publish last week's
+          # assets as if they were new, green every morning. The batch runs Saturday and
+          # this runs daily, so the oldest legitimate release is 7 days old; 8 leaves a
+          # day of slack for a batch that ran late.
+          CREATED="$(gh release view "$TAG" --json createdAt -q .createdAt)"
+          AGE_DAYS=$(( ( $(date -u +%s) - $(date -u -d "$CREATED" +%s) ) / 86400 ))
+          if [ "$AGE_DAYS" -gt 8 ]; then
+            echo "newest media release is $AGE_DAYS days old; the Saturday batch did not run" >&2
+            exit 2
+          fi
+          SLUG="${SLUG_INPUT:-}"
+          if [ -z "$SLUG" ]; then SLUG="$(date -u +%Y-%m-%d)"; fi
+          {
+            echo "tag=$TAG"
+            echo "slug=$SLUG"
+          } >> "$GITHUB_OUTPUT"
+          echo "publishing $SLUG from $TAG"
+
+      - name: Download the day's asset and its meta
+        env:
+          TAG: ${{ steps.media.outputs.tag }}
+          SLUG: ${{ steps.media.outputs.slug }}
+        run: |
+          mkdir -p build
+          gh release download "$TAG" --pattern "$SLUG.mp4" --dir build --clobber
+          gh release download "$TAG" --pattern "$SLUG.json" --dir build --clobber
+          ls -l build
+
+      # One step per platform so the log says which one queued. publish.py exits 1 for a
+      # queued platform, which — while tiktok and instagram are unconnected — is every
+      # run; continue-on-error keeps a known-queued platform from painting the whole
+      # schedule red, and the artifact below is the record of truth. set -o pipefail
+      # first, or `| tee` would report its own exit code instead of publish.py's.
+      - name: Publish to YouTube
+        continue-on-error: true
+        env:
+          SLUG: ${{ steps.media.outputs.slug }}
+        run: |
+          set -o pipefail
+          uv run --with requests scripts/publishers/publish.py --platform youtube \
+            --asset "build/$SLUG.mp4" --meta "build/$SLUG.json" $DRY | tee -a publish-stdout.txt
+
+      - name: Publish to TikTok
+        continue-on-error: true
+        env:
+          SLUG: ${{ steps.media.outputs.slug }}
+        run: |
+          set -o pipefail
+          uv run --with requests scripts/publishers/publish.py --platform tiktok \
+            --asset "build/$SLUG.mp4" --meta "build/$SLUG.json" $DRY | tee -a publish-stdout.txt
+
+      - name: Publish to Instagram
+        continue-on-error: true
+        env:
+          SLUG: ${{ steps.media.outputs.slug }}
+        run: |
+          set -o pipefail
+          uv run --with requests scripts/publishers/publish.py --platform instagram \
+            --asset "build/$SLUG.mp4" --meta "build/$SLUG.json" $DRY | tee -a publish-stdout.txt
+
+      - name: Digest into the run summary
+        # --dry-run composes, prints and returns before it writes or sends anything, so
+        # the shell — not the script — is what appends to the summary. always(), because
+        # the digest is most useful on the mornings something failed.
+        if: always()
+        run: |
+          set -o pipefail
+          uv run scripts/digest.py --dry-run | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Digest by email (opt-in, and still needs a non-gws Gmail path)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.send_digest == true }}
+        run: uv run scripts/digest.py --send
+
+      - name: Surface anything that queued
+        if: always()
+        run: |
+          shopt -s nullglob
+          cards=(marketing/publish-queue/*/*.md)
+          if [ ${#cards[@]} -gt 0 ]; then
+            printf '### Queued for Stephen\n' >> "$GITHUB_STEP_SUMMARY"
+            for c in "${cards[@]}"; do printf -- '- %s\n' "$c" >> "$GITHUB_STEP_SUMMARY"; done
+          fi
+
+      - name: Upload the publish log and any queue cards
+        # A queued platform's paste-ready card lands under marketing/publish-queue/ in
+        # this ephemeral checkout, which is deleted when the job ends. Without this, a
+        # QUEUED line in the log would name a path nobody can ever read. The run id is in
+        # the name so a same-day retry uploads its own bundle instead of colliding.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kdesk-publish-${{ steps.media.outputs.slug }}-${{ github.run_id }}
+          path: |
+            publish-stdout.txt
+            marketing/publish-queue/
+          if-no-files-found: warn
