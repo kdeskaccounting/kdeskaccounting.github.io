@@ -23,9 +23,16 @@ import pytest
 EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
-# Domains KDesk owns. Matched on the address's domain part exactly (or as a parent of it) -
-# never as a substring, or "x@kdeskaccounting.com.attacker.example" would pass.
-OWN_DOMAINS = ("kdeskaccounting.com", "kdesk.com", "kdeskaccounting.gumroad.com")
+# Domains KDesk owns AND uses in this repo. Matched on the address's domain part exactly (or
+# as a parent of it) - never as a substring, or "x@kdeskaccounting.com.attacker.example"
+# would pass.
+#
+# "kdesk.com" was here and is gone: nothing tracked uses it and nobody verified KDesk owns
+# it, so it was an allowlist entry for a domain that could belong to anyone. An entry here
+# is a standing permission to publish addresses at that domain, so the bar is ownership AND
+# use, not resemblance. kdeskconsulting.com is KDesk-own too (see CLAUDE.md "Privacy") but
+# no tracked file carries an address there; add it when one does.
+OWN_DOMAINS = ("kdeskaccounting.com", "kdeskaccounting.gumroad.com")
 
 # RFC 2606 / RFC 6761 reserved names, which can never belong to a real person.
 RESERVED_DOMAINS = ("example.com", "example.net", "example.org")
@@ -153,3 +160,15 @@ def test_every_tracked_svg_is_actually_reached_by_the_scan(tmp_path):
     svgs = [p for p in _tracked_files() if p.suffix.lower() == ".svg"]
     skipped = [p for p in svgs if p.suffix.lower() in SKIP_SUFFIXES]
     assert not skipped, "an .svg must never be skipped as if it were binary"
+
+
+def test_an_unverified_lookalike_domain_is_not_treated_as_our_own():
+    """kdesk.com sat in OWN_DOMAINS on resemblance alone. An entry there is a standing
+    permission to publish every address at that domain, so it needs ownership and use."""
+    at = "@"
+    assert not is_allowed(f"someone{at}kdesk.com")
+    assert is_allowed(f"hello{at}kdeskaccounting.com")
+
+
+def test_own_domains_stays_a_short_verified_list():
+    assert len(OWN_DOMAINS) <= 3, "each entry is a standing permission; justify it"

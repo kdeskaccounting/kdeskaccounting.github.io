@@ -44,13 +44,21 @@ def token() -> str:
     return t
 
 def pull(tok: str):
+    """Read-only pull of every product and sale.
+
+    The token goes in the Authorization header, never a query string: a URL ends up in the
+    server's access log, in any proxy between here and Gumroad, in a requests exception's
+    repr (which is what a queue card or a CI log would print) and in the shell history of
+    anyone who reproduces the call with curl. Gumroad's v2 API accepts both; only one of
+    them is safe. Same pattern as crm_sync.fetch_gumroad.
+    """
     import requests
-    prods = requests.get(f"{B}/products", params={"access_token": tok}, timeout=30).json().get("products", [])
+    headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+    prods = requests.get(f"{B}/products", headers=headers, timeout=30).json().get("products", [])
     sales, key = [], None
     while True:
-        p = {"access_token": tok}
-        if key: p["page_key"] = key
-        r = requests.get(f"{B}/sales", params=p, timeout=30).json()
+        p = {"page_key": key} if key else {}
+        r = requests.get(f"{B}/sales", headers=headers, params=p, timeout=30).json()
         sales += r.get("sales", [])
         key = r.get("next_page_key")
         if not key: break

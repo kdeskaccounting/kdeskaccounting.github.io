@@ -75,12 +75,14 @@ def ensure_group():
         if g["name"] == GROUP_NAME: return g["id"]
     return ml("POST", "/groups", json={"name": GROUP_NAME})["data"]["id"]
 def gumroad_sales(since_days):
+    # The token goes in the Authorization header, never a query string: a URL reaches access
+    # logs, proxies, exception reprs and shell history. Gumroad v2 accepts both forms.
     import requests
+    headers = {"Authorization": f"Bearer {gtoken()}", "Accept": "application/json"}
     sales, key = [], None
     while True:
-        p = {"access_token": gtoken()}
-        if key: p["page_key"] = key
-        r = requests.get(f"{GR}/sales", params=p, timeout=30).json(); sales += r.get("sales", []); key = r.get("next_page_key")
+        p = {"page_key": key} if key else {}
+        r = requests.get(f"{GR}/sales", headers=headers, params=p, timeout=30).json(); sales += r.get("sales", []); key = r.get("next_page_key")
         if not key: break
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=since_days)
     return [s for s in sales if dt.datetime.fromisoformat(s["created_at"].replace("Z", "+00:00")) >= cutoff]
