@@ -13,10 +13,10 @@ Token: ~/kdesk-analytics/google-token.json (scripts/setup_seo_oauth.py; needs yo
 Records: marketing/video/<slug>/youtube.json (walkthrough), short.json (legacy Short), shorts.json (named variants).
 Idempotent — an entry with a recorded `url` is skipped.
 
-Note: videos uploaded via the API from an un-audited Google Cloud project are forced to PRIVATE by YouTube
-regardless of the requested privacyStatus. Until the project passes the YouTube API compliance audit, flip
-them to public in Studio (select all → Visibility) — the upload, thumbnail, metadata and playlist are still
-handled here.
+DO NOT USE THIS TO UPLOAD. Verified 2026-09-14: every video this script uploaded is locked
+private with 0 views and cannot be appealed. Route new uploads through
+scripts/publishers/youtube.py (Upload-Post), which holds audited credentials. The pure
+helpers here (chapters, descriptions, video_body) are still the source of the metadata.
 """
 from __future__ import annotations
 
@@ -69,6 +69,32 @@ TAGS = {"asc842": ["ASC 842", "lease accounting", "Excel template", "journal ent
         "month-end-close": ["month end close", "close checklist", "reconciliation", "Excel template", "free"],
         "rsu-planner": ["RSU", "RSU taxes", "equity compensation", "supplemental withholding", "estimated taxes", "safe harbor", "Excel"],
         "asc606-kit": ["ASC 606", "ASC 340-40", "sales commissions", "technical accounting memo", "audit", "controller", "SaaS accounting"]}
+
+LOCK_FINDING = (
+    "FINDING (verified 2026-09-14 against support.google.com/youtube/answer/7300965 and the\n"
+    "2026-09-07 snapshot in marketing/seo-tracking/youtube-snapshots.jsonl): all 20 videos this\n"
+    "script uploaded via the YouTube Data API are locked PRIVATE with 0 views. Google: an upload\n"
+    "locked private by an unverified API project cannot be appealed and must be re-uploaded.\n"
+    "Passing the compliance audit only unlocks FUTURE uploads. The 10 videos uploaded through\n"
+    "Chrome on 2026-09-02 are public and getting views. The 'flip in Studio' step that used to be\n"
+    "in CLAUDE.md never worked.")
+
+REPLACEMENT_PATH = (
+    "Use Upload-Post instead — scripts/publishers/youtube.py holds audited YouTube credentials:\n"
+    "  python3 scripts/publishers/publish.py --platform youtube --asset <mp4> --meta <meta.json>\n"
+    "To re-publish the 20 locked videos with their original titles and descriptions:\n"
+    "  python3 scripts/video/reupload_locked.py --dry-run     # list what it would do\n"
+    "  python3 scripts/video/reupload_locked.py")
+
+
+def refuse_reason(acknowledged: bool) -> str | None:
+    """None when the caller passed --i-understand-locked-private; the refusal text otherwise."""
+    if acknowledged:
+        return None
+    return (f"{LOCK_FINDING}\n\n{REPLACEMENT_PATH}\n\n"
+            "If you have a reason to upload through the Data API anyway (for example the audit has\n"
+            "passed and you verified a test upload is public), re-run with "
+            "--i-understand-locked-private.")
 
 
 # ---------- pure helpers (tested in tests/test_youtube_publish.py) ----------
@@ -161,13 +187,17 @@ def short_job(slug: str, variant: str | None, privacy: str):
                 thumb=None, playlist=None, rec_path=rec_path, rec=rec, store=store, key=key, url_fmt="https://youtube.com/shorts/{}")
 
 
-def run(job: dict, dry_run: bool, yt=None) -> int:
+def run(job: dict, dry_run: bool, yt=None, *, acknowledged: bool = False) -> int:
     if not needs_upload(job["rec"]):
         print(f"already published: {job['rec']['url']}"); return 0
     print(f"{job['mp4'].name}: {job['body']['snippet']['title']}  [{job['body']['status']['privacyStatus']}]")
     if dry_run:
         print("  (dry-run) exists:", job["mp4"].exists(), "| thumb:", job["thumb"], "| playlist:", job["playlist"])
         print("  description:\n   ", job["body"]["snippet"]["description"].replace("\n", "\n    ")[:600]); return 0
+    reason = refuse_reason(acknowledged)
+    if reason is not None:
+        print(reason, file=sys.stderr)
+        return 2
     if not job["mp4"].exists(): raise SystemExit(f"missing {job['mp4']} — render it first")
     yt = yt or _service()
     try:
@@ -196,10 +226,13 @@ def main() -> int:
     ap.add_argument("--kind", choices=["walkthrough", "short"], required=True); ap.add_argument("--slug", required=True)
     ap.add_argument("--variant", default=None, help="named Short under shorts.json / scenes.yaml `shorts:`")
     ap.add_argument("--privacy", choices=["private", "public", "unlisted"], default="private")
-    ap.add_argument("--dry-run", action="store_true"); a = ap.parse_args()
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--i-understand-locked-private", dest="acknowledged", action="store_true",
+                    help="acknowledge that Data-API uploads land locked-private and upload anyway")
+    a = ap.parse_args()
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     job = walkthrough_job(a.slug, a.privacy) if a.kind == "walkthrough" else short_job(a.slug, a.variant, a.privacy)
-    return run(job, a.dry_run)
+    return run(job, a.dry_run, acknowledged=a.acknowledged)
 
 
 if __name__ == "__main__":
