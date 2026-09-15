@@ -234,6 +234,74 @@ def test_the_digest_is_the_marker_shape_used_in_the_tracked_draft():
     assert sr.marker(ONE) == f"<redacted:{sr.digest(ONE)}>"
 
 
+# --------------------------------------------------------------- scrub: the one choke point
+
+def test_scrub_elides_long_base64_runs_so_a_leaked_mime_body_cannot_be_decoded():
+    """A raw MIME body (what rfc822() produces) never contains '@', so ADDRESS_RE alone lets
+    it straight through undecoded but perfectly decodable. scrub() must catch it too."""
+    leaked = sr.rfc822(ONE, "Subject", "Body line", sr.SENDER)
+    assert len(leaked) >= 40
+    out = sr.scrub(f"gws failed on request with raw={leaked}")
+    assert "<b64 elided>" in out
+    assert leaked not in out
+    assert ONE not in out
+    # Not merely truncated - no run long enough to still be a decodable fragment remains.
+    import re as _re
+    assert not _re.search(r"[A-Za-z0-9_-]{40,}", out)
+
+
+def test_scrub_composes_address_masking_with_base64_elision():
+    """Both transformations must fire on the same string without one hiding the other."""
+    leaked = sr.rfc822(ONE, "Subject", "Body", sr.SENDER)
+    out = sr.scrub(f"contact {ONE} about the failed request raw={leaked}")
+    assert ONE not in out
+    assert sr.marker(ONE) in out
+    assert leaked not in out
+    assert "<b64 elided>" in out
+
+
+def test_gws_failure_message_keeps_only_the_first_line_of_stderr(monkeypatch):
+    """gws stderr on a failure can echo the request it choked on - for a send, that request
+    is the --json body containing the base64url MIME envelope, address and all. Only the
+    first line of stderr may ever leave _gws()."""
+    leaked = sr.rfc822(ONE, "Subject", "Body", sr.SENDER)
+
+    class FakeProc:
+        returncode = 1
+        stdout = ""
+        stderr = f"quota exceeded\nfull request echoed back: --json {{\"raw\": \"{leaked}\"}}\n"
+
+    monkeypatch.setattr(sr.subprocess, "run", lambda *a, **k: FakeProc())
+    with pytest.raises(RuntimeError) as e:
+        sr._gws(["gmail", "users", "messages", "send"], {"raw": "x"})
+    message = str(e.value)
+    assert "quota exceeded" in message
+    assert leaked not in message
+    assert ONE not in message
+
+
+def test_a_gws_send_failure_queues_a_card_with_no_decodable_address(monkeypatch, tmp_path):
+    """Belt and suspenders: even if a leaked base64 fragment reached send_all() some other
+    way, the card it writes must still come out clean - that's scrub()'s job, not _gws()'s
+    alone."""
+    leaked = sr.rfc822(ONE, "Subject", "Body", sr.SENDER)
+
+    def boom(argv, body=None):
+        raise RuntimeError(f"gws send failed: raw={leaked}")
+
+    monkeypatch.setattr(sr, "_gws", boom)
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    sent, failed = sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path, limit=1)
+    assert (sent, failed) == (0, 1)
+    cards = list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    assert len(cards) == 1
+    text = cards[0].read_text(encoding="utf-8")
+    assert leaked not in text
+    assert ONE not in text
+    import re as _re
+    assert not _re.search(r"[A-Za-z0-9_-]{40,}", text)
+
+
 # ------------------------------------------------------------------------------------ the gate
 
 def test_veto_ok_is_false_before_the_window_closes():
@@ -271,6 +339,15 @@ def test_veto_ok_refuses_when_the_entry_has_no_window():
     assert "no veto_window_close" in why
 
 
+def test_veto_ok_refuses_a_timezone_naive_now_instead_of_raising():
+    """now.tzinfo is None but the window has an offset - comparing them directly raises
+    TypeError. The gate must refuse with a reason, not crash the whole run."""
+    naive_now = dt.datetime(2026, 9, 17, 8, 0)          # no tzinfo
+    ok, why = sr.veto_ok("2026-09-16T09:00:00-0700", naive_now)
+    assert ok is False
+    assert "naive" in why or "timezone" in why
+
+
 def entry(**over) -> dict:
     row = {"id": 69, "ts": "t", "tier": 2, "status": "pending_veto", "action": "T1 loosening",
            "reasoning": "r", "files": [], "veto_window_close": "2026-09-16T12:00:00-0700",
@@ -303,13 +380,18 @@ def test_veto_gate_allows_a_tier_2_entry_whose_window_has_closed():
     assert "closed" in why
 
 
-def test_the_live_ledger_entry_69_is_the_t2_window_this_script_gates_on():
-    """The real gate, read from the tracked ledger - not a fixture."""
-    row = ledger.find(sr.VETO_ENTRY_DEFAULT, sr.LEDGER_PATH)
-    assert row is not None, "entry 69 must exist; it is the T1-loosening veto"
-    assert int(row["tier"]) == 2
-    assert row["veto_window_close"] == "2026-09-16T12:00:00-0700"
-    assert sr.veto_gate(row, BEFORE)[0] is False, "today (2026-09-14) the send must refuse"
+def test_veto_gate_matches_entry_69s_shape_using_a_fixture_not_the_live_ledger():
+    """entry 69's known tier and window, exercised through the `entry()` fixture.
+
+    A previous version of this test read `ledger.find(69, sr.LEDGER_PATH)` from the real,
+    live decisions.jsonl and asserted `veto_gate(row, AFTER)[0] is True`. That goes red the
+    moment Stephen actually vetoes #69 (status becomes "vetoed") - a correct refusal would
+    fail this test. The property this script depends on - a T2 entry whose window has
+    closed authorises the send - belongs in a fixture, never in an assertion about the live
+    ledger's current, mutable status.
+    """
+    row = entry(tier=2, veto_window_close="2026-09-16T12:00:00-0700", status="pending_veto")
+    assert sr.veto_gate(row, BEFORE)[0] is False, "before the window closes, refuse"
     assert sr.veto_gate(row, AFTER)[0] is True
 
 
@@ -376,7 +458,8 @@ def test_limit_stops_after_n_recipients(capsys, monkeypatch, tmp_path):
 
 # ---------------------------------------------------------------------------------- live send
 
-def test_live_send_waits_two_seconds_between_recipients(monkeypatch, tmp_path):
+def test_live_send_waits_between_recipients_but_not_after_the_last_one(monkeypatch, tmp_path):
+    """There is nothing left to pace against once the last recipient is done."""
     calls, sleeps = [], []
     monkeypatch.setattr(sr, "_gws", lambda argv, body=None: calls.append(body) or {"id": "m1"})
     monkeypatch.setattr(sr, "_sleep", sleeps.append)
@@ -385,7 +468,7 @@ def test_live_send_waits_two_seconds_between_recipients(monkeypatch, tmp_path):
     sent, failed = sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path)
     assert (sent, failed) == (2, 0)
     assert len(calls) == 2
-    assert sleeps == [sr.GAP_SECONDS, sr.GAP_SECONDS]
+    assert sleeps == [sr.GAP_SECONDS], "one gap between the two recipients, none trailing"
     assert len(logged) == 2                                  # one ledger line per send
 
 
@@ -414,6 +497,93 @@ def test_the_ledger_line_carries_the_digest_and_never_the_address(monkeypatch, t
     assert ONE not in written and "northstar" not in written
     assert sr.marker(ONE) in rows[0]["action"]
     assert rows[0]["tier"] == 1 and rows[0]["status"] == "executed"
+
+
+def test_the_ledger_line_says_recipient_not_mailerlite_subscriber(monkeypatch, tmp_path):
+    monkeypatch.setattr(sr, "_gws", lambda argv, body=None: {"id": "m1"})
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    path = tmp_path / "decisions.jsonl"
+    monkeypatch.setattr(sr, "LEDGER_PATH", path)
+    sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path, limit=1)
+    rows = ledger.entries(path)
+    assert "MailerLite" not in rows[0]["action"]
+    assert "recipient" in rows[0]["action"]
+
+
+def test_a_ledger_append_failure_after_a_successful_send_queues_a_loud_card_and_keeps_going(
+        monkeypatch, tmp_path, capsys):
+    """A lock/permission error on ledger.append must not swallow that the email already went
+    out, and must not silently let a resumed run send it again."""
+    calls = []
+    monkeypatch.setattr(sr, "_gws", lambda argv, body=None: calls.append(body) or {"id": "m1"})
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    monkeypatch.setattr(sr.ledger, "append",
+                        lambda **kw: (_ for _ in ()).throw(OSError("ledger is locked")))
+    sent, failed = sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path)
+    assert sent == 2, "both emails genuinely went out"
+    assert failed == 2, "both need manual attention: sent but not recorded"
+    assert len(calls) == 2, "one bad ledger write must not stop the rest of the campaign"
+    cards = list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*UNLOGGED*.md"))
+    assert len(cards) == 2
+    text = cards[0].read_text(encoding="utf-8")
+    assert "SENT but NOT LOGGED" in text
+    assert ONE not in text and TWO not in text and "northstar" not in text
+    err = capsys.readouterr().err
+    assert "SENT but NOT LOGGED" in err
+
+
+def test_three_consecutive_gws_failures_stop_the_run_with_one_systemic_card(
+        monkeypatch, tmp_path):
+    """Three broken sends in a row means gws is down, not that three (or four, or fourteen)
+    recipients are broken - one card, not one per person."""
+    fields = {"product_name": "x", "page_url": "u", "paid_url": "p", "price": "$1",
+             "free_cap": "c"}
+    people = [sr.Recipient(subscriber_id=str(i), email=f"r{i}@example.net", product="x",
+                           merge_fields=dict(fields)) for i in range(4)]
+    calls = []
+
+    def boom(argv, body=None):
+        calls.append(1)
+        raise RuntimeError("quota exceeded")
+
+    monkeypatch.setattr(sr, "_gws", boom)
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    sent, failed = sr.send_all(MD, people, dry_run=False, repo=tmp_path)
+    assert sent == 0
+    assert len(calls) == 3, "must stop calling gws after the third consecutive failure"
+    assert failed == 4, "all four never got the email"
+    manual_dir = tmp_path / "marketing" / "publish-queue" / "manual"
+    cards = list(manual_dir.glob("*.md"))
+    assert len(cards) == 1, "one consolidated card, not one per recipient"
+    text = cards[0].read_text(encoding="utf-8")
+    assert "3 consecutive" in text
+    assert "quota exceeded" in text
+    for person in people:
+        assert person.email not in text
+
+
+def test_fewer_than_three_consecutive_gws_failures_still_queue_individually(
+        monkeypatch, tmp_path):
+    """An isolated blip that self-resolves is not a systemic outage: no early stop, and each
+    failure still gets its own card."""
+    calls = []
+
+    def flaky(argv, body=None):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("temporary blip")
+        return {"id": "m"}
+
+    monkeypatch.setattr(sr, "_gws", flaky)
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    monkeypatch.setattr(sr.ledger, "append", lambda **kw: {"id": 1})
+    sent, failed = sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path)
+    assert (sent, failed) == (1, 1)
+    assert len(calls) == 2, "the second recipient must still be attempted"
+    manual_dir = tmp_path / "marketing" / "publish-queue" / "manual"
+    cards = list(manual_dir.glob("*.md"))
+    assert len(cards) == 1
+    assert "SYSTEMIC" not in cards[0].name
 
 
 def test_live_stdout_never_prints_an_address(capsys, monkeypatch, tmp_path):
@@ -477,10 +647,21 @@ def test_the_guard_matches_this_campaigns_sent_line_and_not_prose_about_it(
     assert sr.already_sent() == {sr.marker(ONE)}
 
 
-def test_the_live_ledger_records_no_re_engagement_send_yet(monkeypatch):
-    """Nobody on this list has been emailed: the send is still behind the veto."""
-    monkeypatch.setattr(sr, "LEDGER_PATH", ledger.DEFAULT_PATH)
-    assert sr.already_sent() == set()
+def test_already_sent_reads_the_path_it_is_given_not_the_live_ledger(tmp_path):
+    """A fixture ledger, passed explicitly - never ~/…/decisions.jsonl.
+
+    A previous version of this test pointed sr.LEDGER_PATH at the real, live
+    decisions.jsonl and asserted already_sent() == set(). That goes red the moment this
+    campaign's first real send is logged - a correctly-working duplicate guard would fail
+    this test. The property worth locking in - an empty ledger means nobody, a matching row
+    means somebody - belongs entirely in fixture space.
+    """
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+    assert sr.already_sent(empty) == set()
+    populated = tmp_path / "decisions.jsonl"
+    populated.write_text(sent_row(ONE), encoding="utf-8")
+    assert sr.already_sent(populated) == {sr.marker(ONE)}
 
 
 # --------------------------------------------------------------------------- queues, not fails
@@ -512,6 +693,17 @@ def test_the_queue_card_carries_no_address(monkeypatch, tmp_path):
         text = card.read_text(encoding="utf-8")
         assert ONE not in text and TWO not in text and "northstar" not in text
         assert "@" not in text.replace(sr.SENDER, ""), "only KDesk's own address may appear"
+
+
+def test_the_queue_card_says_recipient_not_mailerlite_subscriber(monkeypatch, tmp_path):
+    monkeypatch.setattr(sr, "_gws", lambda argv, body=None: {"id": "m1"})
+    monkeypatch.setattr(sr, "_sleep", lambda s: None)
+    monkeypatch.setattr(sr.ledger, "append", lambda **kw: {"id": 1})
+    monkeypatch.setattr(sr, "merge_fields_for", lambda r: {})
+    sr.send_all(MD, recipients(tmp_path), dry_run=False, repo=tmp_path, limit=1)
+    cards = list((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    text = cards[0].read_text(encoding="utf-8")
+    assert "MailerLite" not in text
 
 
 # ---------------------------------------------------------------------------------------- main
