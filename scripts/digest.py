@@ -13,10 +13,11 @@ same day replaces its own "## KDesk digest" section rather than stacking another
 
 Privacy: this repo is PUBLIC and `--out "$GITHUB_STEP_SUMMARY"` can land the digest in a public
 CI log. compose() therefore never returns an email address — not even a KDesk-own or Stephen-own
-one — every free-text field is passed through `browser.session.redact_secrets` (known secrets:
-tokens, bearer/apikey headers) and then through an address-pattern scrub that swaps anything
-shaped like an email for the `<redacted:XXXXXXXX>` marker (scripts/privacy.email_hash), the same
-convention the rest of the repo uses for pseudonymising addresses.
+one — and never a private handle: every free-text field goes through `gws.scrub` (scripts/gws.py),
+which masks known secrets, elides base64-shaped runs of 40+ characters (a MIME body, an opaque
+token, or a Google spreadsheet id — the private CRM sheet's handle is exactly 44 of them) and
+swaps anything shaped like an address for the `<redacted:XXXXXXXX>` marker, the same convention
+the rest of the repo uses for pseudonymising addresses.
 """
 from __future__ import annotations
 
@@ -27,16 +28,14 @@ import datetime as dt
 import json
 import pathlib
 import re
-import subprocess
 import sys
 from email.message import EmailMessage
 from typing import Callable
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
+import gws  # noqa: E402  (the one gws seam + the one scrubber; see scripts/gws.py)
 import ledger  # noqa: E402
-import privacy  # noqa: E402
-from browser import session  # noqa: E402
 
 VAULT_ROOT = pathlib.Path.home() / "CommandCenter"
 VAULT_HEADING = "## KDesk digest"
@@ -63,21 +62,23 @@ SNAPSHOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("mailerlite-sync.jsonl", ()),
 )
 
-# Same shape as tests/test_no_third_party_emails.py's EMAIL pattern — kept independent (a
-# production module must not import from tests/) but deliberately identical.
-_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+GWS_TIMEOUT = 120
 
 
 def _scrub(text: str) -> str:
-    """Mask known secrets, then swap any email-shaped address for a `<redacted:XXXXXXXX>`.
+    """The repo-wide scrubber, with no address kept.
 
-    No exception for KDesk's own or Stephen's own address: the digest can land in a public
-    CI step summary, and this is the one seam every section funnels through before it
-    becomes "the digest" (compose() below returns the result), so it is the one place that
-    has to hold the line.
+    gws.scrub() masks known secrets, elides base64-shaped runs of 40+ characters and swaps
+    every remaining address for a `<redacted:XXXXXXXX>` marker. `keep` is deliberately
+    empty: no exception for KDesk's own or Stephen's own address, because the digest can
+    land in a public CI step summary, and this is the one seam every section funnels
+    through before it becomes "the digest" (compose() below returns the result).
+
+    The base64 rule is load-bearing here for a second reason: a Google spreadsheet id is a
+    44-character run of exactly those characters, so the private CRM sheet's handle is
+    elided along with anything else that long and opaque.
     """
-    masked = session.redact_secrets(text)
-    return _EMAIL.sub(lambda m: f"<redacted:{privacy.email_hash(m.group(0))[:8]}>", masked)
+    return gws.scrub(text)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -241,13 +242,13 @@ def append_to_vault(markdown: str, now: dt.datetime, *, root: pathlib.Path | Non
 
 
 def _gws(argv: list[str], body: dict | None = None) -> dict:
-    cmd = ["gws", *argv]
-    if body is not None:
-        cmd += ["--json", json.dumps(body)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(f"gws send failed: {proc.stderr[:400]}")
-    return json.loads(proc.stdout) if proc.stdout.strip() else {}
+    """The one send seam. Tests monkeypatch this; nothing else shells out.
+
+    scripts/gws.py keeps only the first line of stderr, so a gws failure that echoes the
+    --json body it choked on (here: the base64url MIME envelope of the digest) cannot carry
+    that echo into a traceback the workflow log prints.
+    """
+    return gws.run_json(argv, body, timeout=GWS_TIMEOUT)
 
 
 def send(markdown: str, now: dt.datetime) -> dict:

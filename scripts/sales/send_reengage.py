@@ -41,18 +41,17 @@ import datetime as dt
 import json
 import pathlib
 import re
-import shutil
 import stat
-import subprocess
 import sys
 import time
 from email.message import EmailMessage
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
+import gws  # noqa: E402  (the one gws seam + the one scrubber; see scripts/gws.py)
 import ledger  # noqa: E402
 import privacy  # noqa: E402  (the salted digest; never an address in a tracked file)
-from browser import session  # noqa: E402  (redact_secrets + the queue-card writers)
+from browser import session  # noqa: E402  (the queue-card writers)
 
 LEDGER_PATH = ledger.DEFAULT_PATH
 SOURCE = REPO / "marketing" / "email-sequences" / "re-engage-2026-09.md"
@@ -66,12 +65,9 @@ VETO_ENTRY_DEFAULT = 69
 VETO_TIER = 2
 MERGE_FIELDS = ("product_name", "page_url", "paid_url", "price", "free_cap")
 MERGE_RE = re.compile(r"\{\$([a-z_]+)\}")
-ADDRESS_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
-# A base64/base64url MIME body (what rfc822() produces) is one long run of these characters
-# with no spaces or punctuation. gws stderr can echo the --json payload it was given, which
-# is exactly that: a request containing the encoded message, address and all. This catches
-# it even though it never matches ADDRESS_RE (base64 has no '@').
-B64_RE = re.compile(r"[A-Za-z0-9_-]{40,}")
+# The address and base64 patterns, and the rule that a MIME body must be elided before the
+# address swap can be trusted, all live in scripts/gws.py now - three scripts needed them and
+# only this one had got them right.
 CONSECUTIVE_FAILURE_LIMIT = 3
 # The exact opening of every ledger line this script writes, and the pattern that reads them
 # back. Matching a fixed sentence rather than the word "re-engagement" keeps prose in some
@@ -79,7 +75,7 @@ CONSECUTIVE_FAILURE_LIMIT = 3
 CAMPAIGN = "2026-09 re-engagement"
 SENT_PREFIX = f"Sent the {CAMPAIGN} email to "
 SENT_RE = re.compile(re.escape(SENT_PREFIX) + r"(<redacted:[0-9a-f]{8}>)")
-GWS_BIN = shutil.which("gws") or "/opt/homebrew/bin/gws"
+GWS_TIMEOUT = 120
 
 
 class RecipientsError(RuntimeError):
@@ -116,17 +112,11 @@ def scrub(text: object) -> str:
     script did not write (a `gws` stderr tail can echo the request it failed on). Applying
     it to strings that hold no address costs nothing; forgetting it once publishes a
     customer's address to a public repo forever.
-    """
-    def swap(match: re.Match) -> str:
-        address = match.group(0)
-        return address if address.lower() == SENDER else marker(address)
 
-    masked = session.redact_secrets(text)
-    # Elide long base64-shaped runs BEFORE the address swap: a raw MIME body never contains
-    # '@' (base64url's alphabet doesn't have one), so ADDRESS_RE alone would let it straight
-    # through, undecoded but perfectly decodable by anyone who copies it out of the card.
-    masked = B64_RE.sub("<b64 elided>", masked)
-    return ADDRESS_RE.sub(swap, masked)
+    `keep=(SENDER,)` is the one address that survives: a card asks a human to check which
+    account failed to send, and KDesk's own published address is meant to be findable.
+    """
+    return gws.scrub(text, keep=(SENDER,))
 
 
 # ------------------------------------------------------------------------------- the copy only
@@ -283,21 +273,14 @@ def veto_gate(entry: dict | None, now: dt.datetime,
 def _gws(argv: list[str], body: dict | None = None) -> dict:
     """The one send seam. Tests monkeypatch this; nothing else shells out.
 
-    Only the FIRST LINE of stderr ever leaves this function. gws stderr on a failure can
-    echo the request it choked on - including the --json body, which for a send is the
-    base64url MIME envelope with the recipient's address inside it. A multi-line echo of
-    "here is the request that failed" must never become "here is the request that failed,
-    address and all" in a card this repo tracks.
+    Only the FIRST LINE of stderr ever leaves it - that rule now lives in scripts/gws.py,
+    which all three gws callers share. gws stderr on a failure can echo the request it
+    choked on, including the --json body, which for a send is the base64url MIME envelope
+    with the recipient's address inside it. A multi-line echo of "here is the request that
+    failed" must never become "here is the request that failed, address and all" in a card
+    this repo tracks.
     """
-    cmd = [GWS_BIN, *argv]
-    if body is not None:
-        cmd += ["--json", json.dumps(body)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    if proc.returncode != 0:
-        lines = (proc.stderr or "").strip().splitlines()
-        reason = lines[0] if lines else "(gws produced no stderr)"
-        raise RuntimeError(f"gws {' '.join(argv[:4])} failed: {reason}")
-    return json.loads(proc.stdout) if proc.stdout.strip() else {}
+    return gws.run_json(argv, body, timeout=GWS_TIMEOUT)
 
 
 def _sleep(seconds: float) -> None:

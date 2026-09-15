@@ -29,16 +29,14 @@ import datetime as dt
 import json
 import os
 import pathlib
-import shutil
-import subprocess
 import sys
 from typing import Iterable
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts"))
+import gws  # noqa: E402  (the one gws seam + the one scrubber; see scripts/gws.py)
 import ledger  # noqa: E402
 import privacy  # noqa: E402  (the tracked sync log stores digests, never addresses)
-from browser import session  # noqa: E402  (redact_secrets, so no token reaches a card)
 from pull_gumroad_snapshot import is_business  # noqa: E402  (single definition of the rule)
 
 SHEET_TITLE = "KDesk CRM"
@@ -57,7 +55,8 @@ SOURCE_RANK = {"gumroad-paid": 3, "gumroad-free": 2, "calculator": 2, "mailerlit
 PAID_CENTS = 1                                        # any non-zero price is a purchase
 MAX_PAGES = 200                                       # paging guard on both public APIs
 ROW_CAP = 2000                                        # how far read_people looks down the tab
-GWS_BIN = shutil.which("gws") or "/opt/homebrew/bin/gws"
+GWS_TIMEOUT = 180                                     # a 2000-row read is not a quick call
+GWS_ACCOUNT = "santiagokdesk@gmail.com"               # whose credentials `gws` carries
 
 
 @dataclasses.dataclass
@@ -240,14 +239,15 @@ def diff(existing_rows: list[list[str]], wanted: dict[str, Person]):
 
 
 def _gws(argv: list[str], body: dict | None = None) -> dict:
-    """The one subprocess seam. Tests monkeypatch this; nothing else shells out."""
-    cmd = [GWS_BIN, *argv]
-    if body is not None:
-        cmd += ["--json", json.dumps(body)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-    if proc.returncode != 0:
-        raise RuntimeError(f"gws {' '.join(argv[:4])} failed: {proc.stderr[:400]}")
-    return json.loads(proc.stdout) if proc.stdout.strip() else {}
+    """The one subprocess seam. Tests monkeypatch this; nothing else shells out.
+
+    The implementation lives in scripts/gws.py, which keeps only the FIRST LINE of stderr in
+    any error it raises. That is not tidiness: gws echoes the request it choked on, and for
+    this script that request is the --json body of a Sheets upsert - People rows, i.e.
+    customer addresses. This copy used to carry `proc.stderr[:400]` into a queue card that a
+    PUBLIC repo tracks.
+    """
+    return gws.run_json(argv, body, timeout=GWS_TIMEOUT)
 
 
 def _create_body() -> dict:
@@ -356,15 +356,21 @@ def sync(sheet_id: str, wanted: dict[str, Person], existing: list[list[str]], dr
 
 
 def card_body(detail: str, now: dt.datetime | None = None) -> str:
-    """The card text. Carries no addresses - this card lives in the public repo. The detail
-    is machine text (a gws stderr tail) so it goes through redact_secrets first."""
+    """The card text. Carries no addresses - this card lives in the public repo.
+
+    `detail` is machine text: a gws stderr line, a KeyError repr, a socket error. Any of
+    those can quote the request that produced it, so it goes through gws.scrub(), which
+    masks credentials, elides base64-shaped runs (a MIME body or a spreadsheet id) and
+    swaps every remaining address for its salted marker. Only KDesk's own account is kept,
+    and only because step 1 below asks a human to check that it is still signed in.
+    """
     now = now or dt.datetime.now().astimezone()
     return (
         f"# CRM sync — needs one manual step\n\n"
         f"Queued {now.strftime('%Y-%m-%d %H:%M %z')} by scripts/sales/crm_sync.py\n\n"
-        f"## Why it is here\n\n{session.redact_secrets(detail)}\n\n"
+        f"## Why it is here\n\n{gws.scrub(detail)}\n\n"
         f"## The remaining manual step\n\n"
-        f"1. Confirm the `gws` CLI is still signed in as santiagokdesk@gmail.com:\n"
+        f"1. Confirm the `gws` CLI is still signed in as {GWS_ACCOUNT}:\n"
         f"   `gws gmail users getProfile --params '{{\"userId\":\"me\"}}'`\n"
         f"2. If that fails, or the error above is a scope error, re-consent once:\n"
         f"   `gws auth login -s gmail,drive,calendar,docs,sheets,slides`\n"

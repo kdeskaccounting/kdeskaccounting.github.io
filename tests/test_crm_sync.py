@@ -7,6 +7,8 @@ import types
 
 import pytest
 
+import gws as gws_module
+import privacy
 from sales import crm_sync as cs
 
 COL = {name: i for i, name in enumerate(cs.COLUMNS)}
@@ -531,3 +533,53 @@ def test_an_empty_sheet_id_file_counts_as_absent(tmp_path, monkeypatch):
     assert cs.recorded_sheet_id() is None
     assert cs.ensure_sheet(dry_run=True) == "(would create a new spreadsheet)"
     assert cs.main(["--dry-run"]) == 0
+
+
+# --- the queue card must never carry a customer address ---------------------------------
+#
+# gws echoes the request it choked on. For crm_sync that request is the --json body of a
+# Sheets upsert: People rows, which are customer addresses. The private _gws copy this
+# module used to own pasted `proc.stderr[:400]` into a card tracked in a PUBLIC repo.
+
+def test_a_gws_failure_echoing_the_request_body_leaves_no_address_in_the_card(tmp_path,
+                                                                             monkeypatch):
+    """End to end over both halves of the fix: gws.run() keeps one stderr line, and
+    card_body() scrubs whatever that line still carries."""
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    at = "@"
+    address = f"buyer{at}northstar.example"
+
+    class FakeProc:
+        returncode = 1
+        stdout = ""
+        stderr = ("invalid_grant: the OAuth token was revoked\n"
+                  'request that failed: --json {"values": [["' + address + '", "2026-09-01"]]}\n')
+
+    monkeypatch.setattr(cs.gws.subprocess, "run", lambda *a, **k: FakeProc())
+    with pytest.raises(RuntimeError) as exc:
+        cs._gws(["sheets", "spreadsheets", "values", "append"], {"values": [[address]]})
+    assert address not in str(exc.value)
+
+    card = cs.queue_card(f"`crm_sync.py` could not finish: RuntimeError: {exc.value}",
+                         repo=tmp_path)
+    text = card.read_text(encoding="utf-8")
+    assert "invalid_grant" in text, "the reason survives; only the echo is dropped"
+    assert address not in text and "northstar" not in text.lower()
+    assert "@" not in text.replace(cs.GWS_ACCOUNT, ""), "only KDesk's own address may appear"
+
+
+def test_card_body_scrubs_an_address_that_reached_the_detail_some_other_way(tmp_path,
+                                                                           monkeypatch):
+    """Belt and suspenders: even a detail that never came from _gws is scrubbed."""
+    monkeypatch.setattr(privacy, "SALT_FILE", tmp_path / "salt.txt")
+    at = "@"
+    address = f"someone{at}acme.example"
+    body = cs.card_body(f"KeyError on row for {address}")
+    assert address not in body
+    assert f"<redacted:{privacy.email_hash(address)[:8]}>" in body
+
+
+def test_crm_sync_has_no_private_gws_implementation_left():
+    """The seam keeps its name (tests patch it); the implementation lives in scripts/gws.py."""
+    assert cs.gws is gws_module
+    assert "subprocess" not in dir(cs), "crm_sync must not shell out on its own any more"

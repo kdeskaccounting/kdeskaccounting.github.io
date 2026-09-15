@@ -271,7 +271,8 @@ def test_gws_failure_message_keeps_only_the_first_line_of_stderr(monkeypatch):
         stdout = ""
         stderr = f"quota exceeded\nfull request echoed back: --json {{\"raw\": \"{leaked}\"}}\n"
 
-    monkeypatch.setattr(sr.subprocess, "run", lambda *a, **k: FakeProc())
+    # The seam moved to scripts/gws.py; the rule it enforces is the same one.
+    monkeypatch.setattr(sr.gws.subprocess, "run", lambda *a, **k: FakeProc())
     with pytest.raises(RuntimeError) as e:
         sr._gws(["gmail", "users", "messages", "send"], {"raw": "x"})
     message = str(e.value)
@@ -775,3 +776,20 @@ def test_veto_ok_uses_the_shared_ledger_parse_ts_not_a_private_copy():
     """_parse_iso used to be duplicated here; it now lives once in ledger.py."""
     assert sr.ledger is ledger
     assert not hasattr(sr, "_parse_iso"), "the old private copy must be gone, not just unused"
+
+
+def test_send_reengage_uses_the_one_shared_gws_seam_and_scrubber():
+    """_gws and scrub were duplicated in three scripts and only this one had the
+    first-stderr-line rule. The implementation lives in scripts/gws.py now."""
+    import gws as gws_module
+    assert sr.gws is gws_module
+    assert "subprocess" not in dir(sr), "send_reengage must not shell out on its own any more"
+
+
+def test_scrub_still_keeps_kdesks_own_sender_and_nothing_else(tmp_path, monkeypatch):
+    """The shared scrubber is strict by default; this caller names the one address a human
+    needs to see in a card (which account failed to send)."""
+    monkeypatch.setattr(sr.privacy, "SALT_FILE", tmp_path / "salt.txt")
+    out = sr.scrub(f"send from {sr.SENDER} to {ONE} failed")
+    assert sr.SENDER in out
+    assert ONE not in out and sr.marker(ONE) in out

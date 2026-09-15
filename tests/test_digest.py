@@ -3,6 +3,7 @@ import datetime as dt
 import json
 
 import digest
+import gws as gws_module
 import ledger
 
 TZ = dt.timezone(dt.timedelta(hours=-7))
@@ -147,7 +148,7 @@ def test_compose_says_so_plainly_when_nothing_happened():
 
 
 def test_compose_redacts_any_email_address_even_a_recognized_kdesk_one(tmp_path, monkeypatch):
-    monkeypatch.setattr(digest.privacy, "SALT_FILE", tmp_path / "salt.txt")
+    monkeypatch.setattr(gws_module.privacy, "SALT_FILE", tmp_path / "salt.txt")
     hot = [{"id": 90, "ts": "2026-09-14T06:10:00-0700", "tier": 1, "status": "executed",
             "action": "Emailed santiagokdesk@gmail.com and third.party@example.com "
                       "about the launch",
@@ -161,7 +162,7 @@ def test_compose_redacts_any_email_address_even_a_recognized_kdesk_one(tmp_path,
 
 
 def test_compose_redacts_known_secrets_through_the_session_seam(monkeypatch):
-    monkeypatch.setattr(digest.session, "redact_secrets",
+    monkeypatch.setattr(gws_module.session, "redact_secrets",
                         lambda text, **k: str(text).replace("shh", "***"))
     hot = [{"id": 91, "ts": "2026-09-14T06:10:00-0700", "tier": 1, "status": "executed",
             "action": "token=shh in the log", "reasoning": "r", "files": [],
@@ -176,8 +177,8 @@ def test_compose_is_pure_taking_an_identity_redact_touches_no_filesystem(monkeyp
     must be silently dropped, and nothing must touch the filesystem to get there."""
     def _boom(*a, **k):
         raise AssertionError("compose() touched the filesystem despite an identity redact")
-    monkeypatch.setattr(digest.privacy, "email_hash", _boom)
-    monkeypatch.setattr(digest.session, "redact_secrets", _boom)
+    monkeypatch.setattr(gws_module.privacy, "email_hash", _boom)
+    monkeypatch.setattr(gws_module.session, "redact_secrets", _boom)
     hot = [{"id": 93, "ts": "2026-09-14T06:10:00-0700", "tier": 0, "status": "executed",
             "action": "raw@example.com stays raw with an identity redact",
             "reasoning": "r", "files": [], "veto_window_close": None,
@@ -259,3 +260,29 @@ def test_main_dry_run_prints_and_neither_sends_nor_writes(monkeypatch, capsys, t
     monkeypatch.setattr("sys.argv", ["digest.py", "--dry-run", "--send", "--vault"])
     assert digest.main() == 0
     assert "## KDesk digest" in capsys.readouterr().out
+
+
+# --- the digest goes into a PUBLIC CI step summary ---------------------------------------
+
+def test_scrub_elides_a_google_spreadsheet_id(tmp_path, monkeypatch):
+    """`--out "$GITHUB_STEP_SUMMARY"` publishes the digest. A ledger line naming the private
+    CRM sheet by id would hand that handle to anyone reading a public workflow log."""
+    monkeypatch.setattr(gws_module.privacy, "SALT_FILE", tmp_path / "salt.txt")
+    fake_id = "1A" + "bQ7z_x-9" * 5 + "2yK"          # 45 chars, id-shaped, not a real id
+    hot = [{"id": 94, "ts": "2026-09-14T06:10:00-0700", "tier": 0, "status": "executed",
+            "action": f"CRM sync: 22 rows on the 'KDesk CRM' sheet ({fake_id})",
+            "reasoning": "r", "files": [], "veto_window_close": None,
+            "stephen_reviewed": False}]
+    md = digest.compose(NOW, hot, [], [], {})
+    assert fake_id not in md
+    assert gws_module.B64_PLACEHOLDER in md
+
+
+def test_digest_scrubs_through_the_one_shared_scrubber():
+    """One implementation, three callers. digest's own copy of the address regex is gone."""
+    assert digest.gws is gws_module
+    assert not hasattr(digest, "_EMAIL"), "the private address pattern must be gone"
+
+
+def test_digest_has_no_private_gws_implementation_left():
+    assert "subprocess" not in dir(digest), "digest must not shell out on its own any more"
