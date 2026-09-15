@@ -16,7 +16,7 @@ import json
 import pathlib
 import urllib.parse
 
-from publishers.base import REPO, Publisher, PublishResult
+from publishers.base import REPO, Publisher, PublishResult, card_slug
 
 SITE_BASE = "https://kdeskaccounting.com"
 _PATH_MARKERS = ("/shorts/", "/embed/", "/live/")
@@ -58,12 +58,17 @@ def post_markdown(date: dt.date, slug: str, meta: dict) -> str:
              f'loading="lazy"></iframe>\n</div>')
     tags = ", ".join(json.dumps(t) for t in meta.get("tags", []))
     description = meta.get("description", "")
+    # PaperMod renders `summary` on list pages and `description` in the meta tag, and every
+    # hand-written post in content/posts/ carries both. description is the first line;
+    # summary is the whole caption flattened to one line unless meta names its own.
+    summary = meta.get("summary") or " ".join(description.split())
     front = "\n".join([
         "---",
         f"title: {json.dumps(meta.get('title', slug))}",
         f"date: {date.isoformat()}",
         'type: "shorts"',
         f"description: {json.dumps(description.splitlines()[0] if description else '')}",
+        f"summary: {json.dumps(summary)}",
         f"tags: [{tags}]",
         f"product: {json.dumps(meta.get('product', ''))}",
         f"video_url: {json.dumps(meta.get('video_url', ''))}",
@@ -91,11 +96,20 @@ class SitePublisher(Publisher):
         return None
 
     def _do_publish(self, asset: pathlib.Path, meta: dict) -> PublishResult:
-        if not meta.get("video_url"):
+        video_url = meta.get("video_url")
+        if not video_url:
             return PublishResult(platform="site", ok=False, url=None, queued_path=None,
                                  detail="meta has no video_url — publish the video first, "
                                         "then re-run publish.py --platform site")
-        slug = meta.get("slug", asset.stem)
+        # Presence is not enough. publish.py threads whatever url the first video publisher
+        # returned into meta, so this can be an Instagram permalink — which would render
+        # <iframe src=".../embed/">, an empty player, reported as a success.
+        if not video_id(video_url):
+            return PublishResult(platform="site", ok=False, url=None, queued_path=None,
+                                 detail=(f"no YouTube video id in video_url {video_url!r} — "
+                                         "the embed would be an empty player; publish to "
+                                         "YouTube first, or paste the post by hand"))
+        slug = card_slug(meta, asset)
         path = post_path(self.repo, self.today, slug)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(post_markdown(self.today, slug, meta), encoding="utf-8")

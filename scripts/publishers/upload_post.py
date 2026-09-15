@@ -22,9 +22,11 @@ requests is imported lazily so this module stays stdlib-importable for tests.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
+import time
 
 from publishers.base import REPO, Publisher, PublishResult
 
@@ -36,9 +38,23 @@ DEFAULT_PROFILE = "kdesk"
 TITLE_MAX = 100          # YouTube's limit; the shortest of the three, so it is the safe cap
 FREE_TIER_PLATFORMS = ("youtube", "instagram")
 UPLOAD_TIMEOUT_S = 600   # an mp4 upload, not an API ping
+STATUS_URL = "https://api.upload-post.com/api/uploadposts/status"
+STATUS_TIMEOUT_S = 30
+STATUS_ATTEMPTS = 5      # ~30s of waiting; this runs inside a scheduled job
+STATUS_DELAY_S = 6
+_sleep = time.sleep      # injectable so the poll test does not actually wait
 
 # privacy (our vocabulary) -> per-platform value
 TIKTOK_PRIVACY = {"public": "PUBLIC_TO_EVERYONE", "unlisted": "SELF_ONLY", "private": "SELF_ONLY"}
+
+
+def unverified_fields(platform: str) -> tuple[str, ...]:
+    """Form fields encoded from the docs but never exercised against the live API.
+
+    Surfaced through capabilities() so the first real upload can be diffed against this
+    list instead of guessing which half of the contradicting doc pages was right.
+    """
+    return (PLATFORM_FIELD, f"{platform}_title", f"{platform}_description")
 
 
 def auth_header(api_key: str) -> dict:
@@ -53,11 +69,17 @@ def build_form(platform: str, meta: dict, *,
                profile_name: str | None = None) -> list[tuple[str, str]]:
     """Every non-file multipart field, in a stable order, for one platform."""
     privacy = meta.get("privacy", "public")
+    title = str(meta.get("title", ""))[:TITLE_MAX]
+    description = str(meta.get("description", ""))
     fields: list[tuple[str, str]] = [
         (PLATFORM_FIELD, platform),
         ("user", profile_name or profile()),
-        ("title", str(meta.get("title", ""))[:TITLE_MAX]),
-        ("description", str(meta.get("description", ""))),
+        ("title", title),
+        ("description", description),
+        # Upload-Post documents per-platform overrides next to the bare pair. Sending both
+        # is harmless if the bare pair already wins, and necessary if it does not.
+        (f"{platform}_title", title),
+        (f"{platform}_description", description),
     ]
     if platform == "youtube":
         fields += [("privacyStatus", privacy),
@@ -104,6 +126,74 @@ def parse_response(platform: str, status: int, payload: dict) -> PublishResult:
                          detail=f"published via Upload-Post{used}")
 
 
+def list_profiles(api_key: str) -> tuple[int, dict]:
+    """The documented profile listing, so `user=` can be checked before an upload.
+
+    A wrong profile costs a 400 "Username required in form data" — and on the free tier
+    there are only ten attempts a month to get it right.
+    """
+    return _http_get(USERS_URL, auth_header(api_key), {})
+
+
+def async_request_id(platform: str, status: int, payload: dict) -> str | None:
+    """The request_id of an accepted-but-not-yet-finished upload, or None.
+
+    Only an accepted 2xx with no per-platform result qualifies. A 403 or a per-platform
+    failure is a real failure and must never be polled.
+    """
+    if status >= 300 or not payload.get("success"):
+        return None
+    if platform in (payload.get("results") or {}):
+        return None
+    rid = payload.get("request_id")
+    return str(rid) if rid else None
+
+
+def poll_status(platform: str, request_id: str, headers: dict, *,
+                attempts: int = STATUS_ATTEMPTS,
+                delay_s: float = STATUS_DELAY_S) -> PublishResult:
+    """Ask the status endpoint for a url, a bounded number of times.
+
+    Bounded on purpose: this runs inside a scheduled job. Giving up returns a not-ok result
+    whose detail carries the request_id and an explicit do-not-re-upload, because the video
+    may well be live already and every retry burns one of ten monthly slots.
+    A transport error on one check is recorded and retried, never raised: escaping here
+    would produce a card blaming the status endpoint and omitting the request_id.
+    """
+    last = ""
+    for attempt in range(1, attempts + 1):
+        try:
+            status, payload = _http_get(STATUS_URL, headers, {"request_id": request_id})
+            result = parse_response(platform, status, payload)
+            if result.ok:
+                return dataclasses.replace(
+                    result,
+                    detail=(f"{result.detail} (async request_id {request_id}, "
+                            f"ready on check {attempt}/{attempts})"))
+            last = result.detail
+        except Exception as exc:  # noqa: BLE001 — one failed check is not a failed upload
+            last = f"{type(exc).__name__}: {exc}"
+        if attempt < attempts:
+            _sleep(delay_s)
+    return PublishResult(
+        platform=platform, ok=False, url=None, queued_path=None,
+        detail=(f"Upload-Post accepted the upload (request_id {request_id}) but it was still "
+                f"not ready after {attempts} checks: {last}. DO NOT RE-UPLOAD — it may already "
+                f"be live, and each attempt burns one of the monthly upload slots. Check "
+                f"{STATUS_URL}?request_id={request_id} first, and post by hand only if it "
+                f"really failed."))
+
+
+def _http_get(url: str, headers: dict, params: dict) -> tuple[int, dict]:
+    """The read-only network seam (status, profiles). Tests monkeypatch this."""
+    import requests  # lazy: absent in the test environment
+    resp = requests.get(url, headers=headers, params=params, timeout=STATUS_TIMEOUT_S)
+    try:
+        return resp.status_code, resp.json()
+    except ValueError:
+        return resp.status_code, {"success": False, "message": resp.text[:500]}
+
+
 def _http_post(url: str, headers: dict, fields: list[tuple[str, str]],
                file_field: str, file_path: pathlib.Path) -> tuple[int, dict]:
     """The one network seam. Tests monkeypatch this; nothing else does I/O."""
@@ -133,11 +223,22 @@ class UploadPostPublisher(Publisher):
         """The Upload-Post profile whose connected accounts receive the upload."""
         return self._profile or profile()
 
+    def extra_secrets(self) -> tuple[str, ...]:
+        """The API key, so it is masked even when it came from the constructor.
+
+        An explicitly-passed key is in neither os.environ nor a token file, so
+        session.known_secrets() cannot see it. Upload-Post echoes the credential back in
+        some error bodies, and an exception from requests embeds the Authorization header.
+        """
+        key = self.api_key()
+        return (key,) if key else ()
+
     def capabilities(self) -> dict:
         return {"platform": self.platform,
                 "transport": "upload-post",
                 "endpoint": API_URL,
                 "form_variant": PLATFORM_FIELD,
+                "unverified_fields": list(unverified_fields(self.platform)),
                 "has_key": bool(self.api_key()),          # never the key itself
                 "profile": self.profile_name(),
                 "needs_paid_plan": self.platform not in FREE_TIER_PLATFORMS,
@@ -153,8 +254,12 @@ class UploadPostPublisher(Publisher):
         return None
 
     def _do_publish(self, asset: pathlib.Path, meta: dict) -> PublishResult:
-        status, payload = _http_post(API_URL, auth_header(self.api_key()),
+        headers = auth_header(self.api_key())
+        status, payload = _http_post(API_URL, headers,
                                      build_form(self.platform, meta,
                                                 profile_name=self.profile_name()),
                                      FILE_FIELD, asset)
+        rid = async_request_id(self.platform, status, payload)
+        if rid:
+            return poll_status(self.platform, rid, headers)
         return parse_response(self.platform, status, payload)

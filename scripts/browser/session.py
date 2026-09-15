@@ -19,6 +19,7 @@ import contextlib
 import dataclasses
 import datetime as dt
 import functools
+import os
 import pathlib
 import re
 import sys
@@ -82,7 +83,9 @@ def classify(site: str, requested_url: str, final_url: str) -> SiteStatus:
 _SECRET_PARAM = re.compile(
     r"\b(access_token|refresh_token|api_key|apikey|password|secret|token|key)=[^&\s\"'<>]+",
     re.IGNORECASE)
-_BEARER = re.compile(r"\b(Bearer)\s+[^\s\"'<>]+", re.IGNORECASE)
+# Authorization schemes whose value is the credential itself. Upload-Post uses
+# `Authorization: Apikey <UPLOAD_POST_KEY>`, so `Bearer` alone left that key in the clear.
+_AUTH_SCHEME = re.compile(r"\b(Bearer|Apikey)\s+[^\s\"'<>]+", re.IGNORECASE)
 # The same credentials also turn up in JSON bodies and colon-separated logs:
 #   {"api_key": "…"}   headers={'token': '…'}   access_token: …
 _SECRET_COLON = re.compile(
@@ -97,13 +100,29 @@ _MIN_SECRET_LEN = 8
 _CREDENTIAL_KEY = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|PASS)", re.IGNORECASE)
 
 
-@functools.lru_cache(maxsize=1)
-def known_secrets() -> frozenset:
-    """Literal token values on this machine, so they can be masked wherever they surface.
+def _env_secrets() -> frozenset:
+    """Credential values exported into this process's environment.
 
-    Never raises and never logs: a missing or unreadable token file just means there is
-    one less literal to mask. The values are held in memory only, never written anywhere.
+    Deliberately NOT cached: UPLOAD_POST_KEY (and anything else) can be exported after the
+    first redaction, and a stale cache would leave it in the clear. Values shaped like
+    configuration rather than a credential - a path, a URL - are skipped for the same
+    reason the .env sweep looks at key names only: masking a base path or an endpoint
+    would corrupt the very evidence a queue card exists to carry.
     """
+    found: set[str] = set()
+    for name, value in os.environ.items():
+        value = (value or "").strip()
+        if not _CREDENTIAL_KEY.search(name) or len(value) < _MIN_SECRET_LEN:
+            continue
+        if value.startswith(("/", "~", ".")) or "://" in value:
+            continue
+        found.add(value)
+    return frozenset(found)
+
+
+@functools.lru_cache(maxsize=1)
+def _file_secrets() -> frozenset:
+    """Literal token values in the token FILES on this machine. Cached: they rarely change."""
     found: set[str] = set()
     home = pathlib.Path.home()
     env_file = home / "kdeskaccountingtemplates" / ".env"
@@ -125,11 +144,25 @@ def known_secrets() -> frozenset:
     return frozenset(s for s in found if len(s) >= _MIN_SECRET_LEN)
 
 
+def known_secrets() -> frozenset:
+    """Literal token values on this machine, so they can be masked wherever they surface.
+
+    Never raises and never logs: a missing or unreadable token file just means there is
+    one less literal to mask. The values are held in memory only, never written anywhere.
+    """
+    return _file_secrets() | _env_secrets()
+
+
+# Callers (and tests) drop the token-file cache through known_secrets.cache_clear(); the
+# environment half is read live every time, so there is nothing else to invalidate.
+known_secrets.cache_clear = _file_secrets.cache_clear
+
+
 def redact_secrets(text, *, secrets=None) -> str:
     """Mask credentials in `text` before it reaches a card, the ledger, stdout or a path.
 
-    Masks known literal token values plus anything shaped like `access_token=…` or
-    `Bearer …`. Idempotent, so it is safe to apply more than once.
+    Masks known literal token values plus anything shaped like `access_token=…`,
+    `Bearer …` or `Apikey …`. Idempotent, so it is safe to apply more than once.
     """
     if text is None:
         return ""
@@ -139,7 +172,7 @@ def redact_secrets(text, *, secrets=None) -> str:
             out = out.replace(str(secret), "***")
     out = _SECRET_PARAM.sub(r"\1=***", out)
     out = _SECRET_COLON.sub(r"\1\2\1: \3***\3", out)
-    return _BEARER.sub(r"\1 ***", out)
+    return _AUTH_SCHEME.sub(r"\1 ***", out)
 
 
 def queue_card_markdown(kind: str, title: str, why: str, steps: list[str],

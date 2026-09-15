@@ -103,3 +103,19 @@ def test_publish_falls_back_to_the_queue_when_the_platform_call_raises(tmp_path)
 def test_publish_refuses_a_missing_asset_without_touching_the_network(tmp_path):
     with pytest.raises(FileNotFoundError):
         _Stub(repo=tmp_path).publish(tmp_path / "gone.mp4", META, dry_run=False)
+
+
+# ============================ fix round 1 ============================
+
+# --- queue_card_body redacted the WHOLE card, so ordinary accounting copy was corrupted:
+# a title like "The secret: a faster close" tripped the `secret:` pattern and reached
+# Stephen as "The secret: *** faster close". Only `detail` is machine text.
+
+def test_queue_card_body_masks_the_machine_detail_but_not_the_authors_copy():
+    meta = {**META, "title": "The secret: a faster month-end close",
+            "description": "Your key: the PV formula. Password: none needed."}
+    body = base.queue_card_body("tiktok", meta, "rejected Bearer abc123def456", "x.mp4", NOW)
+    assert "Bearer ***" in body                                   # machine text: masked
+    assert "abc123def456" not in body
+    assert "The secret: a faster month-end close" in body         # author copy: verbatim
+    assert "Your key: the PV formula. Password: none needed." in body

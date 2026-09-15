@@ -67,3 +67,47 @@ def test_site_publisher_queues_when_there_is_no_video_url(tmp_path):
     assert res.ok is False
     assert "video_url" in res.detail
     assert (tmp_path / res.queued_path).exists()
+
+
+# ============================ fix round 1 ============================
+
+# --- video_url was only checked for PRESENCE. `--platform youtube,instagram,site` threads
+# whatever url the first video publisher returned into meta, so an Instagram permalink (or
+# anything else video_id() cannot parse) produced <iframe src=".../embed/"> — a published
+# page with an empty player, reported as ok=True.
+
+def test_site_publisher_queues_when_the_video_url_has_no_youtube_id(tmp_path):
+    (tmp_path / "x.mp4").write_bytes(b"v")
+    meta = {**META, "video_url": "https://www.instagram.com/reel/Cx1y2z3AbCd/"}
+    res = site.SitePublisher(repo=tmp_path, today=DATE).publish(tmp_path / "x.mp4", meta,
+                                                                dry_run=False)
+    assert res.ok is False
+    assert "no YouTube video id in video_url" in res.detail
+    assert (tmp_path / res.queued_path).exists()
+    assert not site.post_path(tmp_path, DATE, "asc842-liability").exists()
+
+
+def test_site_publisher_still_publishes_a_watch_url(tmp_path):
+    (tmp_path / "x.mp4").write_bytes(b"v")
+    meta = {**META, "video_url": "https://youtube.com/watch?v=ABC123"}
+    res = site.SitePublisher(repo=tmp_path, today=DATE).publish(tmp_path / "x.mp4", meta,
+                                                                dry_run=False)
+    assert res.ok is True
+    assert 'src="https://www.youtube.com/embed/ABC123"' in (
+        site.post_path(tmp_path, DATE, "asc842-liability").read_text(encoding="utf-8"))
+
+
+def test_post_markdown_carries_a_summary_like_every_other_post_on_the_site(tmp_path):
+    md = site.post_markdown(DATE, "asc842-liability", META)
+    assert 'summary: "PV of the remaining payments, every month."' in md
+
+
+def test_an_explicit_summary_wins_over_the_description(tmp_path):
+    md = site.post_markdown(DATE, "s", {**META, "summary": "Sixty seconds on PV."})
+    assert 'summary: "Sixty seconds on PV."' in md
+
+
+def test_a_multiline_description_gives_a_one_line_summary():
+    md = site.post_markdown(DATE, "s", {**META, "description": "First line.\nSecond line."})
+    assert 'summary: "First line. Second line."' in md
+    assert 'description: "First line."' in md

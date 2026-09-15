@@ -331,3 +331,60 @@ def test_redact_secrets_masks_single_quoted_and_nested_forms():
 def test_colon_redaction_does_not_eat_ordinary_words_ending_in_key():
     out = session.redact_secrets("monkey: a banana")
     assert "banana" in out
+
+
+# ============================ fix round 3 ============================
+
+# --- Redaction could not see UPLOAD_POST_KEY: known_secrets() read token FILES only, never
+# the environment, and no pattern matched Upload-Post's `Authorization: Apikey <key>` scheme.
+# A queue card written by scripts/publishers/ would therefore have carried the key verbatim.
+
+def test_known_secrets_collects_credential_shaped_environment_variables(tmp_path, monkeypatch):
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("UPLOAD_POST_KEY", "up_live_abcdefghijkl")
+    session.known_secrets.cache_clear()
+    try:
+        assert "up_live_abcdefghijkl" in session.known_secrets()
+        out = session.redact_secrets("Upload-Post HTTP 401: bad key up_live_abcdefghijkl")
+        assert "up_live_abcdefghijkl" not in out
+        assert "***" in out
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_environment_secrets_are_not_cached_so_a_newly_exported_key_is_masked(tmp_path, monkeypatch):
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.delenv("UPLOAD_POST_KEY", raising=False)
+    session.known_secrets.cache_clear()
+    try:
+        session.known_secrets()                      # warm whatever cache exists
+        monkeypatch.setenv("UPLOAD_POST_KEY", "up_live_exported_later")
+        assert "up_live_exported_later" in session.known_secrets()
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_environment_sweep_ignores_a_path_or_url_valued_variable(tmp_path, monkeypatch):
+    monkeypatch.setattr(session.pathlib.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setenv("SSH_KEY_PATH", "/Users/someone/.ssh/id_rsa")
+    monkeypatch.setenv("TOKEN_ENDPOINT", "https://api.upload-post.com/api/upload")
+    session.known_secrets.cache_clear()
+    try:
+        secrets = session.known_secrets()
+        assert "/Users/someone/.ssh/id_rsa" not in secrets
+        assert "https://api.upload-post.com/api/upload" not in secrets
+        survives = session.redact_secrets("posted to https://api.upload-post.com/api/upload")
+        assert "api.upload-post.com/api/upload" in survives, "config must survive"
+    finally:
+        session.known_secrets.cache_clear()
+
+
+def test_redact_secrets_masks_an_apikey_authorization_header():
+    out = session.redact_secrets("headers={'Authorization': 'Apikey up_live_x'}")
+    assert "up_live_x" not in out
+    assert "Apikey ***" in out
+
+
+def test_redact_secrets_masks_an_apikey_scheme_in_a_plain_header_line():
+    out = session.redact_secrets("Authorization: Apikey up_live_SECRETVALUE1")
+    assert "up_live_SECRETVALUE1" not in out
