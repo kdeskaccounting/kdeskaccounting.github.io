@@ -23,6 +23,7 @@ import hashlib
 import os
 import pathlib
 import secrets
+import time
 from typing import Iterable
 
 SALT_FILE = pathlib.Path.home() / "kdesk-analytics" / "email-hash-salt.txt"
@@ -39,12 +40,33 @@ def _read_salt(path: pathlib.Path) -> str:
         return ""
 
 
+def _read_salt_settling(path: pathlib.Path, attempts: int = 5, delay: float = 0.02) -> str:
+    """Re-read a few times before calling the file empty.
+
+    O_EXCL makes the create atomic, but creating and writing are two steps: the winner can
+    hold an empty file for a moment. One read is not evidence of an abandoned file.
+    """
+    for attempt in range(attempts):
+        value = _read_salt(path)
+        if value:
+            return value
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+    return ""
+
+
 def salt() -> str:
     """Read the salt, creating it 0600 on first use.
 
-    Creation is O_EXCL, so two processes starting together cannot each write a salt - the
-    loser re-reads the winner's rather than hashing every address under a salt nobody else
-    holds, which would silently orphan every digest it wrote.
+    Creation is O_EXCL, so of two processes starting together only one can create the file;
+    the loser re-reads the winner's salt rather than writing its own. That matters because a
+    second salt would silently orphan every digest written under the first.
+
+    The guarantee is narrow and worth stating exactly: O_EXCL makes the *create* atomic, not
+    the create-then-write. A loser that finds the file still empty re-reads it a few times
+    before concluding it was abandoned by a crashed run, and only then replaces it. A file
+    left empty by a crash mid-write is therefore still replaceable, while one a live process
+    just created is not truncated out from under it.
     """
     path = SALT_FILE
     cached = _SALT_CACHE.get(path)
@@ -59,11 +81,13 @@ def salt() -> str:
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
-        # Either a racing process just created it, or a crashed run left it empty.
-        existing = _read_salt(path)
+        # A racing process created it and may not have written yet. Never truncate on the
+        # strength of a single empty read: that would destroy the winner's salt.
+        existing = _read_salt_settling(path)
         if existing:
             _SALT_CACHE[path] = existing
             return existing
+        # Still empty after settling - an earlier run died between create and write.
         fd = os.open(path, os.O_WRONLY | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(value + "\n")

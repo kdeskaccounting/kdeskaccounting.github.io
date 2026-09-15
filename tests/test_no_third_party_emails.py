@@ -42,8 +42,10 @@ ALLOWED_LITERALS = {
     "a@gmail.com",              # synthetic fixture; must be freemail to test is_business FALSE
 }
 
+# Binary formats only. .svg is deliberately NOT here: it is XML, and a <text> node, a title
+# or a metadata block can carry an address as easily as a markdown file can.
 SKIP_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".xlsx", ".zip",
-                 ".mp4", ".mov", ".woff", ".woff2", ".ttf", ".eot", ".svg")
+                 ".mp4", ".mov", ".woff", ".woff2", ".ttf", ".eot")
 
 
 def _tracked_files() -> list[pathlib.Path]:
@@ -139,3 +141,15 @@ def test_the_guard_scans_its_own_source():
     """The regression that bit once: the guard was written, run while still untracked, and
     passed - then failed the moment `git add` brought it into `git ls-files`."""
     assert pathlib.Path(__file__).resolve() in {p.resolve() for p in _tracked_files()}
+
+
+def test_svg_is_scanned_because_it_is_text():
+    """SVG is XML, not a binary blob: a <text> node or a metadata block can carry an address."""
+    assert ".svg" not in SKIP_SUFFIXES
+    assert all(s.startswith(".") for s in SKIP_SUFFIXES)
+
+
+def test_every_tracked_svg_is_actually_reached_by_the_scan(tmp_path):
+    svgs = [p for p in _tracked_files() if p.suffix.lower() == ".svg"]
+    skipped = [p for p in svgs if p.suffix.lower() in SKIP_SUFFIXES]
+    assert not skipped, "an .svg must never be skipped as if it were binary"

@@ -87,3 +87,26 @@ def test_an_empty_salt_file_is_replaced(tmp_path, monkeypatch):
     monkeypatch.setattr(privacy, "SALT_FILE", saltfile)
     privacy._SALT_CACHE.clear()
     assert len(privacy.salt()) >= 32
+
+
+def test_a_slow_concurrent_creator_is_waited_for_not_truncated(tmp_path, monkeypatch):
+    """The winner creates the file with O_EXCL and writes a moment later.
+
+    Reading once and concluding "empty" would truncate its salt out from under it and orphan
+    every digest it had already written, so the read is retried before giving up.
+    """
+    saltfile = tmp_path / "email-hash-salt.txt"
+    saltfile.write_text("")                      # created by the winner, not yet written
+    monkeypatch.setattr(privacy, "SALT_FILE", saltfile)
+    monkeypatch.setattr(privacy.time, "sleep", lambda _s: None)
+    privacy._SALT_CACHE.clear()
+    reads = {"n": 0}
+
+    def slow_read(_path):
+        reads["n"] += 1
+        return "" if reads["n"] < 3 else "the-winners-salt"
+
+    monkeypatch.setattr(privacy, "_read_salt", slow_read)
+    assert privacy.salt() == "the-winners-salt"
+    assert reads["n"] >= 3, "the read must be retried, not taken at face value once"
+    assert saltfile.read_text() == "", "the winner's file must not be rewritten"
