@@ -474,4 +474,9 @@ publishes, and only after the gate. T3 gates apply to every agent without except
 8. **Attribution is mandatory** wherever queue-times.com data appears: "Powered by Queue-Times.com".
 
 ## Known issues (not blocking)
+- 2026-09-15 · Colour matrix is stamped inconsistently across scene parts: a JPEG-sourced media part carries `bt470bg`, card/sheet/clip parts are unspecified, and the joined file inherits whichever part comes first. Range is already pinned (`h264_metadata=video_full_range_flag=0`); do the same for matrix/primaries/trc on EVERY scene kind (`-colorspace bt709 -color_primaries bt709 -color_trc bt709` or `scale=out_color_matrix=bt709`), then eyeball a card→photo cut. Not a from/to conversion of the image path alone.
+- 2026-09-15 · `marketing/video/media-demo` renders to 53 s against the 59 s Shorts cap; one more demo scene trips the length check. Trim narration if a fourth scene is ever added.
+- 2026-09-15 · `build_video.py` renders card and media overlays small on its 2400×1350 landscape frames (pre-existing for `kind: card`). Needs a landscape overlay layout before any long-form video uses those kinds.
+- 2026-09-15 · TikTok skip check compares date tokens only, never time; two posts on the same day sharing a caption prefix would collide. `schedule_week.py` posts one per day so this is latent; add a time token before any same-day scheduling.
+- 2026-09-15 · Every TikTok Studio selector is UNVERIFIED until someone is logged in on the debug Chrome; first live run must be a single watched video (`tiktok_web.py --check` first).
 - 2026-09-15 · Every finished Short's audio probes at 96 kHz although each scene part is 48 kHz: the single `loudnorm` re-encode in `make_short.py` upsamples. Pre-existing since the first card demo (Sep 4), harmless for concat (video is stream-copied), but it doubles audio bitrate for nothing. Fix: append `aresample=48000` after `loudnorm` in the final pass and add an ffprobe assertion to the card e2e.
