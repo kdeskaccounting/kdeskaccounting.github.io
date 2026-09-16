@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """HTML cards for the `card` scene kind: a caller's data block straight into a 9:16 frame.
 
-Three templates, all fed by one `data:` block with exactly four keys — `heading`,
-`subheading`, `items`, `footer`:
+Five templates, all fed by one `data:` block with the same four keys — `heading`,
+`subheading`, `items`, `footer` (`wait_curve` adds one optional fifth, `annotation`):
 
   ranked_list  items: [{rank: int ascending, label: str, value: int|float|""}]   0-8 rows
   countdown    items: [{rank: int descending, label: str, value: int}]           0-8 rows, list order
@@ -10,11 +10,24 @@ Three templates, all fed by one `data:` block with exactly four keys — `headin
                                                                                  value is a 60-120
                                                                                  character sentence
                                                                                  that wraps
+  calendar_heatmap
+               items: [{label: str, value: 1-10, highlight: bool}]               0-42 cells, 7 across
+  wait_curve   items: [{label: str, value: int|float}]                           0-16 points, plus
+               annotation: {label: str, index: int}                              an optional marked point
 
 The row caps are readability limits, not storage limits: rows shrink as they multiply, and past
-8 ranked rows (or 5 sentence rows) the type is too small to read on a phone, so `card_html`
-raises rather than render something unusable. `changed` note text never falls below 30px on the
-1296x2304 canvas.
+8 ranked rows (or 5 sentence rows, 42 heatmap cells, 16 curve points) the type is too small to
+read on a phone, so `card_html` raises rather than render something unusable. `changed` note
+text never falls below 30px on the 1296x2304 canvas.
+
+The two data-graphic templates (2026-09-16) are our own charts, drawn as plain HTML and inline
+SVG — no charting library, because this file is stdlib-only by contract. `calendar_heatmap`
+colours each cell by `cards.HEATMAP_RAMP` (clamped, so a missing or out-of-range score still
+renders) and rings a `highlight: true` day in the brand accent; `wait_curve` draws a polyline
+with a circled annotation whose index is clamped to the series and whose flat case cannot
+divide by zero. Both go through the same `box`/`fill`/`transparent` plumbing as every other
+template, so they work as a `media` overlay and under captions untouched. Nothing here knows
+what a crowd score is — the caller builds the `data:` block.
 
 `ranked_list` renders a rank + label row with no value column when `value` is `""`, and an
 empty `items` list renders the heading, subheading and footer over a tasteful empty body
@@ -35,13 +48,32 @@ from __future__ import annotations
 import html as _html
 import re
 
-TEMPLATES = ("ranked_list", "countdown", "changed")
+TEMPLATES = ("ranked_list", "countdown", "changed", "calendar_heatmap", "wait_curve")
 
 #: A 9:16 card stays legible down to about this many rank rows; past it the caller must split.
 MAX_ITEMS = 8
 
 #: `changed` rows carry a whole sentence each, so they run out of room far sooner.
 MAX_CHANGED_ITEMS = 5
+
+#: Six weeks of a calendar. Past that a cell is smaller than a fingertip on a phone.
+MAX_HEATMAP_ITEMS = 42
+
+#: Hour-by-hour for a park day plus a little slack. Past that the labels collide.
+MAX_CURVE_POINTS = 16
+
+#: Cool -> hot, six steps over a 1-10 score. Deliberately not the brand accent: the ramp has
+#: to be readable AS a ramp, and a single-hue tint of one brand colour is not.
+HEATMAP_RAMP: tuple[str, ...] = (
+    "#2F6F4F", "#5A8F3C", "#93B23A", "#D9B740", "#D98A3C", "#C94B35",
+)
+
+#: Per-template row caps. The three original templates keep exactly the caps they had.
+CAPS: dict[str, int] = {
+    "changed": MAX_CHANGED_ITEMS,
+    "calendar_heatmap": MAX_HEATMAP_ITEMS,
+    "wait_curve": MAX_CURVE_POINTS,
+}
 
 #: Floor on a `changed` row's font size, in canvas units (height/100). The note is .9em of it,
 #: so 1.45 units keeps note text at 30px or more on the 1296x2304 card.
@@ -141,6 +173,84 @@ def _rows_changed(items: list[dict]) -> str:
     return "\n      ".join(out)
 
 
+def _number(value: object) -> float:
+    """A caller's value as a float, or 0.0. Never raises: a card must always render."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ramp_index(value: object) -> int:
+    """A 1-10 score to a HEATMAP_RAMP index. Clamped, so 0, 99 and None all render."""
+    step = max(1, min(10, int(round(_number(value)))))
+    return min(len(HEATMAP_RAMP) - 1, (step - 1) * len(HEATMAP_RAMP) // 10)
+
+
+def _cells_heatmap(items: list[dict]) -> str:
+    out = []
+    for item in items:
+        colour = HEATMAP_RAMP[_ramp_index(item.get("value"))]
+        klass = "cell hot" if item.get("highlight") else "cell"
+        out.append(f'<li class="{klass}" style="background:{colour}">'
+                   f'<span class="d">{_e(item.get("label"))}</span>'
+                   f'<span class="v">{_e(_value_text(item.get("value")))}</span></li>')
+    return "\n      ".join(out)
+
+
+#: The curve's own coordinate space. The SVG scales to the card body with viewBox, so these
+#: are arbitrary units chosen to make the arithmetic below readable.
+CURVE_W = 1000.0
+CURVE_H = 420.0
+CURVE_PAD = 24.0
+
+
+def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
+    """An inline SVG line chart. No library: this file is stdlib-only by contract."""
+    values = [_number(item.get("value")) for item in items]
+    lo, hi = min(values), max(values)
+    span = (hi - lo) or 1.0
+    inner = CURVE_H - 2 * CURVE_PAD
+    step = CURVE_W / max(len(values) - 1, 1)
+    points = [
+        (round(index * step, 1), round(CURVE_H - CURVE_PAD - (value - lo) / span * inner, 1))
+        for index, value in enumerate(values)
+    ]
+    poly = " ".join(f"{x},{y}" for x, y in points)
+    area = f"0,{CURVE_H} {poly} {points[-1][0]},{CURVE_H}"
+
+    index = max(0, min(len(points) - 1, int(_number(annotation.get("index")))))
+    mx, my = points[index]
+    label = str(annotation.get("label") or "")
+    # Flip the label inside the box near the right edge so it can never be clipped.
+    anchor = "end" if mx > CURVE_W * 0.72 else "start"
+    dx = -16 if anchor == "end" else 16
+    mark = (
+        f'<circle cx="{mx}" cy="{my}" r="13" fill="{brand["accent"]}" '
+        f'stroke="{brand["bg"]}" stroke-width="5"/>'
+        + (
+            f'<text x="{mx + dx}" y="{max(my - 26, 28)}" text-anchor="{anchor}" '
+            f'class="ann">{_e(label)}</text>'
+            if label
+            else ""
+        )
+    )
+    labels = "\n        ".join(
+        f'<span>{_e(item.get("label"))}</span>' for item in items
+    )
+    return (
+        f'<div class="curve">\n'
+        f'      <svg viewBox="0 0 {CURVE_W:.0f} {CURVE_H:.0f}" preserveAspectRatio="none" '
+        f'class="plot">\n'
+        f'        <polygon points="{area}" class="fill"/>\n'
+        f'        <polyline points="{poly}" class="line"/>\n'
+        f'        {mark}\n'
+        f'      </svg>\n'
+        f'      <div class="xlabels">\n        {labels}\n      </div>\n'
+        f'    </div>'
+    )
+
+
 # --- layout ---------------------------------------------------------------------------
 
 def _heading_size(heading: str, unit: float) -> float:
@@ -216,7 +326,7 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     items = data.get("items") or []
     if not isinstance(items, list):
         raise TypeError(f"card data.items must be a list, got {type(items).__name__}")
-    cap = MAX_CHANGED_ITEMS if template == "changed" else MAX_ITEMS
+    cap = CAPS.get(template, MAX_ITEMS)
     if len(items) > cap:
         raise ValueError(f"card template {template!r} holds at most {cap} items, "
                          f"got {len(items)}; split it across two cards")
@@ -231,6 +341,10 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
 
     if not items:
         body = '<div class="empty">Nothing to show right now</div>'
+    elif template == "calendar_heatmap":
+        body = f'<ul class="grid">\n      {_cells_heatmap(items)}\n    </ul>'
+    elif template == "wait_curve":
+        body = _curve_svg(items, data.get("annotation") or {}, brand)
     elif template == "changed":
         body = f'<ul class="rows">\n      {_rows_changed(items)}\n    </ul>'
     else:
@@ -263,6 +377,30 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
 .card::before{{content:'';position:absolute;inset:0;background:{brand['bg']};opacity:.74;
   border:{max(1.0, 0.12 * unit):.1f}px solid {brand['accent']};border-radius:inherit}}
 .card>*{{position:relative;z-index:1}}"""
+    # Per-template CSS. Empty for every existing template, so no golden can move.
+    extra = ""
+    if template == "calendar_heatmap":
+        cell = max(1.0, 9.0 - 0.06 * len(items))
+        extra = f"""
+.grid{{list-style:none;display:grid;grid-template-columns:repeat(7,1fr);
+  gap:{0.55 * unit:.0f}px}}
+.cell{{aspect-ratio:1;border-radius:{0.55 * unit:.0f}px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:{0.15 * unit:.0f}px;
+  color:{brand['bg']};font-weight:700}}
+.cell .d{{font-size:{0.42 * cell * unit:.1f}px;opacity:.72}}
+.cell .v{{font-size:{0.62 * cell * unit:.1f}px;font-variant-numeric:tabular-nums}}
+.cell.hot{{outline:{max(2.0, 0.28 * unit):.1f}px solid {brand['accent']};
+  outline-offset:{0.22 * unit:.1f}px}}"""
+    elif template == "wait_curve":
+        extra = f"""
+.curve{{display:flex;flex-direction:column;gap:{1.2 * unit:.0f}px}}
+.plot{{width:100%;height:{34 * unit:.0f}px;overflow:visible}}
+.plot .line{{fill:none;stroke:{brand['accent']};stroke-width:8;stroke-linejoin:round;
+  stroke-linecap:round}}
+.plot .fill{{fill:{brand['accent']};opacity:.16}}
+.plot .ann{{fill:{brand['fg']};font-family:{brand['font']};font-weight:700;font-size:34px}}
+.xlabels{{display:flex;justify-content:space-between;color:{brand['muted']};
+  font-size:{1.7 * unit:.1f}px;font-variant-numeric:tabular-nums}}"""
 
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0}}
@@ -302,7 +440,7 @@ h1{{font-size:{h1_fs:.1f}px;line-height:1.06;font-weight:700;letter-spacing:-.01
   padding:{5 * unit:.0f}px {3 * unit:.0f}px;text-align:center;font-size:{2.4 * unit:.1f}px;
   color:{brand['muted']}}}
 .foot{{padding-top:{1.8 * unit:.0f}px;font-size:{1.7 * unit:.1f}px;font-weight:700;
-  color:{brand['accent']}}}{boxed}{plate}
+  color:{brand['accent']}}}{boxed}{plate}{extra}
 </style></head><body>
 <div class="card">
   <div class="brand"><span class="bname">{_e(brand['name'])}</span><span class="burl">{_e(brand['url'])}</span></div>

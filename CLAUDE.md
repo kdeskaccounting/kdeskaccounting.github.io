@@ -131,6 +131,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/s
 # column); `changed` takes up to 5 rows of {label, value} where value is a whole sentence.
 # Past those caps cards.card_html raises rather than render type too small to read on a
 # phone. Worked example of all three: marketing/video/card-demo/scenes.yaml.
+#   - kind: card
+#     template: calendar_heatmap | wait_curve        # the data-graphic pair (2026-09-16)
+#     data: {heading, subheading, items: [...], footer}
+# calendar_heatmap takes up to 42 {label, value, highlight} cells laid out 7 across — a month
+# of crowd scores, value 1-10 mapped onto cards.HEATMAP_RAMP, `highlight: true` ringing one
+# day in the brand accent. wait_curve takes up to 16 {label, value} points plus
+# `annotation: {label, index}`, and draws an inline SVG line with that point circled; the
+# index is clamped, a flat series is safe, and there is no charting library (this file is
+# stdlib-only). Both honour `box`/`fill`/`transparent` like every other template, so they
+# work as a media overlay and under captions. ParkSheet builds their `data:` blocks in
+# parksheet/graphics.py; nothing here knows about crowd scores.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/card-demo/scenes.yaml
 
 # The `media` scene kind — real footage or a still, under an optional card overlay. Same

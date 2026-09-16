@@ -84,19 +84,44 @@ EMPTY_RANKED = {
 }
 BRAND = {"name": "Demo Brand", "url": "example.com"}
 
+HEATMAP = {
+    "heading": "Next 30 days at Magic Kingdom",
+    "subheading": "Crowd score 1 to 10",
+    "items": [
+        {"label": str(day), "value": (day % 10) + 1, "highlight": day == 17}
+        for day in range(1, 31)
+    ],
+    "footer": "Powered by Queue-Times.com",
+}
+CURVE = {
+    "heading": "Seven Dwarfs, hour by hour",
+    "subheading": "Average posted wait",
+    "items": [
+        {"label": "9a", "value": 25}, {"label": "10a", "value": 55},
+        {"label": "11a", "value": 95}, {"label": "12p", "value": 80},
+        {"label": "1p", "value": 70}, {"label": "2p", "value": 65},
+    ],
+    "annotation": {"label": "95 min by 11", "index": 2},
+    "footer": "Powered by Queue-Times.com",
+}
+
 GOLDEN_CASES = [
     ("ranked_list", RANKED, "card_ranked_list"),
     ("countdown", COUNTDOWN, "card_countdown"),
     ("changed", CHANGED, "card_changed"),
     ("changed", CHANGED_FIVE, "card_changed_five"),
     ("ranked_list", EMPTY_RANKED, "card_ranked_list_empty"),
+    ("calendar_heatmap", HEATMAP, "card_calendar_heatmap"),
+    ("wait_curve", CURVE, "card_wait_curve"),
 ]
 
 
 # --- module surface -------------------------------------------------------------------
 
-def test_templates_are_the_three_the_spec_names():
-    assert cards.TEMPLATES == ("ranked_list", "countdown", "changed")
+def test_templates_are_the_five_the_spec_names():
+    """The three original text templates, then the two data graphics (2026-09-16)."""
+    assert cards.TEMPLATES == ("ranked_list", "countdown", "changed",
+                               "calendar_heatmap", "wait_curve")
 
 
 def test_default_brand_is_neutral_and_complete():
@@ -479,3 +504,115 @@ def test_a_hugging_box_is_still_anchored_to_its_bottom_edge():
 def test_fill_without_a_box_changes_nothing_because_the_card_already_fills_the_frame():
     assert cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), fill=True) == \
         cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None))
+
+
+# --- the two data-graphic templates (2026-09-16) -------------------------------------------
+
+def test_the_two_data_graphic_templates_are_declared():
+    assert "calendar_heatmap" in cards.TEMPLATES
+    assert "wait_curve" in cards.TEMPLATES
+
+
+def test_a_calendar_heatmap_draws_one_cell_per_day():
+    html = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(None))
+
+    assert html.count('class="cell') == 30
+    assert 'class="cell hot"' in html
+    assert "Next 30 days at Magic Kingdom" in html
+
+
+def test_a_heatmap_cell_takes_its_colour_from_the_score():
+    cool = cards.card_html("calendar_heatmap",
+                           {**HEATMAP, "items": [{"label": "1", "value": 1}]},
+                           cards.brand_tokens(None))
+    hot = cards.card_html("calendar_heatmap",
+                          {**HEATMAP, "items": [{"label": "1", "value": 10}]},
+                          cards.brand_tokens(None))
+
+    assert cards.HEATMAP_RAMP[0] in cool
+    assert cards.HEATMAP_RAMP[-1] in hot
+
+
+def test_an_out_of_range_or_missing_score_still_renders():
+    html = cards.card_html("calendar_heatmap",
+                           {**HEATMAP, "items": [{"label": "1"}, {"label": "2", "value": 99}]},
+                           cards.brand_tokens(None))
+
+    assert html.count('class="cell') == 2
+
+
+def test_a_heatmap_past_its_cap_raises_rather_than_render_unreadable_type():
+    items = [{"label": str(n), "value": 5} for n in range(cards.MAX_HEATMAP_ITEMS + 1)]
+
+    with pytest.raises(ValueError) as excinfo:
+        cards.card_html("calendar_heatmap", {**HEATMAP, "items": items}, cards.brand_tokens(None))
+
+    assert str(cards.MAX_HEATMAP_ITEMS) in str(excinfo.value)
+
+
+def test_a_wait_curve_draws_a_polyline_and_its_hour_labels():
+    html = cards.card_html("wait_curve", CURVE, cards.brand_tokens(None))
+
+    assert "<svg" in html and "<polyline" in html
+    for label in ("9a", "11a", "2p"):
+        assert f">{label}<" in html
+
+
+def test_the_curve_annotation_marks_the_named_point():
+    html = cards.card_html("wait_curve", CURVE, cards.brand_tokens(None))
+
+    assert "95 min by 11" in html
+    assert "<circle" in html
+
+
+def test_an_annotation_index_outside_the_series_is_clamped_not_crashed():
+    html = cards.card_html("wait_curve",
+                           {**CURVE, "annotation": {"label": "late", "index": 99}},
+                           cards.brand_tokens(None))
+
+    assert "late" in html
+
+
+def test_a_flat_series_does_not_divide_by_zero():
+    flat = {**CURVE, "items": [{"label": "9a", "value": 30}, {"label": "10a", "value": 30}]}
+
+    assert "<polyline" in cards.card_html("wait_curve", flat, cards.brand_tokens(None))
+
+
+def test_a_curve_past_its_cap_raises():
+    items = [{"label": str(n), "value": n} for n in range(cards.MAX_CURVE_POINTS + 1)]
+
+    with pytest.raises(ValueError):
+        cards.card_html("wait_curve", {**CURVE, "items": items}, cards.brand_tokens(None))
+
+
+def test_the_new_templates_escape_every_caller_string():
+    html = cards.card_html("wait_curve",
+                           {**CURVE, "heading": '<script>x</script>',
+                            "annotation": {"label": "<b>x</b>", "index": 0}},
+                           cards.brand_tokens(None))
+
+    assert "<script>" not in html
+    assert "&lt;b&gt;x&lt;/b&gt;" in html
+
+
+def test_the_new_templates_honour_a_box_like_every_other_card():
+    boxed = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(None),
+                            box=(60, 900, 1176, 1100), transparent=True)
+
+    assert "top:900px" in boxed or "bottom:" in boxed
+    assert "radial-gradient" not in boxed
+
+
+def test_the_three_original_templates_are_byte_identical_to_their_goldens():
+    """Belt and braces beside the golden test: the new branches must add nothing.
+
+    `brand_tokens(BRAND)`, not `(None)`: the goldens are generated with the Demo Brand block,
+    so comparing against the default brand would fail on the brand line rather than on the
+    thing this test is guarding.
+    """
+    for template, data, name in GOLDEN_CASES:
+        if name.startswith(("card_calendar", "card_wait")):
+            continue
+        expected = (GOLDEN / f"{name}.html").read_text()
+        assert cards.card_html(template, data, cards.brand_tokens(BRAND)) == expected
