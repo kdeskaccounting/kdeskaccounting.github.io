@@ -120,10 +120,19 @@ def recent_entries(entries: list[dict], now: dt.datetime, hours: int = 24) -> li
 
 
 def open_veto_windows(entries: list[dict], now: dt.datetime) -> list[dict]:
+    """The windows still waiting on Stephen: unelapsed, and not already answered by him.
+
+    "Answered" is a later entry whose `approves` or `vetoes` names this id — the same signal
+    scripts/ledger.py's gate reads. A window he approved early (#85 did that for #69 and #70)
+    is not open, whatever its clock says, and listing it as open at 07:30 asks him for an
+    answer he has already given.
+    """
     out = []
     for row in entries:
         close = row.get("veto_window_close")
         if not close:
+            continue
+        if ledger.answer(int(row.get("id", 0) or 0), entries) is not None:
             continue
         try:
             closes = ledger.parse_ts(close)

@@ -34,6 +34,24 @@ def test_open_veto_windows_lists_only_windows_still_in_the_future():
     assert [e["id"] for e in digest.open_veto_windows(ENTRIES, NOW)] == [70]
 
 
+def test_open_veto_windows_drops_a_window_a_later_entry_has_already_answered():
+    """A window Stephen approved early is not open, however long it had left to run.
+
+    The digest is what he reads at 07:30; listing #70 as still needing an answer he has
+    already given is how a stale gate becomes a stale habit.
+    """
+    approved = ENTRIES + [
+        {"id": 72, "ts": "2026-09-14T07:00:00-0700", "tier": 0, "status": "executed",
+         "action": "Stephen APPROVED 70", "reasoning": "r", "files": [],
+         "veto_window_close": None, "stephen_reviewed": False, "approves": [70]}]
+    assert digest.open_veto_windows(approved, NOW) == []
+    vetoed = ENTRIES + [
+        {"id": 72, "ts": "2026-09-14T07:00:00-0700", "tier": 0, "status": "executed",
+         "action": "Stephen VETOED 70", "reasoning": "r", "files": [],
+         "veto_window_close": None, "stephen_reviewed": False, "vetoes": [70]}]
+    assert digest.open_veto_windows(vetoed, NOW) == []
+
+
 def test_open_veto_windows_uses_the_shared_ledger_parse_ts_not_a_private_copy():
     """_parse_iso used to be duplicated here; it now lives once in ledger.py."""
     assert digest.ledger is ledger
