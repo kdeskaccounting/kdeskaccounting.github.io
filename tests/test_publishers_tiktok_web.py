@@ -51,6 +51,10 @@ class _Loc:
     def wait_for(self, **kw):
         self.page.calls.append(f"wait_for:{self.key}")
 
+    def locator(self, sel):
+        """A chained locator, e.g. the not-inside-a-button guard on a text match."""
+        return _Loc(self.page, f"{self.key}+{sel}")
+
     def scroll_into_view_if_needed(self):
         self.page.calls.append(f"scroll:{self.key}")
 
@@ -91,6 +95,12 @@ class _Page:
         self.on_click = {}
         self.shots = []
         self.url = url
+        # What --check's body probe reads. The live content page says "No posts yet"; the
+        # constant is lowercased because that is how the driver tests it.
+        self.body_text = "No posts yet Your posted and scheduled videos will appear here."
+        # The live content page has zero [role=tab]; --check asserts that stays true, so the
+        # fake has to agree or the canary reports a tab that does not exist.
+        self.counts["role:tab:None~"] = 0
         self.rows_reads = list(rows_reads)
         self.keyboard = _Keyboard(self)
         # Playwright raises these on __exit__ / on the call — i.e. AFTER the button was
@@ -125,8 +135,14 @@ class _Page:
     def locator(self, sel):
         return _Loc(self, sel)
 
-    def get_by_role(self, role, name=None):
-        return _Loc(self, f"role:{role}:{name}")
+    def get_by_role(self, role, name=None, exact=False):
+        # `exact` is recorded, not ignored: matching an accessible name as a substring is
+        # what made "Post" resolve to the sidebar's "Posts" entry.
+        return _Loc(self, f"role:{role}:{name}" + ("" if exact else "~"))
+
+    def inner_text(self, sel):
+        self.calls.append(f"inner_text:{sel}")
+        return self.body_text
 
     def get_by_text(self, text, exact=False):
         return _Loc(self, f"text:{text}")
@@ -150,9 +166,16 @@ class _Page:
         self.shots.append(path)
 
 
-def _row(caption, when=WHEN, url=""):
-    return {"caption": caption, "url": url,
-            "text": f"{caption} Scheduled {when.strftime('%Y-%m-%d')} {when.strftime('%H:%M')}"}
+def _row(caption, when=WHEN, url="", lead=()):
+    """A row shaped the way scheduled_rows_js returns one: caption, every line, flat text.
+
+    `lead` puts lines AHEAD of the caption — a duration badge or a status word — which is the
+    case the caption-candidate scan exists for and a fixed line index would get wrong.
+    """
+    lines = [*lead, caption, "Scheduled",
+             when.strftime("%Y-%m-%d"), when.strftime("%H:%M")]
+    return {"caption": lines[0], "lines": lines, "url": url,
+            "text": " ".join(lines)}
 
 
 @pytest.fixture
@@ -415,15 +438,57 @@ def test_with_no_schedule_at_it_posts_now_and_never_touches_the_date_fields(pub,
     assert not [c for c in page.calls if c.startswith("fill:" + S.SCHEDULE_DATE_INPUT)]
 
 
+TOGGLE_SWITCH_KEY = f"click:{S.SCHEDULE_TOGGLE}"
+TOGGLE_TEXT_KEY = f"click:text:{S.SCHEDULE_TOGGLE_TEXT}+{S.NOT_INSIDE_A_BUTTON}"
+
+
 def test_the_scheduler_is_not_toggled_again_when_the_date_field_is_already_showing(pub, asset):
     page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
     pub.drive(page, asset, META)
-    assert f"click:text:{S.SCHEDULE_TOGGLE_TEXT}" not in page.calls
+    assert TOGGLE_SWITCH_KEY not in page.calls and TOGGLE_TEXT_KEY not in page.calls
 
     page2 = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
     page2.counts[S.SCHEDULE_DATE_INPUT] = 0          # scheduler is off
     pub.drive(page2, asset, META)
-    assert f"click:text:{S.SCHEDULE_TOGGLE_TEXT}" in page2.calls
+    assert TOGGLE_SWITCH_KEY in page2.calls, "the switch role is tried first"
+
+
+def test_the_toggle_falls_back_to_label_text_only_when_there_is_no_switch(pub, asset):
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    page.counts[S.SCHEDULE_DATE_INPUT] = 0           # scheduler is off
+    page.counts[S.SCHEDULE_TOGGLE] = 0               # ...and TikTok is not using a switch
+    pub.drive(page, asset, META)
+    assert TOGGLE_TEXT_KEY in page.calls
+
+
+def test_the_toggle_text_can_never_click_something_inside_a_button(pub, asset):
+    """SCHEDULE_TOGGLE_TEXT and SCHEDULE_BUTTON_TEXT are both "Schedule".
+
+    An unguarded text click could therefore land on the submit button and post the video
+    immediately — and since this happens BEFORE the point-of-no-return flag is set, the
+    failure would be retried and the video would go up twice.
+    """
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    page.counts[S.SCHEDULE_DATE_INPUT] = 0
+    page.counts[S.SCHEDULE_TOGGLE] = 0
+    pub.drive(page, asset, META)
+    toggle_clicks = [c for c in page.calls
+                     if c.startswith(f"click:text:{S.SCHEDULE_TOGGLE_TEXT}")]
+    assert toggle_clicks, "the toggle was never clicked"
+    for call in toggle_clicks:
+        assert S.NOT_INSIDE_A_BUTTON in call, \
+            "an unguarded text click on 'Schedule' can hit the submit button"
+
+
+def test_the_submit_button_is_resolved_exactly_not_as_a_substring(pub, asset):
+    """`name="Post"` as a substring also matches the sidebar's "Posts" entry, which sorts
+    first in the DOM — `.first` would have clicked the navigation instead of submitting."""
+    meta = {k: v for k, v in META.items() if k != "schedule_at"}
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(meta))]])
+    pub.drive(page, asset, meta)
+    # the fake appends "~" to the key for a non-exact role lookup
+    assert f"click:role:button:{S.POST_BUTTON_TEXT}" in page.calls
+    assert f"click:role:button:{S.POST_BUTTON_TEXT}~" not in page.calls
 
 
 def test_a_date_field_that_refuses_the_typed_value_falls_back_to_the_picker_then_raises(
@@ -647,6 +712,97 @@ def test_check_reports_a_missing_anchor_and_exits_one(tmp_path, monkeypatch, cap
     assert "MISSING" in capsys.readouterr().out
 
 
+def _check_out(tmp_path, monkeypatch, capsys, page):
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+    monkeypatch.setattr(tw.session, "classify", lambda *a, **k: tw.session.SiteStatus(
+        "tiktok", True, S.STUDIO_URL, S.STUDIO_URL, "logged in"))
+    rc = tw.main(["--check"], repo=tmp_path)
+    return rc, capsys.readouterr().out
+
+
+def test_check_says_post_file_only_instead_of_missing_for_the_form(tmp_path, monkeypatch,
+                                                                   capsys):
+    """The caption box and the scheduler cannot exist until a video is handed over.
+
+    Reporting nine MISSING lines every week for anchors that CANNOT be there is how a canary
+    stops being read — and seeing them would mean starting a real upload, which --check may
+    not do.
+    """
+    page = _Page()
+    for sel in (S.CAPTION_EDITOR, S.SCHEDULE_TOGGLE, S.SCHEDULE_DATE_INPUT,
+                S.SCHEDULE_TIME_INPUT):
+        page.counts[sel] = 0
+    rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
+    assert rc == 0, "an anchor that cannot be resolved read-only is not a failure"
+    for label in ("caption editor", "schedule toggle", "schedule date", "schedule time",
+                  "post button"):
+        line = next(l for l in out.splitlines() if l.startswith(label))
+        assert "post-file only" in line and "MISSING" not in line, line
+
+
+def test_check_never_selects_a_file_or_starts_an_upload(tmp_path, monkeypatch, capsys):
+    page = _Page()
+    _check_out(tmp_path, monkeypatch, capsys, page)
+    assert not [c for c in page.calls if c.startswith("set_input_files")]
+
+
+def test_check_waits_for_each_page_before_counting_anything(tmp_path, monkeypatch, capsys):
+    """A probe that races the render reports a slow page as a drifted selector.
+
+    This is not hypothetical: a 2026-09-15 run that waited only on body text found
+    FILE_INPUT missing on a page that had it a moment later.
+    """
+    page = _Page()
+    _check_out(tmp_path, monkeypatch, capsys, page)
+    calls = page.calls
+    assert (calls.index(f"goto:{S.UPLOAD_URL}") < calls.index(f"wait_for:{S.UPLOAD_PAGE_READY}"))
+    assert (calls.index(f"goto:{S.CONTENT_URL}") < calls.index(f"wait_for:{S.CONTENT_PAGE_READY}"))
+
+
+def test_check_reports_an_empty_account_rather_than_calling_the_row_anchor_missing(
+        tmp_path, monkeypatch, capsys):
+    page = _Page()
+    page.counts[S.POST_ROW] = 0                      # no posts on the account
+    rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
+    assert rc == 0
+    line = next(l for l in out.splitlines() if l.startswith("post rows"))
+    assert "no posts yet" in line and "MISSING" not in line
+
+
+def test_check_calls_the_row_anchor_missing_when_the_list_is_neither_empty_nor_readable(
+        tmp_path, monkeypatch, capsys):
+    """No rows AND no empty state is the ambiguous read the driver refuses to act on."""
+    page = _Page()
+    page.counts[S.POST_ROW] = 0
+    page.body_text = "Posts (Created on) Privacy Views Likes Comments Actions"
+    rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
+    assert rc == 1
+    assert "MISSING" in next(l for l in out.splitlines() if l.startswith("post rows"))
+
+
+def test_check_flags_a_scheduled_tab_coming_back_rather_than_ignoring_it(tmp_path, monkeypatch,
+                                                                         capsys):
+    """read_scheduled deliberately clicks nothing. If TikTok restores a tab, that breaks."""
+    page = _Page()
+    page.counts["role:tab:None~"] = 2                # TikTok put tabs back
+    rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
+    assert rc == 1
+    assert "CHANGED" in next(l for l in out.splitlines() if l.startswith("scheduled tab"))
+
+
+def test_check_is_green_against_the_studio_as_it_looked_on_the_day_it_was_read(
+        tmp_path, monkeypatch, capsys):
+    """The fake page is shaped like the live 2026-09-15 studio: empty account, no tabs."""
+    page = _Page()
+    page.counts[S.POST_ROW] = 0
+    for sel in (S.CAPTION_EDITOR, S.SCHEDULE_TOGGLE, S.SCHEDULE_DATE_INPUT,
+                S.SCHEDULE_TIME_INPUT):
+        page.counts[sel] = 0
+    rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
+    assert rc == 0, out
+    assert "MISSING" not in out and "CHANGED" not in out
+
+
 def test_check_on_a_logged_out_profile_stops_at_the_login_and_queues(tmp_path, monkeypatch,
                                                                      capsys):
     page = _Page()
@@ -819,39 +975,62 @@ def test_a_skeleton_list_is_not_retried_into_an_upload(pub, asset, monkeypatch):
     assert not _uploads(page)
 
 
-# CRITICAL 3. read_scheduled navigated to the content page and read whichever tab was
-# showing — SCHEDULED_TAB_TEXT existed only in the manual steps and the --check probes. The
-# default tab is published posts, so a scheduled post was invisible to the idempotency read
-# and every re-run would upload it again.
+# CRITICAL 3, revisited 2026-09-15. read_scheduled used to click a "Scheduled" tab first,
+# on the belief that the content page defaulted to published posts. Live, that tab does not
+# exist: [role=tab] matches 0 on the content page and TikTok's own empty state reads "Your
+# posted and scheduled videos will appear here" — one table for both. The click therefore hit
+# nothing, timed out on EVERY read, and queued a card instead of scheduling anything. The read
+# is now navigate-and-read, and these tests hold it to that.
 
-def test_the_scheduled_tab_is_opened_before_the_list_is_read(pub, asset):
+def test_the_list_read_clicks_nothing_at_all(pub, asset):
+    """There is no tab to open, so a click here can only land on something unintended."""
+    page = _Page(rows_reads=[[]])
+    pub.read_scheduled(page)
+    assert not [c for c in page.calls if c.startswith("click:")], page.calls
+
+
+def test_the_posts_table_is_waited_for_before_the_list_is_read(pub, asset):
+    """The table renders whether or not the account has posts, so it is the arrival signal.
+
+    Without it a blank page settles straight to "no rows", which reads as "nothing is
+    scheduled" and schedules a duplicate of every post in the batch.
+    """
     page = _Page(rows_reads=[[]])
     pub.read_scheduled(page)
     calls = page.calls
-    assert f"click:text:{S.SCHEDULED_TAB_TEXT}" in calls, "the default tab is not the one we want"
-    assert calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}") < calls.index("evaluate")
-    assert calls.index(f"goto:{S.CONTENT_URL}") < calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}")
+    assert (calls.index(f"goto:{S.CONTENT_URL}")
+            < calls.index(f"wait_for:{S.POSTS_TABLE}")
+            < calls.index("wait_for_function")
+            < calls.index("evaluate"))
 
 
-def test_the_list_is_waited_for_after_the_tab_click_not_before(pub, asset):
-    """Clicking the tab replaces the rows; a wait that ran first would settle on the old ones."""
-    page = _Page(rows_reads=[[]])
-    pub.read_scheduled(page)
-    assert (page.calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}")
-            < page.calls.index("wait_for_function") < page.calls.index("evaluate"))
-
-
-def test_the_tab_is_waited_for_before_it_is_clicked(pub, asset):
-    page = _Page(rows_reads=[[]])
-    pub.read_scheduled(page)
-    assert (page.calls.index(f"wait_for:text:{S.SCHEDULED_TAB_TEXT}")
-            < page.calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}"))
-
-
-def test_both_list_reads_in_a_full_run_open_the_scheduled_tab(pub, asset):
+def test_both_list_reads_in_a_full_run_wait_for_the_table(pub, asset):
     page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
     pub.drive(page, asset, META)
-    assert len([c for c in page.calls if c == f"click:text:{S.SCHEDULED_TAB_TEXT}"]) == 2
+    assert len([c for c in page.calls if c == f"wait_for:{S.POSTS_TABLE}"]) == 2
+
+
+def test_the_caption_editor_is_waited_for_after_the_file_not_before(pub, asset):
+    """The whole form is post-file: the bare upload page has no editor to wait on.
+
+    Waiting first is not a slow no-op, it is a guaranteed timeout — which is why the wait
+    moved after set_input_files and took the upload-length budget with it.
+    """
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    pub.drive(page, asset, META)
+    calls = page.calls
+    assert (calls.index("set_input_files:day-1.mp4")
+            < calls.index(f"wait_for:{S.CAPTION_EDITOR}")
+            < calls.index(f"type:{tw.caption_of(META)}"))
+
+
+def test_the_file_input_is_waited_for_attached_because_it_is_hidden(pub, asset):
+    """TikTok's input[type=file] is display:none and driven by the Select video button."""
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    pub.drive(page, asset, META)
+    calls = page.calls
+    assert (calls.index(f"wait_for:{S.FILE_INPUT}")
+            < calls.index("set_input_files:day-1.mp4"))
 
 
 # IMPORTANT 5. POST_ROW_FALLBACK was "main li", which matches nav and menu items, and the
@@ -910,9 +1089,64 @@ def test_an_ellipsis_row_still_has_to_be_long_enough_to_identify_anything():
     assert tw.find_scheduled([stub], tw.caption_key(caption), WHEN) is None
 
 
+def test_the_caption_is_found_even_when_it_is_not_the_first_line_of_the_row():
+    """A duration badge or a status word ahead of the caption must not defeat the match.
+
+    No real Studio row has ever been read, so betting on line 0 is a bet that, if lost,
+    re-uploads a video that is already scheduled.
+    """
+    caption = tw.caption_of(META)
+    row = _row(caption, lead=("0:32", "Public"))
+    assert row["caption"] == "0:32", "precondition: the caption is not line 0 here"
+    assert tw.find_scheduled([row], tw.caption_key(caption), WHEN) is row
+
+
+def test_a_row_whose_lines_are_all_furniture_still_does_not_match():
+    row = {"caption": "0:32", "lines": ["0:32", "Public", "Scheduled"],
+           "text": "0:32 Public Scheduled 2026-09-21 14:00"}
+    assert tw.find_scheduled([row], tw.caption_key(tw.caption_of(META)), WHEN) is None
+
+
+def test_the_candidate_scan_still_requires_the_date_when_one_was_asked_for():
+    caption = tw.caption_of(META)
+    other = dt.datetime(2026, 9, 28, 14, 0, tzinfo=PT)
+    assert tw.find_scheduled([_row(caption, lead=("0:32",))],
+                             tw.caption_key(caption), other) is None
+
+
+def test_caption_candidates_dedupes_and_drops_blanks():
+    row = {"caption": "Same", "lines": ["Same", "", "  ", "Other"], "text": "Same Other"}
+    assert tw.caption_candidates(row) == ("same", "other")
+
+
+def test_caption_candidates_falls_back_to_the_flat_text_when_there_are_no_lines():
+    row = {"caption": "", "lines": [], "text": "Epcot wait times fell 22% last week."}
+    assert tw.caption_candidates(row) == ("epcot wait times fell 22% last week.",)
+
+
+def test_the_row_reader_asks_for_the_lines_the_candidate_scan_needs():
+    js = tw.scheduled_rows_js()
+    assert "lines:" in js and "POST_ROW_MAX_LINES" not in js
+    assert repr(S.POST_ROW_MAX_LINES) in js
+
+
+def test_the_row_reader_survives_a_selector_the_browser_will_not_parse():
+    """POST_ROW uses :not(:has(...)). One unsupported selector must fall through, not throw."""
+    js = tw.scheduled_rows_js()
+    assert "try {" in js and "catch" in js
+    assert tw.scheduled_ready_js().count("try {") >= 1
+
+
 def test_the_row_fallback_selector_excludes_navigation():
-    assert "nav" in S.POST_ROW_FALLBACK, "a bare 'main li' matches the menu"
+    """The old fallback was "main li", which matched the studio menu entries.
+
+    Live on 2026-09-15 the studio has no list items and no ARIA rows at all, and its sidebar
+    is built from buttons — so a row-role fallback cannot reach the menu the way "main li"
+    could. What must never come back is a fallback that matches ordinary page furniture.
+    """
     assert S.POST_ROW_FALLBACK != "main li"
+    assert " li" not in S.POST_ROW_FALLBACK
+    assert "row" in S.POST_ROW_FALLBACK
 
 
 # IMPORTANT 6. capabilities() advertised publish-queue/tiktok/ while session.fail_card wrote
