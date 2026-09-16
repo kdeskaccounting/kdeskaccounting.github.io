@@ -53,3 +53,55 @@ def test_the_cli_exposes_both_flags():
     assert "--end-card" in out
     assert "--no-end-card" in out
     assert "--spec" in out
+
+
+# --- the guard has to be reachable from main(), and has to fire before anything renders ----
+
+def _stub_module(name, **attrs):
+    import types
+    mod = types.ModuleType(name)
+    for key, value in attrs.items():
+        setattr(mod, key, value)
+    return mod
+
+
+CTA_LESS_SPEC = {
+    "slug": "signoff-demo",
+    "short": {"hook": "h", "scenes": [0], "signoff": "Planning a trip? Guide's in bio."},
+    "scenes": [{"kind": "card", "template": "ranked_list", "narration": "x",
+                "data": {"heading": "h", "subheading": "s", "items": [], "footer": "f"}}],
+}
+
+
+def _run_main(monkeypatch, tmp_path, spec, *argv):
+    """main() with yaml and PIL stubbed out — neither is in the bare pytest environment."""
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("# parsed by the stubbed yaml below, not by PyYAML\n")
+    monkeypatch.setitem(sys.modules, "yaml", _stub_module("yaml", safe_load=lambda _f: spec))
+    monkeypatch.setitem(sys.modules, "PIL", _stub_module(
+        "PIL", Image=_stub_module("PIL.Image"), ImageChops=_stub_module("PIL.ImageChops")))
+    monkeypatch.setattr(sys, "argv", ["make_short.py", "--spec", str(spec_path), *argv])
+    return make_short.main()
+
+
+def test_forcing_an_end_card_on_a_cta_less_spec_reaches_the_guards_message(monkeypatch, tmp_path):
+    """`sh["cta"]` would raise a bare KeyError('cta') and the guard's advice would never print."""
+    with pytest.raises(KeyError) as excinfo:
+        _run_main(monkeypatch, tmp_path, CTA_LESS_SPEC, "--end-card")
+
+    message = str(excinfo.value)
+    assert "short.cta is empty" in message
+    assert "--no-end-card" in message
+    assert "signoff" in message
+
+
+def test_the_end_card_guard_fires_before_a_single_scene_is_rendered(monkeypatch, tmp_path):
+    """Failing after six scenes have narrated and encoded costs minutes; failing here costs none."""
+    def boom(*a, **k):
+        raise AssertionError("the render started before the end-plate guard ran")
+
+    monkeypatch.setattr(make_short.R, "screenshot", boom)
+    monkeypatch.setattr(make_short, "run", boom)
+
+    with pytest.raises(KeyError):
+        _run_main(monkeypatch, tmp_path, CTA_LESS_SPEC, "--end-card")

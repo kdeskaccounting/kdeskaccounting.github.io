@@ -377,6 +377,12 @@ def main():
     media.validate_spec(spec, spec_path)
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
+    # Preflight the end plate alongside every other spec check: --end-card on a spec that
+    # carries no `cta:` has no copy to put on the plate, and must say so HERE — before a
+    # build directory exists, let alone six narrated and encoded scenes. end_html is pure
+    # string building, so paying for it twice costs nothing.
+    if end_card_wanted(sh, a.end_card):
+        end_html(sh.get("cta"))
     cap_box, cap_skip = caption_plan(spec, sh) if cap.enabled else (None, set())
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
@@ -473,7 +479,7 @@ def main():
         add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
     if end_card_wanted(sh, a.end_card):
-        hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
+        hp = work / "end.html"; hp.write_text(end_html(sh.get("cta"), brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
         out = work / "end.mp4"; n = int(1.5 * FPS)
         run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
              f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
