@@ -167,6 +167,11 @@ def spec_credits(spec: dict) -> str:
     (deduped, first mention wins) — a credit burned into a frame belongs in the description
     too — then the spec's `disclaimer:`. Returns "" when the spec claims nothing, so a caller
     can append it unconditionally.
+
+    NOT YET WIRED — nothing calls this. The spec keys are parsed and formatted here, but there
+    is no end-credits plate and no publisher hook, so a spec's top-level `credits:`/
+    `disclaimer:` currently appear nowhere in a rendered video or its description. Only a
+    media scene's own `credit:` is burned into the frame. Do not mistake this for behaviour.
     """
     lines: list[str] = []
     for value in (spec.get("credits") or []):

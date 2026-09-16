@@ -138,15 +138,28 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     src: media/earth/magic-kingdom.mp4   # repo-relative to the SPEC FILE's own repo root
 #                                          # (nearest .git / pyproject.toml above it), or
 #                                          # absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
-#     motion: clip | kenburns | hold       # clip: play it, trimmed to the narration (+0.6 s
-#                                          # like cards), looped if shorter. kenburns: 1.0 ->
-#                                          # 1.08 zoom. hold: static. Default: kenburns for a
-#                                          # still, clip for footage.
+#     motion: clip | kenburns | hold       # default: kenburns for a still, clip for footage
+#       clip      play it, trimmed to the narration (+0.6 s like cards), looped if shorter.
+#                 VIDEO ONLY — on a still it hangs ffmpeg forever (0 bytes out), so it is
+#                 refused.
+#       kenburns  slow 1.0 -> 1.08 zoom. STILLS ONLY — zoompan counts INPUT frames, so on
+#                 footage it silently encodes a freeze frame; refused.
+#       hold      both kinds. On a still: one static frame. On a VIDEO: plays the clip
+#                 through ONCE, then freezes the last frame for the rest of the scene.
+#     Bad kind/motion pairings are rejected by media.check_motion, and the whole spec is
+#     validated by media.validate_spec BEFORE anything renders — so a typo on scene 7 costs
+#     nothing, instead of surfacing after six scenes have been narrated and encoded.
 #     credit: "Imagery: Google Earth, Maxar Technologies"   # REQUIRED when src is a still
 #     overlay: {template: …, data: {…}}    # optional; the `card` contract unchanged
 # A 16:9 source is scaled and cropped to FILL the 9:16 frame — no letterbox bars.
-# Worked example of both: marketing/video/media-demo/scenes.yaml (its two placeholder assets
-# are synthetic and committed; marketing/video/media-demo/assets/generate.py remakes them).
+# A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
+# renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
+# `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end
+# credits plate and no publisher hook. Only the per-scene `credit:` is actually burned in.
+# Worked example of all of it: marketing/video/media-demo/scenes.yaml, which is deliberately a
+# MIXED spec (media, card, media) because card and media parts must encode to the same stream
+# for the `-c:v copy` concat to join them. Its two placeholder assets are synthetic and
+# committed; marketing/video/media-demo/assets/generate.py remakes them.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
 
 # NEVER DRAW IN THE BOTTOM-RIGHT 20% x 8% OF A FRAME. That is where Google Earth Studio burns
