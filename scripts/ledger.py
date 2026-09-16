@@ -216,12 +216,28 @@ def _stamp(row: dict) -> str:
         return raw or "no timestamp"
 
 
+def _row_id(row: dict) -> int:
+    """`row`'s id as an int, or 0 if it cannot be read — which sorts it before everything."""
+    try:
+        return int(row.get("id", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def answer(entry_id: int, rows: list[dict] | None) -> tuple[str, dict] | None:
     """The LAST row in `rows` that answers `entry_id`, as ("approves"|"vetoes", row), or None.
 
-    File order is the tie-break, deliberately: the ledger is append-only, so "later in the
-    file" is the only record of "said more recently". An approval can therefore be taken back
-    by a veto written after it, and a veto reversed by a fresh approval after that.
+    Only a LATER row answers: its id must be strictly greater than `entry_id`. Ids are
+    allocated in file order in an append-only log, so id order and file order are the same
+    ordering, and `ts` is deliberately not consulted (it is a string a hand-written row can
+    set to anything). Without that rule an entry could approve ITSELF — exactly what a T2 row
+    asking for a veto window would be doing — and a row written in 2020 could pre-authorise a
+    decision nobody had made yet. A row says no about itself with `status: "vetoed"`, which
+    the gate checks separately; a self-reference in `approves`/`vetoes` is ignored.
+
+    Among the rows that do answer, the last one wins: the ledger is append-only, so "later in
+    the file" is the only record of "said more recently". An approval can therefore be taken
+    back by a veto written after it, and a veto reversed by a fresh approval after that.
 
     An approval counts only from a row whose status is in APPROVAL_STATUSES (it records
     Stephen having said yes). A veto counts from any row, because a stop is never ignored on
@@ -229,6 +245,8 @@ def answer(entry_id: int, rows: list[dict] | None) -> tuple[str, dict] | None:
     """
     found: tuple[str, dict] | None = None
     for row in rows or []:
+        if _row_id(row) <= entry_id:
+            continue
         if entry_id in answered_ids(row, "vetoes"):
             found = ("vetoes", row)
         elif (entry_id in answered_ids(row, "approves")

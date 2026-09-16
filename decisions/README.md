@@ -22,7 +22,9 @@ Two optional fields, **written only when present**, let a LATER entry answer an 
 
 - **`approves: [69, 70]`** — Stephen said yes. The gate (`veto_gate` / `t2_window_open` in `scripts/ledger.py`, used by `publish.py`, `schedule_week.py` and `send_reengage.py`) then treats those ids as open **without waiting for `veto_window_close` to elapse**. Only accepted on a row whose status is `approved` or `executed`: it records an approval that happened, not a plan to ask for one.
 - **`vetoes: [69]`** — he said no. Closes those ids again **even if the window has already elapsed**.
+- **Only a LATER entry answers.** The answering row's id must be **strictly greater** than the id it answers (ids are allocated in file order here, so id order *is* file order; `ts` is not consulted — it is a string a hand-written row can set to anything). So an entry cannot approve **itself** — which is what a T2 row asking for its own veto window would be doing — and an old entry cannot pre-authorise a decision that had not been made yet. A row says no about *itself* with `"status": "vetoed"`.
 - **The last answering entry in the file wins**, because in an append-only log "later in the file" is the only record of "said more recently". An approval can be taken back by a veto written after it, and that veto reversed by a fresh approval after that.
+- **A field the reader cannot read answers nothing.** `append()` refuses to write anything but a list of plain ints, so `"approves": "69"` or `[69, "70"]` can only arrive by hand; the gate reads what it can and stays shut for the rest, and an id naming an entry that does not exist authorises nothing.
 - Write them through `ledger.append(..., approves=[...], vetoes=[...])`, never by hand. **Prose does not move the gate:** entry #81 recorded the same approval in words and nothing unlocked, which is why #85 exists.
 
 ## Tiers

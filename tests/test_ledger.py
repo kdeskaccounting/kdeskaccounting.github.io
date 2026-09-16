@@ -392,6 +392,81 @@ def test_an_approval_cannot_promote_a_non_t2_entry(tmp_path):
     assert "tier 0" in why
 
 
+# --- only a LATER entry answers ------------------------------------------------------------
+#
+# "Later" is a strictly greater id: ids are allocated in file order in an append-only log, so
+# the two orderings are the same one, and `ts` is not consulted (it can be hand-written, and a
+# row can carry any stamp at all). Without this rule an entry could approve ITSELF - which is
+# what a T2 row asking for a veto window would be doing - and a 2020 row could pre-authorise a
+# decision nobody had made yet.
+
+def test_an_entry_cannot_approve_itself(tmp_path):
+    """A T2 row carrying approves of its own id is asking to skip its own veto window."""
+    p = _ledger_with(tmp_path, _entry(approves=[69], status="executed"))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is False
+    assert "2026-09-16" in why, "the unelapsed window is still the answer"
+
+
+def test_an_earlier_entry_cannot_approve_a_later_one(tmp_path):
+    """Entry #10, whenever it was written, cannot authorise a decision made at #69."""
+    early = _approval(entry_id=10, ids=(69,), ts="2020-01-01T00:00:00-0800")
+    assert ledger.t2_window_open(69, BEFORE, path=_ledger_with(tmp_path, early, _entry()))[0] is False
+    # Same row, this time sitting AFTER #69 in the file: the id is what decides, not position.
+    assert ledger.t2_window_open(69, BEFORE, path=_ledger_with(tmp_path, _entry(), early))[0] is False
+
+
+def test_an_earlier_entry_cannot_veto_a_later_one_either(tmp_path):
+    """The rule is symmetric — and a row says no about ITSELF with status: vetoed."""
+    p = _ledger_with(tmp_path, _veto(entry_id=10, ids=(69,)), _entry())
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is True
+    assert "closed" in why
+
+
+def test_the_very_next_entry_is_late_enough_to_approve(tmp_path):
+    """Strictly greater, not "much later": #70 answering #69 is the normal case."""
+    p = _ledger_with(tmp_path, _entry(), _approval(entry_id=70, ids=(69,)))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is True
+    assert "entry #70" in why
+
+
+# --- hand-written rows ----------------------------------------------------------------------
+#
+# append() refuses to write any of these, so they can only arrive by hand or from another
+# tool. The reader stays lenient (an unreadable field must not crash a gate) but the gate
+# stays shut: an id it cannot read is an id nobody approved.
+
+def test_an_approves_that_is_a_bare_string_answers_nothing(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _approval(approves="69"))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is False
+    assert "2026-09-16" in why
+
+
+def test_a_non_int_member_of_approves_answers_for_nobody(tmp_path):
+    """`["70"]` is not `[70]`: the string opens nothing, and a readable int beside it is
+    still honoured for its own id."""
+    p = _ledger_with(tmp_path, _entry(), _entry(id=70, veto_window_close="2026-09-16T12:00:00-0700"),
+                     _approval(approves=[69, "70"]))
+    assert ledger.t2_window_open(70, BEFORE, path=p)[0] is False
+    assert ledger.t2_window_open(69, BEFORE, path=p)[0] is True
+
+
+def test_an_approval_naming_an_id_that_does_not_exist_authorises_nothing(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _approval(ids=(999,)))
+    ok, why = ledger.t2_window_open(999, AFTER, path=p)
+    assert ok is False
+    assert "does not exist" in why
+
+
+def test_an_unreadable_id_on_the_answering_row_answers_nothing(tmp_path):
+    """A row whose own id cannot be read cannot be shown to be later than anything."""
+    p = _ledger_with(tmp_path, _entry(), _approval(entry_id="eighty-five"))
+    assert ledger.t2_window_open(69, BEFORE, path=p)[0] is False
+
+
 def test_veto_gate_given_no_ledger_to_read_stays_purely_time_based(tmp_path):
     """The rows are an explicit argument: a caller that passes none gets the old, strict gate.
 
