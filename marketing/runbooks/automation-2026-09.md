@@ -270,7 +270,15 @@ python3 scripts/publishers/schedule_week.py --week 2026-W39 \
   --assets-dir ~/parksheet/release/2026-W39                 # 4. the plan (dry run: the DEFAULT)
 python3 scripts/publishers/schedule_week.py --week 2026-W39 \
   --assets-dir ~/parksheet/release/2026-W39 --go            # 5. go — the only flag that posts
+find scripts/browser/runs -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
+
+**Prune the traces (step 6, every Saturday).** Every driver run leaves a `trace.zip` under
+`scripts/browser/runs/<date>/` holding that run's requests and the headers that went with them —
+a logged-in session, on a laptop that travels. The directory is gitignored, so nothing publishes
+it, but nothing deletes it either. The `find` above drops anything older than 14 days, which is
+long enough to debug last week's failure and short enough that the pile does not become an
+archive of every session the Mac has ever driven.
 
 **Nothing reaches TikTok without `--go`.** A bare invocation prints the plan and opens no browser,
 so a forgotten flag cannot schedule a week of posts to the live account.

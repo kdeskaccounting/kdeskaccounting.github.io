@@ -772,3 +772,15 @@ def test_no_workflow_drives_chrome_or_schedules_tiktok(workflow):
 def test_the_guard_covers_every_workflow_that_exists():
     """A new workflow file must be swept too, not just the two named schedules."""
     assert set(WF.glob("*.yml")) >= {WEEKLY, DAILY, DEPLOY}
+
+
+def test_the_runbook_says_to_prune_the_trace_directory():
+    """A Playwright trace records the session it drove — pruning is hygiene, not tidiness.
+
+    scripts/browser/runs/ is gitignored, so nothing publishes it, but nothing deletes it
+    either: every driver run leaves a trace.zip carrying that run's requests on a laptop
+    that travels.
+    """
+    text = (ROOT / "marketing" / "runbooks" / "automation-2026-09.md").read_text()
+    assert "scripts/browser/runs" in text
+    assert "-mtime +14" in text, "name the retention, not just the idea"
