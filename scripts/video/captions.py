@@ -22,8 +22,8 @@ make_short composites with `overlay` + `enable='between(t,a,b)'`.
 `caption_box()` is the single place that decides where a caption sits, exactly as
 `media.overlay_box` is for a card plate. It keeps the band inside the Shorts safe zone
 (middle 80% of the width, nothing below 75% of the height), above any card overlay, and
-therefore nowhere near the bottom-right corner Google Earth Studio burns its attribution
-watermark into.
+therefore nowhere near the lower-frame zone Google Earth Studio burns its attribution
+watermark into (`media.watermark_box`, measured: x >= 0.45, y >= 0.88).
 
 Word timings come from `<scene>.words.json`, written beside each scene WAV by narrate.py:
 `[{"text": "Magic", "start": 0.12, "end": 0.41}, ...]` in seconds against the finished WAV

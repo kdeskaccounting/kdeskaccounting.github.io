@@ -4,7 +4,8 @@ Three layers of guard, each skipping on what it actually needs:
 
   * the demo's committed assets — stdlib only, always runs;
   * the composite — needs ffmpeg and a headless Chrome, and proves against real pixels that
-    nothing we draw covers the attribution zone in the bottom-right corner;
+    nothing we draw covers the attribution zone, or the Google Earth mark measured inside
+    it;
   * `build_video.py --frames-only` — needs the render venv (playwright/yaml/openpyxl), so it
     skips in a bare pytest environment and on CI runners, exactly like the card e2e.
 

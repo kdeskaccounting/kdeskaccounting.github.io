@@ -267,7 +267,11 @@ def boxes_overlap(a, b) -> bool:
 
 
 def watermark_box(width: int, height: int) -> tuple[int, int, int, int]:
-    """Earth Studio's attribution zone: the bottom-right corner. Keep everything out of it."""
+    """Earth Studio's attribution zone. Keep everything out of it.
+
+    Anchored to the bottom-right corner but far larger than one: the mark itself starts at
+    mid-width and 0.909 of the height, so the zone reaches x >= 0.45, y >= 0.88.
+    """
     return (round(width * (1 - WATERMARK_W_FRAC)), round(height * (1 - WATERMARK_H_FRAC)),
             int(width), int(height))
 
