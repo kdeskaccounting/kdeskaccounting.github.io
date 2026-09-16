@@ -458,3 +458,22 @@ def test_a_paragraph_of_words_becomes_readable_cues_that_never_overlap():
     for a, b in zip(wins, wins[1:]):
         assert a.end <= b.start + 1e-9
     assert all(not math.isinf(w.end) for w in wins)
+
+
+def test_a_spelled_out_date_stays_on_one_card_even_when_the_cue_filled_on_characters():
+    """"Saturday, October" is only two words but already 17 characters, so the word-count
+    grace alone would still orphan "10,". The grace fires on either cap, and a short closing
+    numeral joins its date."""
+    text = "the highest crowd scores: Saturday, October 10, Saturday, September 26. Scores come from"
+    words = [{"text": w, "start": i * 0.35, "end": i * 0.35 + 0.3} for i, w in enumerate(text.split())]
+    cues = [c.text for c in C.build_cues(words)]
+    assert "Saturday, October 10," in cues
+    assert "Saturday, September 26." in cues
+    assert not any(c.startswith("10,") or c.startswith("26.") for c in cues)
+
+
+def test_a_long_closing_word_is_not_rescued_so_prose_keeps_its_rhythm():
+    text = "this is not a rendered card. more words here"
+    words = [{"text": w, "start": i * 0.35, "end": i * 0.35 + 0.3} for i, w in enumerate(text.split())]
+    cues = [c.text for c in C.build_cues(words)]
+    assert all(len(c.split()) <= 3 for c in cues)

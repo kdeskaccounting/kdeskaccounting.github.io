@@ -273,7 +273,15 @@ def build_cues(words, scene_offset: float = 0.0, limit: float | None = None) -> 
             # "Sat Oct 10," together. Bounded to MAX_WORDS + 1 words and MAX_CHARS +
             # GRACE_CHARS characters, and only ever taken once per cue (the append+flush
             # below empties `current`, so the next word starts a fresh cue like normal).
-            if (len(current) == MAX_WORDS and _orphans_if_alone(word.text)
+            # The same grace covers a cue that filled on CHARACTERS rather than words
+            # ("Saturday, October" is two words and 17 characters) and a short closing
+            # token that ends the phrase ("10," "26." "3,"): a numeral alone on a card
+            # reads as scrambled whatever mark it carries. A long closer ("card.") is not
+            # rescued, so ordinary prose keeps its 3-word rhythm.
+            closer = word.text.strip()
+            short_closer = len(closer) <= 4 and closer.endswith(("," ,) + _HARD_BREAK)
+            if (len(current) >= 2 and len(nxt) <= MAX_WORDS + 1
+                    and (_orphans_if_alone(word.text) or short_closer)
                     and len(_cue_text(nxt)) <= MAX_CHARS + GRACE_CHARS):
                 current.append(word)
                 groups.append(current)
