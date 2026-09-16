@@ -799,3 +799,31 @@ def test_curve_labels_and_points_stay_in_step_at_every_series_length(count):
     html = cards.card_html("wait_curve", data, cards.brand_tokens(None))
 
     assert len(_curve_label_positions(html)) == len(_curve_points(html)) == count
+
+
+def test_a_single_point_curve_renders_instead_of_dividing_by_zero():
+    """The contract says a one-point series is legal; `step` divides by len-1, so say so here.
+
+    A one-hour series is what a park that has only just opened reports, and it must draw
+    something rather than raise — the rest of the Short still has to render.
+    """
+    one = {**CURVE, "items": [{"label": "9a", "value": 25}],
+           "annotation": {"label": "just opened", "index": 0}}
+
+    html = cards.card_html("wait_curve", one, cards.brand_tokens(None))
+
+    assert "<polyline" in html and "<circle" in html
+    assert "just opened" in html
+    assert _curve_points(html) == [0.0]
+    assert _curve_label_positions(html) == [0.0]
+    assert ">9a<" in html
+
+
+def test_a_single_point_curve_is_fine_without_an_annotation_too():
+    one = {k: v for k, v in CURVE.items() if k != "annotation"}
+    one["items"] = [{"label": "9a", "value": 25}]
+
+    html = cards.card_html("wait_curve", one, cards.brand_tokens(None))
+
+    assert "<polyline" in html
+    assert "<text" not in html, "no annotation label means no annotation text"
