@@ -9,13 +9,21 @@ Output: scripts/video/build/<slug>/<slug>-short.mp4 (+ short-review/*.png sample
   anywhere on disk (its `slug:` key names the build directory), which is how a second venture
   renders a card-only Short through this pipeline.
   --variant NAME renders the block under `shorts: {NAME: …}` instead → <slug>-short-NAME.mp4
+  --captions / --no-captions override the spec's top-level `captions:` block (default: off)
 All text is rendered into PNGs via HTML (this ffmpeg has no drawtext).
+
+Word-timed ("karaoke") captions, when a spec asks for them, are burned into the TOP of the
+frame in the pass that already joins the parts — that concat was a stream copy, so this is
+the Short's only re-encode, loudnorm and all, rather than a second one. The rules and the
+band's geometry live in scripts/video/captions.py; the per-word timings come from the
+`scene_NN.words.json` narrate.py writes beside each WAV.
 """
 import argparse, html, json, math, pathlib, subprocess, sys
 # yaml and PIL are imported inside the functions that use them so this module
 # imports with the standard library alone (see tests/test_make_short_cards.py).
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
+import captions
 import cards
 import media
 from short_variants import safe_slug, select_short, short_paths
@@ -126,6 +134,76 @@ def media_layers(scene, brand, work, k):
     return layers
 
 
+def caption_box_for(spec, short, width=OUT_W, height=OUT_H):
+    """The caption band for a whole Short: one band, clearing the highest card it will meet.
+
+    Captions run across every scene, so the band cannot move scene by scene without jumping.
+    It is therefore sized against the card that reaches highest — in practice
+    media.overlay_box, which is the same rectangle for every media scene — and captions.
+    caption_box shrinks or lifts the band to clear it (or refuses, if there is no room).
+    """
+    tops = [media.overlay_box(width, height)[1]
+            for idx in short["scenes"]
+            if media.is_media(spec["scenes"][idx] or {}) and (spec["scenes"][idx].get("overlay"))]
+    return captions.caption_box(width, height, min(tops) if tops else None)
+
+
+def caption_cues(scenes, audio_dir):
+    """[(scene index, part start, part end)] -> the cues for the whole Short.
+
+    `part end` is the limit each scene's captions are clamped to, so a held phrase never
+    bleeds over the cut onto the next scene's footage. A scene whose provider gave no word
+    timings is skipped out loud rather than silently dropped — `null` in its words.json means
+    a non-English Kokoro voice or an ElevenLabs response with no alignment, and the fix
+    (re-narrate, or change the voice) is not obvious from a Short that quietly has no words
+    over one of its scenes.
+    """
+    cues = []
+    for idx, start, end in scenes:
+        words = captions.read_words(pathlib.Path(audio_dir) / f"scene_{idx:02d}.wav")
+        if not words:
+            print(f"scene {idx:02d}: no word timings — captions skipped for this scene "
+                  f"(narrate.py writes scene_{idx:02d}.words.json beside the WAV)", flush=True)
+            continue
+        cues.extend(captions.build_cues(words, start, limit=end))
+    return cues
+
+
+def render_captions(cues, cfg, brand, work, box):
+    """One transparent PNG per spoken word. Returns [(png, start, end)] in time order.
+
+    The page is the band rather than the whole frame — ffmpeg holds one decoded RGBA frame per
+    input, and at 1080x1920 a hundred-odd word PNGs is a gigabyte for pixels that are entirely
+    transparent. The band's own y comes back to the overlay, so captions.caption_box is still
+    the only thing that decides where a caption sits.
+    """
+    left, top, right, bottom = box
+    out = []
+    for n, win in enumerate(captions.word_windows(cues)):
+        doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box)
+        hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
+        png = work / f"cap_{n:04d}.png"
+        R.screenshot(hp, png, OUT_W, bottom - top, transparent=True)
+        out.append((png, win.start, win.end))
+    return out
+
+
+def caption_filter(overlays, y):
+    """The filter graph that burns the word PNGs into the concatenated video.
+
+    One `overlay` per word, each gated by `enable='between(t,a,b)'` — this ffmpeg build has no
+    drawtext, so every pixel of text in this pipeline is a pre-rendered PNG. Input n is the
+    nth caption PNG; input 0 is the concat.
+    """
+    steps, stage = [], "0:v"
+    for n, (_png, start, end) in enumerate(overlays, start=1):
+        steps.append(f"[{stage}][{n}:v]overlay=x=0:y={y}:format=auto:"
+                     f"enable='between(t,{start:.3f},{end:.3f})'[c{n}]")
+        stage = f"c{n}"
+    steps.append(f"[{stage}]format=yuv420p[vout]")
+    return steps
+
+
 def highlight_bbox(im):
     """Bounding box of the orange (#E67E22) highlight rings drawn by render_sheets, or None."""
     from PIL import ImageChops
@@ -191,6 +269,12 @@ def main():
                                       "names the build directory (use for a card-only spec)")
     ap.add_argument("--crf", type=int, default=26)
     ap.add_argument("--variant", default=None, help="named block under `shorts:` (default: legacy `short:`)")
+    caps = ap.add_mutually_exclusive_group()
+    caps.add_argument("--captions", dest="captions", action="store_true", default=None,
+                      help="burn word-timed captions into the top of the frame, whatever the "
+                           "spec's `captions:` block says")
+    caps.add_argument("--no-captions", dest="captions", action="store_false",
+                      help="render without captions even if the spec asks for them")
     a = ap.parse_args()
     # --slug also builds a path, so it is validated before it is used to open anything.
     slug = safe_slug(a.slug) if a.slug else None
@@ -198,7 +282,9 @@ def main():
     spec = yaml.safe_load(open(spec_path))
     # Preflight: every media scene is checked here, before a single frame is rendered.
     media.validate_spec(spec, spec_path)
+    cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
+    cap_box = caption_box_for(spec, sh) if cap.enabled else None
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
@@ -211,6 +297,22 @@ def main():
             f"--spec {spec_path} --out {build / 'audio'}")
     durs = json.load(open(dj))
     parts = []
+    # Where each scene lands in the finished Short. Measured from the ENCODED part rather than
+    # from the `dur` asked for: `-t 4.633` at 30 fps lands on a frame boundary, and one frame
+    # of drift per scene is visible on a caption that is meant to light up on a syllable.
+    # Probed only when captions are on — an uncaptioned render must not grow an ffprobe a scene.
+    timeline = [0.0]
+    cap_scenes = []
+
+    def add_part(path, idx=None):
+        parts.append(path)
+        if not cap.enabled:
+            return
+        seconds = dur_of(path)
+        if idx is not None:
+            cap_scenes.append((idx, timeline[0], timeline[0] + seconds))
+        timeline[0] += seconds
+
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
     btokens = cards.brand_tokens(spec.get("brand"))
     wbv = wbf = None
@@ -226,7 +328,7 @@ def main():
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4")
-            parts.append(out)
+            add_part(out, idx)
             print(f"scene {idx:02d}: media {kind}/{motion} {dur:.1f}s -> {out.name}", flush=True)
             continue
         if cards.is_card(sc):
@@ -237,7 +339,7 @@ def main():
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
             out = encode_scene(png, wav, dur, a.crf)
-            parts.append(out); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
+            add_part(out, idx); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue
         if str(idx) in ranges:  # dedicated portrait-friendly render of a narrower range, trimmed to the table
             if wbv is None:
@@ -272,17 +374,36 @@ def main():
         png = work / f"scene_{k}.png"; R.screenshot(hp, png, RW, RH)
         wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
         out = encode_scene(png, wav, dur, a.crf)
-        parts.append(out); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
+        add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
     hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
     out = work / "end.mp4"; n = int(1.5 * FPS)
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
          f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
          "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
-    parts.append(out)
+    add_part(out)
     lst = work / "concat.txt"; lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
     final = paths.final
-    run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
+    # Captions are burned in HERE, in the pass that was already joining the parts, rather than
+    # in a second one: the concat is a stream copy today, so this is the only re-encode the
+    # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
+    overlays = render_captions(caption_cues(cap_scenes, build / "audio"), cap,
+                               cards.brand_tokens(spec.get("brand")), work,
+                               cap_box) if cap.enabled else []
+    if overlays:
+        args = ["-f", "concat", "-safe", "0", "-i", str(lst)]
+        for png, _s, _e in overlays:
+            args += ["-i", str(png)]
+        steps = caption_filter(overlays, cap_box[1])
+        steps.append("[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
+        run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
+             "-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-preset", "medium",
+             "-crf", str(a.crf), "-r", str(FPS), "-color_range", "tv", "-bsf:v", RANGE_BSF,
+             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
+        print(f"captions: {len(overlays)} word windows burned in "
+              f"(accent {cap.accent}, band y={cap_box[1]}-{cap_box[3]})", flush=True)
+    else:
+        run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
     total = dur_of(final)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
     rev = paths.review; rev.mkdir(exist_ok=True)
