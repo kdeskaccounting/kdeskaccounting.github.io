@@ -84,6 +84,12 @@ scripts/video/.venv-tts/bin/python scripts/video/build_video.py --spec marketing
 scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
   --spec marketing/video/card-demo/scenes.yaml --frames-only      # `card` scene kind, no TTS
 scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --tts-check   # ElevenLabs voice_id exists? (0/2)
+# Word-timed burned-in captions (top of frame, spoken word in the accent): OFF unless the spec
+# carries `captions: {enabled: true, accent: "#ffe234", position: top}`; `--captions` /
+# `--no-captions` override it. Timings come from the `scene_NN.words.json` narrate.py writes
+# beside each WAV — re-run narrate.py first if a scene prints "no word timings". A full-frame
+# `kind: card` scene and any legacy sheet scene are skipped (their own layout owns the top).
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml   # the captioned demo
 
 # ── 4. Publish (T1 after 2026-09-16; ALWAYS --dry-run first) ──────────────────
 python3 scripts/publishers/publish.py --capabilities               # which platforms are actually connected

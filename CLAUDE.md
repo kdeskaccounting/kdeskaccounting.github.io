@@ -173,6 +173,50 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # (footage can credit itself on screen; a still cannot) and build_video/make_short refuse the
 # render without one.
 
+# Word-timed ("karaoke") burned-in captions — per spec (2026-09-15). OFF unless a spec asks,
+# so every existing Short and every golden is unchanged. Only marketing/video/media-demo turns
+# them on today; ParkSheet sets the same key from its own `cards.build_spec` (that repo is not
+# edited from here — the key below is the whole contract).
+#   captions:
+#     enabled: true
+#     accent: "#ffe234"     # HEX ONLY — it is interpolated into CSS unescaped, and refused
+#                           # otherwise. The spoken word wears it; the rest of the cue is white.
+#     position: top         # the only position so far
+# --captions / --no-captions on make_short.py override the block either way.
+#
+# A cue is a PHRASE, not a sentence: <= 3 words and <= 20 characters, broken at a sentence end
+# always and at a comma once it has two words. A cue holds the screen until the next one starts
+# (capped at 2.2 s of silence) so the top of the frame never flickers, and inside a cue word k
+# is lit from its own start until the NEXT word's start. Rules and geometry: scripts/video/
+# captions.py, ported from kdeskgames/word-chain/video/captions.mjs.
+#
+# TIMINGS come from `scene_NN.words.json`, which narrate.py now writes beside every scene WAV:
+# [{"text","start","end"}] in seconds against the FINISHED WAV — after the silence trim and the
+# 0.3 s lead-in, because that is the audio make_short concatenates. ElevenLabs supplies them
+# from /v1/text-to-speech/{voice}/with-timestamps (same body, JSON back with audio_base64 +
+# alignment), so there is no second billed request. KOKORO CAVEAT: its MTokens carry
+# start_ts/end_ts only when the ENGLISH G2P ran (lang_code "a"/"b"); any other language writes
+# `null` and that scene renders uncaptioned with one line saying so. The words file is part of
+# the cache — a scene cached before this existed re-synthesizes once (free on Kokoro, one
+# request on ElevenLabs); the cache KEY did not change.
+#
+# WHERE THEY SIT: a band centred on 22% of the frame height, inside the Shorts safe zone
+# (middle 80% of the width, nothing below 75% of the height), so nowhere near the Earth Studio
+# attribution corner. It shrinks — then lifts — to clear a media scene's card overlay
+# (media.overlay_box). A scene whose OWN layout owns the top of the frame is skipped rather
+# than overprinted, out loud: that means every full-frame `kind: card` scene and every legacy
+# sheet/pan scene (whose hook band starts at y=0). Captions are for imagery, not for a card
+# that is already all text.
+#
+# HOW: one transparent PNG per spoken word (this ffmpeg has no drawtext), composited with
+# `overlay ... enable='between(t,a,b)'` in the pass that ALREADY concatenates the parts — that
+# concat was a `-c:v copy`, so a captioned Short costs exactly one re-encode, loudnorm and all,
+# not a second pass. Scene offsets are measured from the encoded parts (one ffprobe each) so a
+# frame of rounding per scene cannot drift the highlight off the syllable.
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
+  --spec marketing/video/media-demo/scenes.yaml            # captions: on in that spec
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --no-captions
+
 # Narration provider — per spec (2026-09-15). No `tts:` block, or a legacy top-level
 # `voice: am_michael`, still means Kokoro (local, free), so every existing spec is unchanged.
 #   tts:
