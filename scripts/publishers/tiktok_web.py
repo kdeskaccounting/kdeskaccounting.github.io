@@ -402,8 +402,16 @@ class TikTokWebPublisher(Publisher):
             return result
         # Replace the base's generic dry-run sentence with the real plan: the schedule is the
         # part a reviewer needs to see before Saturday's batch goes live.
-        return dataclasses.replace(
-            result, detail="dry-run: " + "; ".join(plan_lines(pathlib.Path(asset), meta)))
+        #
+        # A malformed schedule_at in meta.json surfaces as a not-ok result rather than an
+        # exception: publish() is contractually a function that returns a result, and one bad
+        # day of a batch must not take the week down with a traceback. Nothing is written —
+        # a dry run that refuses has nothing to queue.
+        try:
+            plan = "; ".join(plan_lines(pathlib.Path(asset), meta))
+        except ScheduleError as exc:
+            return dataclasses.replace(result, ok=False, detail=f"dry-run REFUSED: {exc}")
+        return dataclasses.replace(result, detail="dry-run: " + plan)
 
     def queue(self, asset: pathlib.Path, meta: dict, detail: str) -> PublishResult:
         """One card per failure, written by session.fail_card so redaction happens once.
@@ -661,7 +669,14 @@ def main(argv=None, *, repo: pathlib.Path | None = None) -> int:
         meta["schedule_at"] = a.schedule
     pub = TikTokWebPublisher(repo=repo)
     if a.dry_run:
-        for line in plan_lines(a.asset, meta):
+        try:
+            lines = plan_lines(a.asset, meta)
+        except ScheduleError as exc:
+            # The caller's own mistake, named: exit 2, never a traceback (publish.py does the
+            # same for --schedule).
+            print(f"REFUSING: {session.redact_secrets(exc)}", file=sys.stderr)
+            return 2
+        for line in lines:
             print(f"(dry-run) {line}")
         return 0
     result = pub.publish(a.asset, meta, dry_run=False)

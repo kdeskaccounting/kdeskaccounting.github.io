@@ -567,9 +567,32 @@ def test_dry_run_prints_the_plan_and_writes_nothing(pub, asset, monkeypatch, tmp
     assert not (tmp_path / "scripts").exists()
 
 
-def test_dry_run_still_refuses_an_unparseable_schedule(pub, asset):
-    with pytest.raises(tw.ScheduleError):
-        pub.publish(asset, {**META, "schedule_at": "next tuesday"}, dry_run=True)
+# MINOR 7. A bad schedule_at in meta.json escaped publish() as a ScheduleError, past the
+# contract every caller relies on ("a publisher returns a result; it does not raise"). One
+# malformed day of a batch would have taken down the whole week with a traceback.
+
+def test_a_dry_run_reports_an_unparseable_schedule_instead_of_raising(pub, asset):
+    result = pub.publish(asset, {**META, "schedule_at": "next tuesday"}, dry_run=True)
+    assert result.ok is False
+    assert "next tuesday" in result.detail
+    assert result.queued_path is None, "a dry run writes nothing, not even a card"
+
+
+def test_a_live_run_with_a_bad_schedule_queues_a_card_instead_of_raising(pub, asset,
+                                                                         monkeypatch):
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page(rows_reads=[[]])))
+    result = pub.publish(asset, {**META, "schedule_at": "next tuesday"}, dry_run=False)
+    assert result.ok is False
+    assert result.queued_path, "the day still needs a card a human can act on"
+
+
+def test_the_cli_dry_run_exits_two_on_a_bad_schedule_without_a_traceback(tmp_path, asset,
+                                                                         capsys):
+    meta = tmp_path / "meta.json"
+    meta.write_text(json.dumps({**META, "schedule_at": "next tuesday"}), encoding="utf-8")
+    rc = tw.main(["--dry-run", "--asset", str(asset), "--meta", str(meta)], repo=tmp_path)
+    assert rc == 2
+    assert "next tuesday" in capsys.readouterr().err
 
 
 def test_the_cli_dry_run_opens_no_browser_and_writes_nothing(tmp_path, asset, monkeypatch,
