@@ -3,11 +3,14 @@
 
   python3 scripts/publishers/publish.py --platform youtube --asset X.mp4 --meta meta.json [--dry-run]
   python3 scripts/publishers/publish.py --platform youtube,instagram,site --asset X.mp4 --meta meta.json
+  python3 scripts/publishers/publish.py --platform tiktok_web --asset X.mp4 --meta meta.json \
+      --schedule 2026-09-21T14:00:00-07:00
   python3 scripts/publishers/publish.py --capabilities
   python3 scripts/publishers/publish.py --whoami        # which Upload-Post profile would we post as?
 
 meta.json: {"slug": "...", "title": "...", "description": "...", "privacy": "public",
-            "tags": ["..."], "product": "asc842", "video_url": "(filled by a video publisher)"}
+            "tags": ["..."], "product": "asc842", "video_url": "(filled by a video publisher)",
+            "schedule_at": "(optional ISO 8601 with offset; --schedule overrides it)"}
 
 Exit code 0 only when every requested platform published. A queued card is a non-zero exit
 on purpose: the daily job must surface it in the digest.
@@ -36,10 +39,16 @@ from publishers import upload_post  # noqa: E402
 from publishers.instagram import InstagramPublisher  # noqa: E402
 from publishers.site import SitePublisher  # noqa: E402
 from publishers.tiktok import TikTokPublisher  # noqa: E402
+from publishers import tiktok_web  # noqa: E402  (--schedule validation)
+from publishers.tiktok_web import TikTokWebPublisher  # noqa: E402
 from publishers.youtube import YouTubePublisher  # noqa: E402
 
 PUBLISHERS: dict[str, type] = {"youtube": YouTubePublisher, "tiktok": TikTokPublisher,
+                               "tiktok_web": TikTokWebPublisher,
                                "instagram": InstagramPublisher, "site": SitePublisher}
+# Platforms whose result url is a public permalink worth embedding in the site post.
+# tiktok_web is deliberately absent: it returns the TikTok Studio content URL (a scheduled
+# post has no public URL yet), and embedding that would put a 404 behind a reader's click.
 VIDEO_PLATFORMS = ("youtube", "tiktok", "instagram")
 # The T2 decision that authorises auto-publishing at all: 2026-09-14, "marketing autonomy
 # loosened to T1 auto-publish for five surfaces", veto window closing 2026-09-16 12:00 PT.
@@ -98,6 +107,10 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
     ap.add_argument("--asset", type=pathlib.Path)
     ap.add_argument("--meta", type=pathlib.Path)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--schedule", metavar="ISO",
+                    help="schedule the post for this instant instead of publishing now — "
+                         "ISO 8601 WITH an offset (2026-09-21T14:00:00-07:00). Only "
+                         "tiktok_web honours it today; capabilities() reports which do.")
     ap.add_argument("--capabilities", action="store_true", help="print each publisher's state and exit")
     ap.add_argument("--whoami", action="store_true",
                     help="list the Upload-Post profiles and their connected accounts, then exit")
@@ -118,6 +131,14 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
     for label, path in (("--asset", a.asset), ("--meta", a.meta)):
         if not path.exists():
             ap.error(f"{label} not found: {path}")
+    # Same reason: a bad --schedule must fail here, with the caller's own mistake named,
+    # rather than half way down a platform list — or worse, inside a publisher, where it
+    # would become a queue card that blames the browser.
+    if a.schedule:
+        try:
+            tiktok_web.parse_schedule(a.schedule)
+        except tiktok_web.ScheduleError as exc:
+            ap.error(f"--schedule {exc}")
 
     # The gate comes before meta is even read: a refused run must not reach the work, and
     # its message must be the refusal, not a JSON parse error from a file it should not have
@@ -133,6 +154,8 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
             return 2
 
     meta = load_meta(ap, a.meta)
+    if a.schedule:
+        meta["schedule_at"] = a.schedule
     rc = 0
     for name in [p.strip() for p in a.platform.split(",") if p.strip()]:
         if name not in PUBLISHERS:
