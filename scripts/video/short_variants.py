@@ -9,6 +9,11 @@ from collections import namedtuple
 
 ShortPaths = namedtuple("ShortPaths", "final work review")
 
+#: Scene kinds that carry their own content. A spec made only of these renders with no Excel
+#: file and no LibreOffice recalculation, which is what makes a data Short cheap: `card` is
+#: text from the scene's own `data:`, `media` is a video or a still from the scene's `src:`.
+WORKBOOK_FREE_KINDS = ("title", "outro", "card", "media")
+
 #: A slug is one path segment: it becomes scripts/video/build/<slug>.
 SLUG_RE = re.compile(r"[A-Za-z0-9._-]+")
 
@@ -46,3 +51,13 @@ def all_variants(spec: dict) -> list[tuple[str | None, dict]]:
 def short_paths(build, slug: str, variant: str | None) -> ShortPaths:
     sfx = "" if variant is None else f"-{variant}"
     return ShortPaths(build / f"{slug}-short{sfx}.mp4", build / f"short{sfx}", build / f"short-review{sfx}")
+
+
+def needs_workbook(spec: dict) -> bool:
+    """Does this spec need its `source:` workbook staged and recalculated?
+
+    Only if some scene actually shows a spreadsheet. `kind:` has always been optional and
+    its absence has always meant `sheet`, so the default here is the expensive one.
+    """
+    return any(sc.get("kind", "sheet") not in WORKBOOK_FREE_KINDS
+               for sc in (spec.get("scenes") or []))

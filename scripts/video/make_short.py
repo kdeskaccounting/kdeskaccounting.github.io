@@ -17,6 +17,7 @@ import argparse, html, json, math, pathlib, subprocess, sys
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
 import cards
+import media
 from short_variants import safe_slug, select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
 TOP, BOT = 360, 312                                            # bands at render scale (300 / 260 at 1080 wide)
@@ -49,6 +50,58 @@ def encode_scene(png, wav, dur, crf):
          "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-c:a", "aac",
          "-b:a", "128k", str(out)])
     return out
+
+def encode_media_scene(src, motion, layers, wav, dur, crf, out):
+    """One media file + its layer PNGs + one narration WAV -> an mp4. Returns `out`.
+
+    The composite is three things stacked: the footage or still, put through the motion's
+    filter chain; then each layer PNG - a full-frame transparent screenshot - laid over it at
+    0,0; then the whole thing scaled to the delivered Short. Laying the layers at 0,0 is what
+    keeps media.overlay_box / media.credit_box the single place that decides where anything
+    sits, and therefore the single place that keeps clear of the attribution watermark.
+
+    The output flags are encode_scene's, byte for byte, because the parts are concatenated
+    with `-c:v copy`: a media scene that encoded differently would break the concat.
+    """
+    args = list(media.CLIP_INPUT_ARGS) if motion == "clip" else []
+    args += ["-i", str(src), "-i", str(wav)]
+    for layer in layers:
+        args += ["-i", str(layer)]
+    steps = [f"[0:v]{media.ffmpeg_video_filter(motion, dur, RW, RH, FPS)}[m0]"]
+    stage = "m0"
+    for i, _layer in enumerate(layers):
+        # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
+        steps.append(f"[{stage}][{i + 2}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
+        stage = f"m{i + 1}"
+    steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos,fade=t=in:st=0:d=0.3,"
+                 f"fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p[v]")
+    steps.append("[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+                 "aformat=sample_rates=48000:channel_layouts=stereo[a]")
+    run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
+         "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-c:a", "aac",
+         "-b:a", "128k", str(out)])
+    return out
+
+
+def media_layers(scene, brand, work, k):
+    """Screenshot the scene's overlay and credit plate as full-frame transparent PNGs.
+
+    Credit last, so it is drawn on top: the two boxes never overlap, but the attribution is
+    the one thing that must never end up behind anything.
+    """
+    layers = []
+    for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, RW, RH)
+                       if scene.get("overlay") else None),
+                      ("credit", media.credit_plate_html(scene["credit"], brand, RW, RH)
+                       if scene.get("credit") else None)):
+        if doc is None:
+            continue
+        hp = work / f"{name}_{k}.html"; hp.write_text(doc, encoding="utf-8")
+        png = work / f"{name}_{k}.png"; R.screenshot(hp, png, RW, RH, transparent=True)
+        layers.append(png)
+    return layers
+
 
 def highlight_bbox(im):
     """Bounding box of the orange (#E67E22) highlight rings drawn by render_sheets, or None."""
@@ -133,9 +186,23 @@ def main():
     durs = json.load(open(dj))
     parts = []
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
+    btokens = cards.brand_tokens(spec.get("brand"))
     wbv = wbf = None
     for k, idx in enumerate(sh["scenes"]):
         sc = spec["scenes"][idx]; mode = "cover"; fx = fy = 0.5; pan = None
+        if media.is_media(sc):
+            # Footage or a still as the whole frame, with the card (if any) as an overlay.
+            src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
+            media.check_credit(kind, sc.get("credit"))
+            motion = sc.get("motion") or media.default_motion(kind)
+            layers = media_layers(sc, btokens, work, k)
+            wav = build / "audio" / f"scene_{idx:02d}.wav"
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+            out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
+                                     work / f"scene_{k}.mp4")
+            parts.append(out)
+            print(f"scene {idx:02d}: media {kind}/{motion} {dur:.1f}s -> {out.name}", flush=True)
+            continue
         if cards.is_card(sc):
             # A card is already 9:16 — use it as the whole frame, no top/bottom banding.
             png = work / f"scene_{k}.png"
