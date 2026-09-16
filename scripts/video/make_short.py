@@ -205,13 +205,13 @@ def render_captions(cues, cfg, brand, work, box):
     transparent. The band's own y comes back to the overlay, so captions.caption_box is still
     the only thing that decides where a caption sits.
     """
-    left, top, right, bottom = box
+    band_h = box[3] - box[1]
     out = []
     for n, win in enumerate(captions.word_windows(cues)):
         doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box)
         hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
         png = work / f"cap_{n:04d}.png"
-        R.screenshot(hp, png, OUT_W, bottom - top, transparent=True)
+        R.screenshot(hp, png, OUT_W, band_h, transparent=True)
         out.append((png, win.start, win.end))
     return out
 

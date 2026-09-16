@@ -319,9 +319,8 @@ def font_size(text: str, box) -> float:
     A cue is capped at MAX_CHARS, so the worst case is bounded; the floor is what keeps a
     caption readable on a phone if that cap is ever raised (past it the cue wraps instead).
     """
-    _left, top, _right, bottom = box[0], box[1], box[2], box[3]
-    band_h = bottom - top
-    usable = box[2] - box[0]
+    left, top, right, bottom = box
+    band_h, usable = bottom - top, right - left
     chars = max(len(str(text or "")), 1)
     return max(MIN_FONT_PX, min(FONT_BAND_FRAC * band_h,
                                 usable / (chars * FONT_EM_PER_CHAR)))
