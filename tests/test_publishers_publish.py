@@ -29,7 +29,14 @@ META = {"slug": "asc842-liability", "title": "ASC 842 Lease Liability in Excel",
 
 @pytest.fixture
 def rig(tmp_path, monkeypatch):
-    """A tmp repo, an asset, a meta.json, and a ledger that records instead of writing."""
+    """A tmp repo, an asset, a meta.json, and a ledger that records instead of writing.
+
+    The gate reads a tmp decisions.jsonl holding entry 69 alone - never the live one, whose
+    answer changes the day Stephen vetoes something or approves it early. Every test below
+    that is not about the gate runs at AFTER against that closed, un-vetoed window: the
+    world in which publishing is authorised at all. `ledger_rows` rewrites the file for the
+    tests that are about the gate.
+    """
     asset = tmp_path / "x.mp4"
     asset.write_bytes(b"v")
     meta_path = tmp_path / "meta.json"
@@ -37,13 +44,25 @@ def rig(tmp_path, monkeypatch):
     rows = []
     monkeypatch.setattr(publish.ledger, "append",
                         lambda **kw: rows.append(kw) or dict(kw))
-    # The gate reads the live ledger otherwise. Every test below that is not about the gate
-    # runs at AFTER against a closed, un-vetoed window - the world in which publishing is
-    # authorised at all.
-    monkeypatch.setattr(publish.ledger, "find",
-                        lambda entry_id, path=None: autonomy_entry())
+    decisions = tmp_path / "decisions.jsonl"
+    monkeypatch.setattr(publish.ledger, "DEFAULT_PATH", decisions)
+
+    def ledger_rows(*entries):
+        decisions.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+
+    ledger_rows(autonomy_entry())
     monkeypatch.delenv("UPLOAD_POST_KEY", raising=False)
-    return {"repo": tmp_path, "asset": asset, "meta": meta_path, "rows": rows}
+    return {"repo": tmp_path, "asset": asset, "meta": meta_path, "rows": rows,
+            "ledger_rows": ledger_rows}
+
+
+def approval_entry(entry_id=85, ids=(69, 70), **over) -> dict:
+    """The shape of the real entry #85: a T0 row that answers #69 and #70 by id."""
+    row = {"id": entry_id, "ts": "2026-09-15T20:05:00-0700", "tier": 0, "status": "executed",
+           "action": f"Stephen APPROVED {list(ids)}", "reasoning": "r", "files": [],
+           "veto_window_close": None, "stephen_reviewed": False, "approves": list(ids)}
+    row.update(over)
+    return row
 
 
 def _run(rig, platform, *extra, now=AFTER):
@@ -239,6 +258,46 @@ def test_there_is_no_flag_to_bypass_the_veto_gate(capsys):
 def test_the_gate_is_the_shared_ledger_helper_not_a_second_copy():
     assert publish.ledger.t2_window_open is not None
     assert publish.VETO_ENTRY == 69
+
+
+# --- approved early ------------------------------------------------------------------------
+#
+# Stephen approved #69 and #70 on the evening of 2026-09-15 and asked to publish that night,
+# not at the 2026-09-16 12:00 PT close. The ledger is append-only, so the approval is a LATER
+# entry (#85) carrying `approves: [69, 70]`, and the gate reads it. `vetoes` is how he takes
+# it back. Every row here is a fixture: what the live ledger says is not this file's business.
+
+def test_the_gate_reports_open_before_the_window_when_a_later_entry_approves_it(rig):
+    rig["ledger_rows"](autonomy_entry(), approval_entry())
+    ok, why = publish.veto_gate(BEFORE)
+    assert ok is True
+    assert "approved early by entry #85" in why
+
+
+def test_a_live_publish_proceeds_before_the_window_when_a_later_entry_approves_it(rig, capsys):
+    rig["ledger_rows"](autonomy_entry(), approval_entry())
+    rig["meta"].write_text(json.dumps({**META, "video_url": "https://youtu.be/VID"}),
+                           encoding="utf-8")
+    assert _run(rig, "site", now=BEFORE) == 0
+    assert len(rig["rows"]) == 1, "and the publish is logged like any other"
+    assert "REFUSING" not in capsys.readouterr().err
+
+
+def test_an_approval_of_another_id_does_not_unlock_this_one(rig, capsys):
+    rig["ledger_rows"](autonomy_entry(), approval_entry(ids=(70,)))
+    assert _run(rig, "site", now=BEFORE) == 2
+    assert "2026-09-16" in capsys.readouterr().err
+    assert rig["rows"] == []
+
+
+def test_a_later_veto_re_closes_the_gate_after_the_window_has_closed(rig, capsys):
+    rig["ledger_rows"](autonomy_entry(), approval_entry(),
+                       approval_entry(86, ids=(), approves=[], vetoes=[69],
+                                      action="Stephen VETOED 69"))
+    assert _run(rig, "site", now=AFTER) == 2
+    err = capsys.readouterr().err
+    assert "VETOED" in err and "entry #86" in err
+    assert rig["rows"] == [], "a refused run logs nothing"
 
 
 # --- tiktok_web: the Chrome-driven TikTok scheduler (2026-09-15). Upload-Post's TikTok

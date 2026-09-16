@@ -507,8 +507,12 @@ def main(argv: list[str] | None = None) -> int:
     if not a.dry_run:
         # The gate runs BEFORE the private store is opened: a refused run must not even read
         # the address list, let alone hold it in memory.
+        # `rows` is the whole ledger because the answer may not be in the entry itself: a
+        # later row's `approves` can open this window early (#85 did, for #69 and #70) and a
+        # later row's `vetoes` can close it again after it has elapsed.
         ok, why = veto_gate(ledger.find(a.veto_entry, LEDGER_PATH),
-                            dt.datetime.now().astimezone(), a.veto_entry)
+                            dt.datetime.now().astimezone(), a.veto_entry,
+                            rows=ledger.entries(LEDGER_PATH))
         if not ok:
             print(f"REFUSING: ledger entry {a.veto_entry} {why}", file=sys.stderr)
             return 2

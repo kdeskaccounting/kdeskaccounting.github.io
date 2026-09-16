@@ -762,6 +762,48 @@ def test_main_dry_run_renders_the_real_copy_and_sends_nothing(monkeypatch, capsy
     assert "(dry-run)" in out
 
 
+def approval(entry_id=85, ids=(69,), **over) -> dict:
+    row = {"id": entry_id, "ts": "2026-09-15T20:05:00-0700", "tier": 0, "status": "executed",
+           "action": f"Stephen APPROVED {list(ids)}", "reasoning": "r", "files": [],
+           "veto_window_close": None, "stephen_reviewed": False, "approves": list(ids)}
+    row.update(over)
+    return row
+
+
+def test_main_passes_the_gate_when_a_later_entry_approves_the_decision(monkeypatch, capsys,
+                                                                       tmp_path):
+    """#69's own window is years away here; entry #85 is what authorises the send."""
+    path = tmp_path / "decisions.jsonl"
+    path.write_text(json.dumps(entry(veto_window_close="2099-01-01T00:00:00-0800")) + "\n"
+                    + json.dumps(approval()) + "\n", encoding="utf-8")
+    monkeypatch.setattr(sr, "LEDGER_PATH", path)
+    monkeypatch.setattr(sr, "_gws", no_send)
+    monkeypatch.setattr("sys.argv", ["send_reengage.py",
+                                     "--recipients", str(tmp_path / "gone.json")])
+    assert sr.main() == 2, "it stops on the missing recipients file, having passed the gate"
+    out = capsys.readouterr().out
+    assert "approved early by entry #85" in out
+    assert "2099-01-01" not in out, "the unelapsed window is no longer the answer"
+
+
+def test_main_refuses_again_when_a_later_entry_vetoes_the_decision(monkeypatch, capsys,
+                                                                   tmp_path):
+    """The window has long closed; a veto written after it still stops the send."""
+    path = tmp_path / "decisions.jsonl"
+    path.write_text(json.dumps(entry(veto_window_close="2020-01-01T00:00:00-0800")) + "\n"
+                    + json.dumps(approval()) + "\n"
+                    + json.dumps({**approval(86), "approves": [], "vetoes": [69],
+                                  "action": "Stephen VETOED 69"}) + "\n",
+                    encoding="utf-8")
+    monkeypatch.setattr(sr, "LEDGER_PATH", path)
+    monkeypatch.setattr(sr, "load_recipients", no_send)
+    monkeypatch.setattr(sr, "_gws", no_send)
+    monkeypatch.setattr("sys.argv", ["send_reengage.py"])
+    assert sr.main() == 2
+    err = capsys.readouterr().err
+    assert "VETOED" in err and "entry #86" in err
+
+
 def test_main_honours_a_custom_veto_entry(monkeypatch, capsys, tmp_path):
     path = tmp_path / "decisions.jsonl"
     path.write_text(json.dumps(entry(id=70)) + "\n")

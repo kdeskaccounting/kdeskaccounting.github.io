@@ -60,14 +60,35 @@ def assets(tmp_path):
     return d
 
 
+AUTONOMY = {"id": 69, "ts": "2026-09-14T14:40:00-0700", "tier": 2, "status": "pending_veto",
+            "action": "T1 auto-publish", "reasoning": "r", "files": [],
+            "veto_window_close": "2026-09-16T12:00:00-0700", "stephen_reviewed": False}
+APPROVAL = {"id": 85, "ts": "2026-09-15T20:05:00-0700", "tier": 0, "status": "executed",
+            "action": "Stephen APPROVED 69 and 70", "reasoning": "r", "files": [],
+            "veto_window_close": None, "stephen_reviewed": False, "approves": [69, 70]}
+
+
+class _Rows(list):
+    """The captured ledger writes, carrying the tmp-ledger writer the gate tests need."""
+
+    ledger_rows = None
+
+
 @pytest.fixture
-def rows(monkeypatch):
-    """Capture ledger writes instead of appending to the real decisions log."""
-    captured = []
+def rows(monkeypatch, tmp_path):
+    """Capture ledger writes, and gate on a tmp ledger holding entry 69 alone.
+
+    Never the live decisions.jsonl: its answer changes the day Stephen vetoes something or
+    approves it early, and a gate test that moves with it is testing nothing. `ledger_rows`
+    on the returned list rewrites the file for the tests that are about the gate.
+    """
+    captured = _Rows()
     monkeypatch.setattr(sw.ledger, "append", lambda **kw: captured.append(kw) or dict(kw))
-    monkeypatch.setattr(sw.publish.ledger, "find", lambda entry_id, path=None: {
-        "id": 69, "tier": 2, "status": "pending_veto",
-        "veto_window_close": "2026-09-16T12:00:00-0700"})
+    decisions = tmp_path / "decisions.jsonl"
+    monkeypatch.setattr(sw.publish.ledger, "DEFAULT_PATH", decisions)
+    captured.ledger_rows = lambda *entries: decisions.write_text(
+        "".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
+    captured.ledger_rows(AUTONOMY)
     return captured
 
 
@@ -232,6 +253,15 @@ def test_the_still_open_veto_window_refuses_the_whole_batch(assets, rows, tmp_pa
     assert "REFUSING" in capsys.readouterr().err
     assert pub.calls == []
     assert rows == []
+
+
+def test_a_later_approval_lets_the_batch_run_before_the_window_closes(assets, rows, tmp_path):
+    """Entry #85 approves #69, so the Saturday batch does not have to wait for noon."""
+    rows.ledger_rows(AUTONOMY, APPROVAL)
+    pub = _FakePublisher()
+    assert _run(assets, pub, repo=tmp_path, now=BEFORE_VETO) == 0
+    assert len(pub.calls) == 3
+    assert len(rows) == 3
 
 
 def test_dry_run_is_never_gated_and_writes_nothing(assets, rows, tmp_path, capsys):
