@@ -69,12 +69,41 @@ def test_a_sentence_end_hidden_behind_a_closing_quote_still_breaks():
     assert texts(cues) == ['"Stop."', "Go"]
 
 
+@pytest.mark.parametrize("word", ["scores:", "scores;"])
+def test_a_trailing_colon_or_semicolon_always_breaks_the_cue(word):
+    """A list lead-in like "scores:" must not glue to the list's first item."""
+    cues = C.build_cues([W(word, 0.0, 0.4), W("Sat", 0.5, 0.8)])
+    assert texts(cues) == [word, "Sat"]
+
+
 def test_a_comma_breaks_only_once_the_phrase_has_two_words():
     """Otherwise "so," shows up as a card of its own, which reads as a glitch."""
     one = C.build_cues([W("So,", 0.0, 0.3), W("and", 0.3, 0.5), W("then", 0.5, 0.8)])
     assert texts(one) == ["So, and then"]
     two = C.build_cues([W("Wait", 0.0, 0.3), W("here,", 0.3, 0.6), W("then", 0.6, 0.9)])
     assert texts(two) == ["Wait here,", "then"]
+
+
+def test_a_cue_full_on_words_absorbs_the_word_that_closes_it():
+    """Look-ahead grace: the 4th word joins anyway because it closes the phrase and fits."""
+    words = [W("one", 0.0, 0.3), W("two", 0.3, 0.6), W("three", 0.6, 0.9),
+             W("four,", 0.9, 1.2)]
+    cues = C.build_cues(words)
+    assert texts(cues) == ["one two three four,"]
+    assert len(cues[0].words) == C.MAX_WORDS + 1
+
+
+def test_the_look_ahead_grace_is_refused_when_the_result_would_run_too_long():
+    """Too long even with the grace budget: the closer starts its own cue (old behaviour)."""
+    words = [W("one", 0.0, 0.3), W("two", 0.3, 0.6), W("three", 0.6, 0.9),
+             W("superlongclosing,", 0.9, 1.2)]
+    cues = C.build_cues(words)
+    assert texts(cues) == ["one two three", "superlongclosing,"]
+
+
+def test_five_plain_words_still_split_three_and_two():
+    words = [W(f"w{i}", i * 0.3, i * 0.3 + 0.25) for i in range(5)]
+    assert texts(C.build_cues(words)) == ["w0 w1 w2", "w3 w4"]
 
 
 def test_punctuation_stays_attached_to_its_word():
@@ -395,6 +424,20 @@ def test_the_words_file_is_written_atomically(tmp_path):
     wav = tmp_path / "scene_00.wav"
     C.write_words(wav, [{"text": "a", "start": 0.0, "end": 0.1}])
     assert [p.name for p in sorted(tmp_path.iterdir())] == ["scene_00.words.json"]
+
+
+def test_a_list_lead_in_and_its_items_each_land_on_their_own_card():
+    """The real-render regression: "scores:" used to glue to "Sat", and the 3-word cap fired
+    before each item's closing comma arrived, scrambling the list into "10, Sat Oct" etc.
+    """
+    text = ("the highest crowd scores: Sat Oct 10, Sat Oct 3, Sat Sep 26. "
+            "Scores come from").split()
+    words = [W(w, i * 0.35, i * 0.35 + 0.35) for i, w in enumerate(text)]
+    cues = C.build_cues(words)
+    assert texts(cues) == [
+        "the highest crowd", "scores:", "Sat Oct 10,", "Sat Oct 3,", "Sat Sep 26.",
+        "Scores come from",
+    ]
 
 
 # --- end to end over one scene's worth of words -------------------------------------------

@@ -9,8 +9,13 @@ The rules are ported from kdeskgames/word-chain/video/captions.mjs, which is the
 asked for:
 
   * a cue is a PHRASE, not a sentence: at most `MAX_WORDS` words and `MAX_CHARS` characters;
-  * a sentence end always breaks a cue, and a comma breaks it once the phrase has two words
-    (so "so," never shows up as a card of its own);
+  * a sentence end — or a trailing ":" / ";" — always breaks a cue, and a comma breaks it
+    once the phrase has two words (so "so," never shows up as a card of its own);
+  * a cue that is already full on words may still absorb ONE more if that next word ends in
+    a bare comma and the result is not much longer than the usual cap — a look-ahead grace so
+    a list item's trailing comma keeps its number instead of being orphaned as a cue the
+    two-word comma rule can never fire on (e.g. "Sat Oct 10," stays one card instead of
+    splitting into "Sat Oct" / "10,");
   * a cue stays up until the next one starts, capped at `HOLD_CAP_S` of silence, so the top of
     the frame never flickers between phrases;
   * inside a cue, word k is lit from its own start until the NEXT word's start, and the last
@@ -48,6 +53,11 @@ import re
 #: A cue is a phrase, not a sentence. Both caps come from the reference implementation.
 MAX_WORDS = 3
 MAX_CHARS = 20
+
+#: How much longer than MAX_CHARS the look-ahead grace (see `_orphans_if_alone`, `build_cues`)
+#: may let a cue run when the word that would overflow it is the one closing the phrase —
+#: enough for a short trailing item like a date's day number, not enough to defeat the cap.
+GRACE_CHARS = 6
 
 #: A cue holds past its last word by this much, ...
 HOLD_PAD_S = 0.35
@@ -210,12 +220,28 @@ def _word(raw, offset: float):
     return Word(text=text, start=start, end=max(start, end + offset))
 
 
+#: Marks that break a cue on their own, independent of how many words are already in it —
+#: a sentence end, or a trailing ":" / ";" (a list lead-in reads exactly like a sentence end:
+#: what follows is a new phrase, so it must not glue to the word before the colon).
+_HARD_BREAK = _SENTENCE_END + (":", ";")
+
+
 def _breaks_after(text: str, count: int) -> bool:
     """Does a cue end after this word? The reference's rule, quote marks seen through."""
     bare = text.rstrip(_TRAILING)
-    if bare.endswith(_SENTENCE_END):
+    if bare.endswith(_HARD_BREAK):
         return True
     return bare.endswith(",") and count >= 2
+
+
+def _orphans_if_alone(text: str) -> bool:
+    """Would this word, flushed as the first word of a new cue, be unable to break on its
+    own right after? Only a trailing comma has that problem: `_breaks_after` needs the phrase
+    to already have two words before a comma fires. Every hard-break mark (`_HARD_BREAK`)
+    flushes at count 1, so a word ending in one of those is a perfectly fine one-word cue and
+    does not need the look-ahead grace in `build_cues` below.
+    """
+    return text.rstrip(_TRAILING).endswith(",")
 
 
 def _cue_text(words) -> str:
@@ -237,6 +263,22 @@ def build_cues(words, scene_offset: float = 0.0, limit: float | None = None) -> 
     for word in items:
         nxt = current + [word]
         if current and (len(nxt) > MAX_WORDS or len(_cue_text(nxt)) > MAX_CHARS):
+            # Look-ahead grace: a cue already full on words would normally flush right here,
+            # orphaning `word` as the start of the next cue. That is fine for a hard-break
+            # word (it flushes itself right back off, a valid one-word cue) but not for a
+            # word ending in a bare comma: `_breaks_after` needs two words before a comma
+            # fires, so the orphan would sit stuck as the start of a longer cue, splitting a
+            # list item's number from its neighbour — "Sat Oct" / "10," instead of one card.
+            # Letting it join instead, when that does not blow the cap by much, keeps
+            # "Sat Oct 10," together. Bounded to MAX_WORDS + 1 words and MAX_CHARS +
+            # GRACE_CHARS characters, and only ever taken once per cue (the append+flush
+            # below empties `current`, so the next word starts a fresh cue like normal).
+            if (len(current) == MAX_WORDS and _orphans_if_alone(word.text)
+                    and len(_cue_text(nxt)) <= MAX_CHARS + GRACE_CHARS):
+                current.append(word)
+                groups.append(current)
+                current = []
+                continue
             groups.append(current)
             current = []
         current.append(word)
