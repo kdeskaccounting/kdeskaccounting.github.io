@@ -34,6 +34,7 @@ import dataclasses
 import datetime as dt
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -157,6 +158,25 @@ def date_variants(when: dt.datetime) -> tuple[str, ...]:
             f"{when.day} {short}")
 
 
+# A date variant is searched on token boundaries, never as a raw substring: "sep 1" sits
+# inside "sep 10" (as "2" does inside "20"-"29", "3" inside "30"-"31"), and "1 sep" inside
+# "21 sep". A near miss on its own — but combined with the ellipsis exception in row_matches
+# it reads a row genuinely scheduled for the 10th as the post targeted at the 1st, reports
+# "already scheduled", and that day is silently never posted. Both days are always in the
+# same list inside the 10-day window, and ParkSheet's captions share a templated prefix, so
+# this is the ordinary case rather than a contrived one.
+def date_pattern(variant: str) -> str:
+    """`variant` as a regex that cannot be completed by another digit on either side."""
+    return r"(?<![0-9])" + re.escape(variant) + r"(?![0-9])"
+
+
+def date_in_text(text, when: dt.datetime) -> bool:
+    """Is `when`'s date present in `text` as a whole token, in any rendering?"""
+    haystack = _norm(text)
+    return any(re.search(date_pattern(variant), haystack)
+               for variant in date_variants(when))
+
+
 def _norm(text) -> str:
     return " ".join(str(text or "").split()).strip().lower()
 
@@ -188,7 +208,8 @@ def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
     the ellipsis must be there, and what remains must still be MIN_KEY_LEN characters.
 
     When a schedule was asked for, the row's text must also carry that date — the same caption
-    on two days is two different posts, and a menu item carries no date at all.
+    on two days is two different posts, and a menu item carries no date at all. That search is
+    `date_in_text`, on token boundaries: a raw substring test makes the 1st match the 10th.
     """
     key = _norm(key)
     if len(key) < MIN_KEY_LEN:
@@ -205,8 +226,7 @@ def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
         return False
     if when is None:
         return True
-    text = _norm(row.get("text") or row.get("caption") or "")
-    return any(variant in text for variant in date_variants(when))
+    return date_in_text(row.get("text") or row.get("caption") or "", when)
 
 
 def find_scheduled(rows, key: str, when: dt.datetime | None):

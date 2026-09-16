@@ -970,3 +970,80 @@ def test_a_racy_read_of_the_list_is_still_retried(pub, asset, monkeypatch):
     monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
     assert pub.publish(asset, META, dry_run=False).ok is True
     assert len(attempts) == 2
+
+
+# ======================================================================== fix round 2
+#
+# date_variants matched by raw substring, and "sep 1" is inside "sep 10" (as 2 is inside 20-29
+# and 3 inside 30-31, and "1 sep" inside "21 sep"). On its own that is a near miss; combined
+# with the ellipsis exception it is a silent lost post. ParkSheet's captions share a long
+# templated prefix, so a row genuinely scheduled Sep 10 — truncated mid-prefix by TikTok —
+# satisfies the caption half of row_matches for a video targeted at Sep 1, and then the date
+# half agrees too. The day is reported as "already scheduled" and never posted. Entirely
+# reachable inside the 10-day window, where both days are always in the same list.
+
+TEMPLATE = "ParkSheet daily: wait times, crowd levels and ride downtime across the Orlando parks"
+
+
+def _dated_row(caption, when, *, truncate=None):
+    """A row rendered the way a Studio list shows a month name, not an ISO stamp."""
+    shown = f"{caption[:truncate]}…" if truncate else caption
+    return {"caption": shown, "url": "",
+            "text": f"{shown} Scheduled {when.strftime('%b %-d')} {when.strftime('%Y')} 14:00"}
+
+
+def _pt(day):
+    # October, because it has 31 days: the 3-vs-31 pair has to be a real date.
+    return dt.datetime(2026, 10, day, 14, 0, tzinfo=PT)
+
+
+@pytest.mark.parametrize("early,late", [(1, 10), (1, 19), (2, 20), (2, 29), (3, 30), (3, 31)])
+def test_a_single_digit_day_does_not_match_a_two_digit_one(early, late):
+    """The core of it: 'sep 1' must not be found inside 'sep 10'."""
+    key = tw.caption_key(f"{TEMPLATE} — video for the {early}st")
+    row = _dated_row(f"{TEMPLATE} — video for the {late}th", _pt(late))
+    assert tw.row_matches(row, key, _pt(early)) is False
+
+
+@pytest.mark.parametrize("early,late", [(1, 10), (2, 20), (3, 30)])
+def test_the_ellipsis_exception_does_not_reopen_the_substring_hole(early, late):
+    """The reported reproduction: shared 40-char prefix + a row TikTok truncated mid-prefix."""
+    key_b = tw.caption_key(f"{TEMPLATE} — B")
+    row_a = _dated_row(f"{TEMPLATE} — A", _pt(late), truncate=38)
+    assert tw.row_matches(row_a, key_b, _pt(early)) is False
+    assert tw.find_scheduled([row_a], key_b, _pt(early)) is None
+
+
+@pytest.mark.parametrize("day", [1, 2, 3, 10, 20, 30])
+def test_the_row_for_the_day_actually_targeted_still_matches(day):
+    key = tw.caption_key(f"{TEMPLATE} — B")
+    row = _dated_row(f"{TEMPLATE} — B", _pt(day), truncate=38)
+    assert tw.row_matches(row, key, _pt(day)) is True
+
+
+def test_a_two_digit_day_still_matches_its_own_row():
+    key = tw.caption_key(f"{TEMPLATE} — B")
+    assert tw.row_matches(_dated_row(f"{TEMPLATE} — B", _pt(10)), key, _pt(10)) is True
+
+
+def test_a_leading_digit_cannot_borrow_a_day_either():
+    """'1 oct' sits inside '21 oct', so the guard has to hold on both sides."""
+    key = tw.caption_key(f"{TEMPLATE} — B")
+    row = {"caption": f"{TEMPLATE} — B", "url": "",
+           "text": f"{TEMPLATE} — B Scheduled 21 Oct 2026 14:00"}
+    assert tw.row_matches(row, key, _pt(1)) is False
+    assert tw.row_matches(row, key, _pt(21)) is True
+
+
+def test_every_variant_is_searched_on_a_token_boundary():
+    """Not one guarded variant and five raw ones: the rule applies to the whole set."""
+    for variant in tw.date_variants(_pt(1)):
+        assert tw.date_in_text(f"scheduled {variant} 14:00", _pt(1)) is True
+        assert tw.date_in_text(f"scheduled {variant}0 14:00", _pt(1)) is False
+        assert tw.date_in_text(f"scheduled 9{variant} 14:00", _pt(1)) is False
+
+
+def test_the_iso_and_slash_renderings_still_match():
+    for text in ("scheduled 2026-10-01 14:00", "scheduled 10/1/2026 14:00",
+                 "scheduled 10/01/2026 14:00", "scheduled october 1 14:00"):
+        assert tw.date_in_text(text, _pt(1)) is True
