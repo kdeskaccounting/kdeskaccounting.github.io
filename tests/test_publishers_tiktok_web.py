@@ -829,3 +829,64 @@ def test_both_list_reads_in_a_full_run_open_the_scheduled_tab(pub, asset):
     page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
     pub.drive(page, asset, META)
     assert len([c for c in page.calls if c == f"click:text:{S.SCHEDULED_TAB_TEXT}"]) == 2
+
+
+# IMPORTANT 5. POST_ROW_FALLBACK was "main li", which matches nav and menu items, and the
+# match was two-way ("the shorter of the two is a prefix of the longer"). Together those let
+# a menu entry stand in for a scheduled post and produce a false SKIP — the day silently
+# never gets posted. The direction is now fixed: the key must be a prefix of the row, and the
+# only exception is a row TikTok itself marked as truncated with an ellipsis.
+
+NAV_ROW = {"caption": "Upload video", "text": "Upload video", "url": ""}
+LONG_CAPTION = "Upload video: how we cut Epcot waits in half this week"
+
+
+def test_a_nav_item_does_not_match_a_longer_caption_key():
+    key = tw.caption_key(LONG_CAPTION)
+    assert tw.row_matches(NAV_ROW, key, None) is False
+    assert tw.find_scheduled([NAV_ROW], key, None) is None
+
+
+def test_a_nav_row_cannot_stand_in_for_a_post_in_the_other_direction_either():
+    """The reverse pairing is caught by the date, not by the prefix rule.
+
+    A short key that is a prefix of a longer row is the *designed* match — the key is the
+    first 40 characters of the caption, and the row carries the whole thing. So what rules a
+    menu entry out when the roles are swapped is the second half of row_matches: a scheduled
+    post's row carries its date, and 'Upload video' never does.
+    """
+    assert tw.row_matches(NAV_ROW, tw.caption_key(LONG_CAPTION), WHEN) is False
+    assert tw.row_matches(NAV_ROW, tw.caption_key("Upload video"), WHEN) is False
+    # ...and without a date to check, the floor on key length is the only guard left, which
+    # is why drive() refuses to run at all with a caption this short.
+    assert len(tw.caption_key("Epcot")) < tw.MIN_KEY_LEN
+
+
+def test_a_full_row_whose_caption_starts_with_the_key_still_matches():
+    caption = tw.caption_of(META)
+    assert tw.find_scheduled([_row(caption)], tw.caption_key(caption), WHEN)
+
+
+def test_a_row_tiktok_truncated_with_an_ellipsis_still_matches():
+    """The one two-way case, and it is explicit: TikTok says the text is cut off."""
+    caption = tw.caption_of(META)
+    for marker in ("…", "..."):
+        assert tw.find_scheduled([_row(caption[:28] + marker)],
+                                 tw.caption_key(caption), WHEN), marker
+
+
+def test_a_short_row_with_no_ellipsis_is_not_treated_as_truncated():
+    caption = tw.caption_of(META)
+    short = {"caption": caption[:20], "text": f"{caption[:20]} Scheduled 2026-09-21 14:00"}
+    assert tw.find_scheduled([short], tw.caption_key(caption), WHEN) is None
+
+
+def test_an_ellipsis_row_still_has_to_be_long_enough_to_identify_anything():
+    caption = tw.caption_of(META)
+    stub = {"caption": "Ep…", "text": "Ep… Scheduled 2026-09-21 14:00"}
+    assert tw.find_scheduled([stub], tw.caption_key(caption), WHEN) is None
+
+
+def test_the_row_fallback_selector_excludes_navigation():
+    assert "nav" in S.POST_ROW_FALLBACK, "a bare 'main li' matches the menu"
+    assert S.POST_ROW_FALLBACK != "main li"

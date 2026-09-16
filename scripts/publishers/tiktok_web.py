@@ -52,6 +52,9 @@ KEY_LEN = 40
 # Below this, a "key" is a stub that would prefix-match half the account. A caption this
 # short means the meta is wrong, and skipping every day of the week is the failure mode.
 MIN_KEY_LEN = 12
+# How TikTok says "this caption is cut off". The only case where a row shorter than the key
+# may still be that post.
+ELLIPSIS = ("\u2026", "...")
 NAV_TIMEOUT_MS = 60_000
 ANCHOR_TIMEOUT_MS = 30_000
 # An mp4 upload plus TikTok's own processing, not an API ping.
@@ -171,19 +174,31 @@ def caption_key(caption: str) -> str:
 def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
     """Is this Scheduled-list row the post `key` + `when` describes?
 
-    The row's caption is usually truncated with an ellipsis, so the test is "the shorter of
-    the two is a prefix of the longer", floored at MIN_KEY_LEN characters so a stub can never
-    match everything. When a schedule was asked for, the row's text must also carry that date
-    — the same caption on two days is two different posts.
+    **One direction, with one explicit exception.** The key must be a prefix of the row's
+    caption. The old rule — "the shorter of the two is a prefix of the longer" — let a short
+    row stand in for a long caption, which with a row selector that matches menu items ("Upload
+    video") produces a false SKIP: the day is never posted and nothing says so.
+
+    The exception is a row TikTok itself marked as cut off with an ellipsis. Then the row is a
+    prefix of the real caption and the comparison has to run the other way — refusing that case
+    would turn every truncated row into a re-upload, which is the worse failure. It stays narrow:
+    the ellipsis must be there, and what remains must still be MIN_KEY_LEN characters.
+
+    When a schedule was asked for, the row's text must also carry that date — the same caption
+    on two days is two different posts, and a menu item carries no date at all.
     """
-    if len(_norm(key)) < MIN_KEY_LEN:
-        return False
     key = _norm(key)
-    caption = _norm(row.get("caption") or row.get("text") or "").rstrip("….")
+    if len(key) < MIN_KEY_LEN:
+        return False
+    raw = _norm(row.get("caption") or row.get("text") or "")
+    truncated = raw.endswith(ELLIPSIS)
+    caption = raw.rstrip("….") if truncated else raw
     if len(caption) < MIN_KEY_LEN:
         return False
-    shorter, longer = sorted((caption, key), key=len)
-    if not longer.startswith(shorter):
+    if truncated:
+        if not key.startswith(caption):
+            return False
+    elif not caption.startswith(key):
         return False
     if when is None:
         return True

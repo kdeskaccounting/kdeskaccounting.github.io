@@ -73,7 +73,9 @@ SCHEDULED_TAB_TEXT = "Scheduled"                  # UNVERIFIED
 # grid has no row role, and the reader tries them in order rather than joining them with a
 # comma (a comma list silently mixes two shapes and the shallower one wins).
 POST_ROW = "[role='row']"                         # UNVERIFIED
-POST_ROW_FALLBACK = "main li"                     # UNVERIFIED
+# `:not(nav li)` is not decoration: a bare "main li" matches the studio's own menu entries
+# ("Upload", "Analytics"), and a menu entry that passes for a post row is a silently skipped day.
+POST_ROW_FALLBACK = "main li:not(nav li)"         # UNVERIFIED
 # Substring of the empty-state copy, lowercased. This is what lets "no scheduled posts" be
 # told apart from "the list has not rendered yet" — the distinction that decides whether a
 # skip is safe. When neither this nor a row appears, the driver times out and queues a card.
