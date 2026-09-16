@@ -72,6 +72,14 @@ def rows(monkeypatch):
 
 
 def _run(assets, pub, *extra, repo, now=AFTER_VETO, week="2026-W39"):
+    """A LIVE run unless the caller says otherwise.
+
+    --go is appended when the caller names neither mode, because these tests are about what
+    happens when the batch actually runs. That the default is a dry run is pinned separately,
+    by the tests that call sw.main directly.
+    """
+    if not {"--go", "--dry-run"} & set(extra):
+        extra = (*extra, "--go")
     return sw.main(["--week", week, "--assets-dir", str(assets), *extra],
                    repo=repo, publisher=pub, now=now)
 
@@ -276,3 +284,49 @@ def test_the_ledger_line_names_the_platform_the_file_and_the_instant(assets, row
     assert "tiktok_web" in action
     assert "day-1.mp4" in action
     assert "2026-09-21T14:00:00-07:00" in action
+
+
+# ======================================================================== fix round 1
+#
+# IMPORTANT 4. A command that schedules a week of posts to a live account must not do that
+# because someone forgot a flag. Dry run is the default; --go is the deliberate act.
+
+def test_a_bare_invocation_is_a_dry_run(assets, rows, tmp_path):
+    pub = _FakePublisher()
+    rc = sw.main(["--week", "2026-W39", "--assets-dir", str(assets)],
+                 repo=tmp_path, publisher=pub, now=AFTER_VETO)
+    assert rc == 0
+    assert all(c["dry_run"] is True for c in pub.calls)
+    assert rows == [], "a dry run records nothing"
+
+
+def test_a_bare_invocation_is_not_gated_because_it_writes_nothing(assets, rows, tmp_path):
+    pub = _FakePublisher()
+    assert sw.main(["--week", "2026-W39", "--assets-dir", str(assets)],
+                   repo=tmp_path, publisher=pub, now=BEFORE_VETO) == 0
+    assert all(c["dry_run"] is True for c in pub.calls)
+
+
+def test_go_is_what_makes_it_live(assets, rows, tmp_path):
+    pub = _FakePublisher()
+    assert _run(assets, pub, "--go", repo=tmp_path) == 0
+    assert all(c["dry_run"] is False for c in pub.calls)
+    assert len(rows) == 3
+
+
+def test_dry_run_and_go_together_are_refused_rather_than_ranked(assets, rows, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        _run(assets, _FakePublisher(), "--dry-run", "--go", repo=tmp_path)
+    assert exc.value.code == 2
+
+
+def test_the_dry_run_flag_still_works_for_anyone_who_types_it(assets, rows, tmp_path):
+    pub = _FakePublisher()
+    assert _run(assets, pub, "--dry-run", repo=tmp_path) == 0
+    assert all(c["dry_run"] is True for c in pub.calls)
+
+
+def test_the_plan_is_printed_either_way(assets, rows, tmp_path, capsys):
+    sw.main(["--week", "2026-W39", "--assets-dir", str(assets)],
+            repo=tmp_path, publisher=_FakePublisher(), now=AFTER_VETO)
+    assert "day-1" in capsys.readouterr().out

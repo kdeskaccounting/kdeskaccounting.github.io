@@ -2,9 +2,9 @@
 """Schedule a week of Shorts onto TikTok, one per day — the Saturday batch's one command.
 
   python3 scripts/publishers/schedule_week.py --week 2026-W39 \
-      --assets-dir ~/parksheet/release/2026-W39 --dry-run
+      --assets-dir ~/parksheet/release/2026-W39                    # dry run: the DEFAULT
   python3 scripts/publishers/schedule_week.py --week 2026-W39 \
-      --assets-dir ~/parksheet/release/2026-W39 --start-day 1 --hour 14:00
+      --assets-dir ~/parksheet/release/2026-W39 --start-day 1 --hour 14:00 --go
 
 The render batch leaves `day-1.mp4 … day-7.mp4` with a `day-N.json` beside each. This maps
 day N onto the Nth day of the week (shifted by `--start-day`) at `--hour` **America/
@@ -17,6 +17,10 @@ Exit codes, because the batch branches on them:
   1  at least one day queued a card for Stephen; the rest still ran
   2  the batch itself is wrong — bad week, an mp4 with no meta, an empty directory, or the
      autonomy veto window is still open — and nothing was attempted
+
+**Nothing reaches TikTok without `--go`.** A bare invocation prints the plan and opens no
+browser, because a forgotten flag must not be able to schedule a week of posts to a live
+brand account.
 
 This is a **semi-supervised, Mac-only step** (spec Chrome rule 1): it drives a logged-in
 browser, so it never belongs in a GitHub Actions schedule. Stdlib only at import time.
@@ -183,9 +187,16 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
                     help="which day of the week day-1 lands on (1=Monday, default 1)")
     ap.add_argument("--hour", default=DEFAULT_HOUR,
                     help=f"local {TZ_NAME} time of day, 24-hour (default {DEFAULT_HOUR})")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="print the plan; open no browser, write nothing")
+    # Dry run is the DEFAULT and --go is the deliberate act. This command schedules a week
+    # of posts to a live brand account through a browser; that must not happen because
+    # someone forgot a flag, or pasted a line from the runbook with the tail cut off.
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true",
+                      help="the default: print the plan, open no browser, write nothing")
+    mode.add_argument("--go", action="store_true",
+                      help="actually schedule — the only way anything reaches TikTok")
     a = ap.parse_args(argv)
+    dry_run = not a.go
     repo = pathlib.Path(repo) if repo is not None else REPO
 
     try:
@@ -196,7 +207,7 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
 
     # The same T2 gate publish.py uses, from the same helper — a second copy of the rule is
     # how the two drift apart. --dry-run writes nothing, so it stays ungated.
-    if not a.dry_run:
+    if not dry_run:
         ok, why = publish.veto_gate(now)
         if not ok:
             print(f"REFUSING: ledger entry {publish.VETO_ENTRY} {why}. Nothing was "
@@ -207,7 +218,7 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
     rc = 0
     for row in rows:
         try:
-            result = pub.publish(row["asset"], row["meta"], a.dry_run)
+            result = pub.publish(row["asset"], row["meta"], dry_run)
         except Exception as exc:  # noqa: BLE001 — a driver that cannot even queue is fatal
             print(redact_secrets(f"day-{row['n']} FAILED {type(exc).__name__}: {exc}"),
                   file=sys.stderr)
@@ -216,7 +227,7 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
             continue
         row.update(status=outcome(result), detail=result.detail,
                    url=result.url, queued_path=result.queued_path)
-        if a.dry_run:
+        if dry_run:
             continue
         if not result.ok:
             rc = max(rc, 1)

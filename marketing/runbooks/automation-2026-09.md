@@ -92,7 +92,7 @@ python3 scripts/publishers/publish.py --platform site --asset <mp4> --meta <json
 python3 scripts/video/reupload_locked.py --dry-run                 # the 20 locked videos (#71), Upload-Post
 # TikTok is NOT in the list above: Upload-Post reaches it only on the paid plan. It is scheduled
 # through Chrome on the Mac instead — see "TikTok (Chrome, Saturday)" below.
-python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR> --dry-run
+python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR>   # dry run by default
 python3 scripts/content/emit_pages.py --week 2026-W39              # (Phase 2) blog + LLM-citable reference page
 
 # ── 5. Human-only surfaces — these write CARDS, they never post ───────────────
@@ -267,10 +267,13 @@ python3 scripts/browser/ensure_chrome.py                    # 1. Chrome up on :9
 python3 scripts/browser/session.py --check tiktok           # 2. still logged in?
 python3 scripts/publishers/tiktok_web.py --check            # 3. anchors still resolve?
 python3 scripts/publishers/schedule_week.py --week 2026-W39 \
-  --assets-dir ~/parksheet/release/2026-W39 --dry-run       # 4. read the plan
+  --assets-dir ~/parksheet/release/2026-W39                 # 4. the plan (dry run: the DEFAULT)
 python3 scripts/publishers/schedule_week.py --week 2026-W39 \
-  --assets-dir ~/parksheet/release/2026-W39                 # 5. go
+  --assets-dir ~/parksheet/release/2026-W39 --go            # 5. go — the only flag that posts
 ```
+
+**Nothing reaches TikTok without `--go`.** A bare invocation prints the plan and opens no browser,
+so a forgotten flag cannot schedule a week of posts to the live account.
 
 Step 4 is not optional. It is the only place the week's caption/day/time table is visible before
 anything is typed into TikTok, and it opens no browser.
