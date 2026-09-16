@@ -207,14 +207,54 @@ def veto_ok(close_iso: str | None, now: dt.datetime) -> tuple[bool, str]:
     return True, f"veto window closed {close_iso}"
 
 
-def veto_gate(entry: dict | None, now: dt.datetime,
-              entry_id: int = 0) -> tuple[bool, str]:
+def _stamp(row: dict) -> str:
+    """`row`'s timestamp to the minute, or whatever it actually holds if that is unreadable."""
+    raw = str(row.get("ts", "") or "")
+    try:
+        return parse_ts(raw).isoformat(timespec="minutes")
+    except ValueError:
+        return raw or "no timestamp"
+
+
+def answer(entry_id: int, rows: list[dict] | None) -> tuple[str, dict] | None:
+    """The LAST row in `rows` that answers `entry_id`, as ("approves"|"vetoes", row), or None.
+
+    File order is the tie-break, deliberately: the ledger is append-only, so "later in the
+    file" is the only record of "said more recently". An approval can therefore be taken back
+    by a veto written after it, and a veto reversed by a fresh approval after that.
+
+    An approval counts only from a row whose status is in APPROVAL_STATUSES (it records
+    Stephen having said yes). A veto counts from any row, because a stop is never ignored on
+    a technicality.
+    """
+    found: tuple[str, dict] | None = None
+    for row in rows or []:
+        if entry_id in answered_ids(row, "vetoes"):
+            found = ("vetoes", row)
+        elif (entry_id in answered_ids(row, "approves")
+                and str(row.get("status", "")).strip().lower() in APPROVAL_STATUSES):
+            found = ("approves", row)
+    return found
+
+
+def veto_gate(entry: dict | None, now: dt.datetime, entry_id: int = 0, *,
+              rows: list[dict] | None = None) -> tuple[bool, str]:
     """Every condition that authorises an autonomous action under a T2 window, in one place.
 
-    Four ways to fail and they are not interchangeable: an entry that does not exist yet, an
+    Five ways to fail and they are not interchangeable: an entry that does not exist yet, an
     entry of the wrong tier (a T0 note authorises nothing), an entry Stephen actually vetoed,
-    and a window that has not closed. The status check is the one that matters most: a vetoed
-    decision whose window has since elapsed would otherwise read as permission.
+    an entry a LATER entry vetoes, and a window that has not closed. The veto checks are the
+    ones that matter most: a vetoed decision whose window has since elapsed would otherwise
+    read as permission.
+
+    There are now two ways to be open, because a window is not the only thing that can
+    authorise an action: the window closed unvetoed, or a later entry's `approves` names this
+    id (entry #85 approving #69 and #70 on 2026-09-15 is why this exists — Stephen said yes
+    the evening before the close and an append-only file cannot edit #69 to say so).
+
+    `rows` is the ledger to look for that answer in; a caller that passes none gets the old,
+    purely time-based gate. That is the fail-closed direction: an approval the gate cannot
+    see is an approval it does not act on. t2_window_open() below passes the rows it read.
     """
     if entry is None:
         return False, (f"does not exist yet — the T{VETO_TIER} entry that authorises this "
@@ -230,6 +270,15 @@ def veto_gate(entry: dict | None, now: dt.datetime,
     if str(entry.get("status", "")).strip().lower() == "vetoed":
         return False, ("was VETOED — Stephen said no. An elapsed window does not turn a veto "
                        "into permission; this action must not happen")
+    answered = answer(entry_id or int(entry.get("id", 0) or 0), rows)
+    if answered is not None:
+        field, row = answered
+        if field == "vetoes":
+            return False, (f"was VETOED by entry #{row.get('id')} ({_stamp(row)}) — Stephen "
+                           f"said no after the fact. An elapsed window does not turn a veto "
+                           f"into permission; this action must not happen")
+        return True, (f"was approved early by entry #{row.get('id')} ({_stamp(row)}) — a "
+                      f"later entry answers this window, so it does not have to elapse first")
     return veto_ok(entry.get("veto_window_close"), now)
 
 
@@ -238,10 +287,15 @@ def t2_window_open(entry_id: int, now: dt.datetime,
     """(may_act, why) for the T2 entry `entry_id` — the form callers actually want.
 
     "Open" means the authorisation is open for acting: the entry exists, is T2, was not
-    vetoed, and its window has closed. The reason is a verb phrase to be printed after
-    "ledger entry <id> …", so it reads the same from every caller.
+    vetoed, and either its window has closed or a later entry approved it. The reason is a
+    verb phrase to be printed after "ledger entry <id> …", so it reads the same from every
+    caller.
     """
-    return veto_gate(find(entry_id, path), now, entry_id)
+    entry = find(entry_id, path)
+    # Only read the whole file when there is an entry for an answer to be about. find() is a
+    # seam several callers' tests monkeypatch, so it stays the way the entry is fetched.
+    rows = entries(path) if entry is not None else None
+    return veto_gate(entry, now, entry_id, rows=rows)
 
 
 def append(action: str, tier: int, status: str, reasoning: str, files: list[str],

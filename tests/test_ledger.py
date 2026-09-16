@@ -296,6 +296,112 @@ def test_t2_window_open_refuses_an_entry_with_no_window_at_all(tmp_path):
     assert "no veto_window_close" in why
 
 
+# --- a later entry answering the window ---------------------------------------------------
+#
+# Stephen approved #69 and #70 on 2026-09-15 evening and asked to publish that night rather
+# than at the 2026-09-16 12:00 PT close. The file is append-only, so the approval cannot be
+# written into #69; it is entry #85, carrying `approves: [69, 70]`, and the gate reads it.
+# The symmetric `vetoes` is what lets him take it back afterwards.
+
+def _approval(entry_id=85, ids=(69,), **over) -> dict:
+    row = {"id": entry_id, "ts": "2026-09-15T20:05:00-0700", "tier": 0, "status": "executed",
+           "action": f"Stephen APPROVED {list(ids)}", "reasoning": "r", "files": [],
+           "veto_window_close": None, "stephen_reviewed": False, "approves": list(ids)}
+    row.update(over)
+    return row
+
+
+def _veto(entry_id=86, ids=(69,), **over) -> dict:
+    row = {"id": entry_id, "ts": "2026-09-15T21:00:00-0700", "tier": 0, "status": "executed",
+           "action": f"Stephen VETOED {list(ids)}", "reasoning": "r", "files": [],
+           "veto_window_close": None, "stephen_reviewed": False, "vetoes": list(ids)}
+    row.update(over)
+    return row
+
+
+def test_a_later_approval_opens_the_gate_before_the_window_closes(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _approval(ids=(69, 70)))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is True
+    assert "approved early by entry #85" in why
+    assert "2026-09-15T20:05" in why, "say when he said it, not just that he did"
+
+
+def test_an_approval_does_not_open_an_id_it_does_not_name(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _approval(ids=(70,)))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is False
+    assert "2026-09-16" in why, "and the reason is still the unelapsed window"
+
+
+def test_an_approval_only_counts_from_a_row_that_records_it_happening(tmp_path):
+    """A hand-written `planned` row carrying `approves` is an intention, not an approval."""
+    p = _ledger_with(tmp_path, _entry(), _approval(status="planned"))
+    assert ledger.t2_window_open(69, BEFORE, path=p)[0] is False
+
+
+def test_a_later_veto_re_closes_a_window_that_has_already_elapsed(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _veto())
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is False
+    assert "VETOED" in why
+    assert "entry #86" in why
+
+
+def test_a_veto_then_an_approval_leaves_the_gate_open(tmp_path):
+    """Later in the file wins, both ways round."""
+    p = _ledger_with(tmp_path, _entry(), _veto(entry_id=85), _approval(entry_id=86))
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is True
+    assert "entry #86" in why
+
+
+def test_an_approval_then_a_veto_closes_the_gate(tmp_path):
+    p = _ledger_with(tmp_path, _entry(), _approval(entry_id=85), _veto(entry_id=86))
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is False
+    assert "VETOED" in why
+    assert "entry #86" in why
+
+
+def test_an_entry_with_no_window_and_no_approval_still_refuses(tmp_path):
+    """Unchanged behaviour: nothing authorises an action under a window that was never set."""
+    p = _ledger_with(tmp_path, _entry(veto_window_close=None), _approval(ids=(70,)))
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is False
+    assert "no veto_window_close" in why
+
+
+def test_an_approval_authorises_an_entry_that_never_had_a_window(tmp_path):
+    p = _ledger_with(tmp_path, _entry(veto_window_close=None), _approval())
+    assert ledger.t2_window_open(69, AFTER, path=p)[0] is True
+
+
+def test_an_approval_cannot_resurrect_an_entry_stephen_vetoed_in_place(tmp_path):
+    """status: vetoed on the entry itself is still the last word — it is not an open window."""
+    p = _ledger_with(tmp_path, _entry(status="vetoed"), _approval())
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is False
+    assert "VETOED" in why
+
+
+def test_an_approval_cannot_promote_a_non_t2_entry(tmp_path):
+    p = _ledger_with(tmp_path, _entry(tier=0), _approval())
+    ok, why = ledger.t2_window_open(69, BEFORE, path=p)
+    assert ok is False
+    assert "tier 0" in why
+
+
+def test_veto_gate_given_no_ledger_to_read_stays_purely_time_based(tmp_path):
+    """The rows are an explicit argument: a caller that passes none gets the old, strict gate.
+
+    That is the fail-closed direction — an approval it cannot see is an approval it does not
+    act on — and it is what keeps a caller holding a single fixture row honest.
+    """
+    assert ledger.veto_gate(_entry(), BEFORE)[0] is False
+    assert ledger.veto_gate(_entry(), BEFORE, 69, rows=[_entry(), _approval()])[0] is True
+
+
 def test_veto_ok_refuses_a_naive_now_rather_than_guessing_an_offset():
     ok, why = ledger.veto_ok("2026-09-16T12:00:00-0700",
                              dt.datetime(2026, 9, 17, 8, 0))
