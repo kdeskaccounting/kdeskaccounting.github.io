@@ -133,7 +133,8 @@ def check_motion(kind: str, motion: str) -> None:
            if motion == "clip" else
            "zoompan counts INPUT frames, so on footage `kenburns` consumes frame 0 and "
            "holds it — the scene comes out a freeze frame")
-    raise ValueError(f"motion {motion!r} cannot be used with a {kind} src: {why}. "
+    article = "an" if kind[0] in "aeiou" else "a"
+    raise ValueError(f"motion {motion!r} cannot be used with {article} {kind} src: {why}. "
                      f"Use one of: {', '.join(allowed)}")
 
 
