@@ -394,3 +394,6 @@ publishes, and only after the gate. T3 gates apply to every agent without except
 6. No claims about CAE before CAE ships.
 7. The venture must not drift into financial advice either. It plans trips; it does not advise on money.
 8. **Attribution is mandatory** wherever queue-times.com data appears: "Powered by Queue-Times.com".
+
+## Known issues (not blocking)
+- 2026-09-15 · Every finished Short's audio probes at 96 kHz although each scene part is 48 kHz: the single `loudnorm` re-encode in `make_short.py` upsamples. Pre-existing since the first card demo (Sep 4), harmless for concat (video is stream-copied), but it doubles audio bitrate for nothing. Fix: append `aresample=48000` after `loudnorm` in the final pass and add an ffprobe assertion to the card e2e.
