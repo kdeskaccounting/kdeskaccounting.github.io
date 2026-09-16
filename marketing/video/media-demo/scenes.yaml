@@ -1,0 +1,98 @@
+# Media-scene smoke spec: real footage and a still under a card, no workbook, no LibreOffice.
+# It is the spec tests/test_media_scene_e2e.py renders, and the worked example of the
+# `kind: media` contract a caller outside this repo emits. Scene 1 is a plain `card`, so this
+# is also the mixed-kind smoke test: card and media parts must encode to the same stream or
+# the `-c:v copy` concat that assembles a Short cannot join them.
+#
+#   src:      repo-relative to the SPEC FILE's own repo root (nearest .git / pyproject.toml
+#             above it) or absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
+#   motion:   clip (play it, trimmed to the narration, looped if shorter) | kenburns (slow
+#             1.0 -> 1.08 zoom, the default for a still) | hold (static). Default: kenburns
+#             for a still, clip for footage.
+#   credit:   burned into the LOWER-LEFT while the scene is on screen. REQUIRED for a still —
+#             a still cannot credit itself on screen the way footage can.
+#   overlay:  optional; the `kind: card` data contract unchanged (template + heading /
+#             subheading / items / footer), drawn as a semi-opaque plate on the lower ~60%.
+#
+# NOTHING is ever drawn in the bottom-right 20% x 8% of the frame: that is where Google Earth
+# Studio burns its attribution watermark, and covering it breaks the imagery terms. The rule
+# is media.WATERMARK_W_FRAC / WATERMARK_H_FRAC, guarded by tests/test_media.py.
+#
+# The two assets here are ffmpeg's own synthetic sources (see assets/generate.py), committed
+# so this renders on a clean checkout. Both are 16:9 on purpose — a media scene has to
+# scale-and-crop a landscape source to fill a 9:16 frame, and a 9:16 asset would never
+# exercise that. The `credit:` lines below exercise the credit plate; these frames are not
+# licensed imagery and have nothing to attribute.
+#
+# Frames: scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
+#           --spec marketing/video/media-demo/scenes.yaml --frames-only
+# Short:  scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
+#           --spec marketing/video/media-demo/scenes.yaml
+slug: media-demo
+title: The media scene kind
+voice: am_michael
+brand:
+  name: KDesk Accounting
+  url: kdeskaccounting.com
+  accent: "#FFD966"
+credits:
+  - "Placeholder imagery: generated with ffmpeg, no third-party source"
+disclaimer: >
+  A rendering smoke test. The wait times shown are invented and describe nothing real.
+short:
+  hook: "Footage, a credit, and a card on top"
+  scenes: [0, 1, 2]
+  cta: "One scene kind, any imagery"
+meta:
+  title: The media scene kind — footage under a card overlay
+  description: >
+    A smoke render of the media scene kind: a still under a Ken Burns zoom with a card
+    overlay, and a looping clip with a burned-in credit. No workbook, no spreadsheet
+    recalculation — the scene's src and data are the whole input.
+  tags: [video pipeline, automation, shorts]
+  platforms: []
+scenes:
+  - kind: media
+    src: marketing/video/media-demo/assets/placeholder-still.jpg
+    motion: kenburns
+    credit: "Imagery: placeholder, generated with ffmpeg"
+    overlay:
+      template: ranked_list
+      data:
+        heading: A card over real imagery
+        subheading: The same data block, drawn on a plate
+        items:
+          - {rank: 1, label: "The still fills the frame", value: ""}
+          - {rank: 2, label: "The card sits on the lower sixty percent", value: ""}
+          - {rank: 3, label: "The credit stays in the lower left", value: ""}
+        footer: kdeskaccounting.com
+    narration: >
+      This scene is a still photograph, not a rendered card. It fills the whole frame, it
+      drifts slowly inward, and the card you can read sits on top of it as a semi transparent
+      plate. The credit line stays in the lower left corner the entire time.
+
+  # A plain card between the two media scenes, so the demo renders a MIXED spec. The parts
+  # are joined with `-c:v copy`, which only works because a media scene encodes to exactly the
+  # stream a card scene does — this is the scene that proves it end to end.
+  - kind: card
+    template: countdown
+    data:
+      heading: Two scene kinds, one Short
+      subheading: Concatenated without re-encoding
+      items:
+        - {rank: 2, label: "Card: text on a brand background", value: ""}
+        - {rank: 1, label: "Media: the same text over imagery", value: ""}
+      footer: kdeskaccounting.com
+    narration: >
+      This scene is an ordinary card, sitting between two media scenes. Both kinds encode to
+      the same stream, so the finished Short is joined together without re-encoding anything.
+
+  - kind: media
+    src: marketing/video/media-demo/assets/placeholder-clip.mp4
+    motion: clip
+    credit: "Footage: placeholder, generated with ffmpeg"
+    narration: >
+      This one is moving footage. The clip itself is only three seconds long, so the renderer
+      loops it until the narration finishes, and trims it to the exact length of this
+      sentence. Nothing is ever drawn in the bottom right corner of the frame, because that is
+      where Google Earth Studio burns its own attribution.

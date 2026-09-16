@@ -132,6 +132,47 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/s
 # phone. Worked example of all three: marketing/video/card-demo/scenes.yaml.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/card-demo/scenes.yaml
 
+# The `media` scene kind — real footage or a still, under an optional card overlay. Same
+# workbook-free deal as `card`: a spec whose scenes are all card/media needs no Excel file.
+#   - kind: media
+#     src: media/earth/magic-kingdom.mp4   # repo-relative to the SPEC FILE's own repo root
+#                                          # (nearest .git / pyproject.toml above it), or
+#                                          # absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
+#     motion: clip | kenburns | hold       # default: kenburns for a still, clip for footage
+#       clip      play it, trimmed to the narration (+0.6 s like cards), looped if shorter.
+#                 VIDEO ONLY — on a still it hangs ffmpeg forever (0 bytes out), so it is
+#                 refused.
+#       kenburns  slow 1.0 -> 1.08 zoom. STILLS ONLY — zoompan counts INPUT frames, so on
+#                 footage it silently encodes a freeze frame; refused.
+#       hold      both kinds. On a still: one static frame. On a VIDEO: plays the clip
+#                 through ONCE, then freezes the last frame for the rest of the scene.
+#     Bad kind/motion pairings are rejected by media.check_motion, and the whole spec is
+#     validated by media.validate_spec BEFORE anything renders — so a typo on scene 7 costs
+#     nothing, instead of surfacing after six scenes have been narrated and encoded.
+#     credit: "Imagery: Google Earth, Maxar Technologies"   # REQUIRED when src is a still
+#     overlay: {template: …, data: {…}}    # optional; the `card` contract unchanged
+# A 16:9 source is scaled and cropped to FILL the 9:16 frame — no letterbox bars.
+# A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
+# renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
+# `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end
+# credits plate and no publisher hook. Only the per-scene `credit:` is actually burned in.
+# Worked example of all of it: marketing/video/media-demo/scenes.yaml, which is deliberately a
+# MIXED spec (media, card, media) because card and media parts must encode to the same stream
+# for the `-c:v copy` concat to join them. Its two placeholder assets are synthetic and
+# committed; marketing/video/media-demo/assets/generate.py remakes them.
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
+
+# NEVER DRAW IN THE BOTTOM-RIGHT 20% x 8% OF A FRAME. That is where Google Earth Studio burns
+# its attribution watermark ("Google · Maxar Technologies"), and the imagery terms require it
+# to stay visible — covering it is a licence breach, not a layout preference. The rule is
+# media.WATERMARK_W_FRAC / WATERMARK_H_FRAC: the credit plate is anchored bottom-LEFT and
+# stops short of that zone horizontally, the card overlay's bottom edge stops short of it
+# vertically. tests/test_media.py checks the boxes never intersect it, and
+# tests/test_media_scene_e2e.py checks the PNGs Chrome actually drew are transparent there —
+# so a CSS tweak that dodges the constants still fails. A still must carry a `credit:`
+# (footage can credit itself on screen; a still cannot) and build_video/make_short refuse the
+# render without one.
+
 # Narration provider — per spec (2026-09-15). No `tts:` block, or a legacy top-level
 # `voice: am_michael`, still means Kokoro (local, free), so every existing spec is unchanged.
 #   tts:

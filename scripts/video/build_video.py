@@ -10,7 +10,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import render_sheets as R
-from short_variants import safe_slug
+import media
+from short_variants import needs_workbook, safe_slug
 
 SOFFICE = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
 VENV_PY = HERE / ".venv-tts" / "bin" / "python"
@@ -27,19 +28,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spec", required=True,
                     help="path to a scenes.yaml spec; may live outside this repo "
-                         "(a card-only spec needs no workbook and no LibreOffice)")
+                         "(a card- or media-only spec needs no workbook and no LibreOffice)")
     ap.add_argument("--frames-only", action="store_true")
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
     a = ap.parse_args()
-    spec = yaml.safe_load(open(a.spec)); slug = safe_slug(spec["slug"])
+    spec = yaml.safe_load(open(a.spec))
+    # Preflight: every media scene is checked here, before a single frame is rendered.
+    media.validate_spec(spec, a.spec)
+    slug = safe_slug(spec["slug"])
     build = HERE / "build" / slug; frames = build / "frames"; frames.mkdir(parents=True, exist_ok=True)
     import cards
-    needs_workbook = any(sc.get("kind", "sheet") not in ("title", "outro", "card")
-                         for sc in spec["scenes"])
     wbv = wbf = None
     wbname = spec.get("workbook_name", "")
-    if needs_workbook:
+    if needs_workbook(spec):
         src = pathlib.Path(spec["source"]).expanduser()
         if not src.is_absolute(): src = REPO / src
         staged = build / "src.xlsx"
@@ -65,13 +67,15 @@ def main():
         if cards.is_card(sc):
             focus[str(i)] = R.render_card_scene(out, sc["template"], sc.get("data", {}),
                                                 spec.get("brand"))
+        elif media.is_media(sc):
+            focus[str(i)] = R.render_media_scene(out, sc, a.spec, spec.get("brand"))
         elif kind in ("title", "outro"):
             focus[str(i)] = R.render_card(kind, out, sc.get("heading", spec.get("title", "")), sc.get("sub", ""),
                                           sc.get("lines", []), sc.get("price", ""), sc.get("url", ""), sc.get("badge", ""))
         else:
             focus[str(i)] = R.render_sheet(wbv, wbf, sc["sheet"], sc["range"], out, tuple(sc.get("highlight", [])),
                                            float(sc.get("zoom", 1.0)), sc.get("caption", ""), wbname)
-        print(f"scene {i:02d}: {kind:<6} {sc.get('template', sc.get('sheet',''))} {sc.get('range','')} -> {out.name} focus={focus[str(i)]}", flush=True)
+        print(f"scene {i:02d}: {kind:<6} {sc.get('template', sc.get('src', sc.get('sheet','')))} {sc.get('range','')} -> {out.name} focus={focus[str(i)]}", flush=True)
     json.dump(focus, open(fj, "w"), indent=1)
     if a.frames_only: return
     subprocess.run([str(VENV_PY), str(HERE / "narrate.py"), "--spec", a.spec, "--out", str(build / "audio")], check=True)

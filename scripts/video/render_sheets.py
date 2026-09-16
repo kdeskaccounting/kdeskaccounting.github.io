@@ -19,12 +19,21 @@ def headless_shell():
         "~/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-mac-arm64/chrome-headless-shell")))
     return c[-1] if c else None
 
-def screenshot(html_path, out_png, w=W, h=H):
+def screenshot(html_path, out_png, w=W, h=H, transparent=False):
+    """HTML -> PNG. `transparent` keeps the page's alpha instead of painting it white.
+
+    A `media` scene's credit plate and card overlay are screenshotted this way and then laid
+    over the footage by ffmpeg, so everywhere the page is transparent the imagery shows
+    through. Without the flag Chrome fills the backdrop opaque white and the overlay becomes
+    a solid card.
+    """
     hs = headless_shell()
     exe = hs or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     cmd = [exe, "--headless" if hs else "--headless=new", "--disable-gpu", "--hide-scrollbars",
-           "--allow-file-access-from-files", "--no-first-run", f"--window-size={w},{h}",
-           f"--screenshot={out_png}", f"file://{pathlib.Path(html_path).resolve()}"]
+           "--allow-file-access-from-files", "--no-first-run", f"--window-size={w},{h}"]
+    if transparent:
+        cmd.append("--default-background-color=00000000")
+    cmd += [f"--screenshot={out_png}", f"file://{pathlib.Path(html_path).resolve()}"]
     subprocess.run(cmd, check=True, capture_output=True, timeout=120)
 
 BASE_CSS = f"""
@@ -235,5 +244,43 @@ def render_card_scene(out_png, template, data, brand, width=W, height=H, html_di
     doc = cards.card_html(template, data, cards.brand_tokens(brand), width, height)
     hp = pathlib.Path(html_dir or pathlib.Path(out_png).parent) / (pathlib.Path(out_png).stem + ".html")
     hp.write_text(doc, encoding="utf-8")
+    screenshot(hp, out_png, width, height)
+    return {"fx": 0.5, "fy": 0.5, "static": True}
+
+def render_media_scene(out_png, scene, spec_path, brand, width=W, height=H, html_dir=None):
+    """Render a `kind: media` scene to a still PNG. Same focus shape as render_card().
+
+    The still is composed of exactly the layers make_short hands to ffmpeg — the credit plate
+    and the card overlay, screenshotted transparent at this canvas — stacked over a poster
+    frame by Chrome instead of by ffmpeg. One layout, two compositors: a frame here can never
+    disagree with the Short about where a plate sits.
+
+    ffmpeg is used only to pull frame 0 out of a video; a still src is its own poster.
+    """
+    import cards, media
+    tokens = cards.brand_tokens(brand)
+    src = media.resolve_src(spec_path, scene["src"])
+    kind = media.media_kind(src)
+    media.check_credit(kind, scene.get("credit"))
+    out_png = pathlib.Path(out_png)
+    where = pathlib.Path(html_dir or out_png.parent); stem = out_png.stem
+    poster = src
+    if kind == "video":
+        poster = where / f"{stem}-poster.png"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "0", "-i", str(src),
+                        "-frames:v", "1", str(poster)],
+                       check=True, capture_output=True, timeout=120)
+    layers = []
+    for name, doc in (("overlay", media.overlay_html(scene["overlay"], tokens, width, height)
+                       if scene.get("overlay") else None),
+                      ("credit", media.credit_plate_html(scene["credit"], tokens, width, height)
+                       if scene.get("credit") else None)):
+        if doc is None: continue
+        hp = where / f"{stem}-{name}.html"; hp.write_text(doc, encoding="utf-8")
+        png = where / f"{stem}-{name}.png"; screenshot(hp, png, width, height, transparent=True)
+        layers.append(png)
+    hp = where / (stem + ".html")
+    hp.write_text(media.media_frame_html(poster, layers, width, height, tokens["bg"]),
+                  encoding="utf-8")
     screenshot(hp, out_png, width, height)
     return {"fx": 0.5, "fy": 0.5, "static": True}

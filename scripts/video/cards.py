@@ -160,8 +160,51 @@ def _row_size(template: str, count: int, unit: float) -> float:
     return min(3.3, 18.0 / n) * unit
 
 
+def spec_credits(spec: dict) -> str:
+    """The "Credits" block a description carries, from the spec's own attribution.
+
+    Sources: the spec's top-level `credits: [str]`, then every `media` scene's `credit:` line
+    (deduped, first mention wins) — a credit burned into a frame belongs in the description
+    too — then the spec's `disclaimer:`. Returns "" when the spec claims nothing, so a caller
+    can append it unconditionally.
+
+    NOT YET WIRED — nothing calls this. The spec keys are parsed and formatted here, but there
+    is no end-credits plate and no publisher hook, so a spec's top-level `credits:`/
+    `disclaimer:` currently appear nowhere in a rendered video or its description. Only a
+    media scene's own `credit:` is burned into the frame. Do not mistake this for behaviour.
+    """
+    lines: list[str] = []
+    for value in (spec.get("credits") or []):
+        text = str(value).strip()
+        if text and text not in lines:
+            lines.append(text)
+    for scene in (spec.get("scenes") or []):
+        text = str((scene or {}).get("credit") or "").strip()
+        if text and text not in lines:
+            lines.append(text)
+    block = ""
+    if lines:
+        block = "Credits:\n" + "\n".join(f"- {line}" for line in lines)
+    disclaimer = str(spec.get("disclaimer") or "").strip()
+    if disclaimer:
+        block = f"{block}\n\n{disclaimer}" if block else disclaimer
+    return block
+
+
 def card_html(template: str, data: dict, brand: dict, width: int = 1296,
-              height: int = 2304) -> str:
+              height: int = 2304, *, transparent: bool = False,
+              box: tuple[int, int, int, int] | None = None) -> str:
+    """The 9:16 card. `box` and `transparent` are what the `media` overlay adds.
+
+    `box` is `(left, top, w, h)`: the card lives inside that rectangle of the page instead
+    of over the whole canvas, and sizes its type to the rectangle's height — the same rule
+    it always uses, applied to a smaller canvas. It is anchored to the rectangle's BOTTOM
+    edge and grows upward only as far as it needs to, because the box's bottom is the edge
+    that matters (it is what clears the attribution watermark) while its top is a ceiling:
+    a three-row overlay should leave the footage above it alone, not pad itself out with
+    dead plate. `transparent` drops the background gradient and turns the card into a
+    semi-opaque plate. Both default off, and the default output is unchanged.
+    """
     if template not in TEMPLATES:
         raise ValueError(f"unknown card template {template!r}; known: {', '.join(TEMPLATES)}")
     items = data.get("items") or []
@@ -174,7 +217,8 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
 
     heading = str(data.get("heading") or "")
     subheading = str(data.get("subheading") or "")
-    unit = height / 100.0
+    box_x, box_y, box_w, box_h = box if box is not None else (0, 0, width, height)
+    unit = box_h / 100.0
     h1_fs = _heading_size(heading, unit)
     row_fs = _row_size(template, len(items), unit)
     gap = 0.45 * row_fs
@@ -187,12 +231,35 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
         body = f'<ul class="rows">\n      {_rows_ranked(template, items)}\n    </ul>'
     sub = f'<p class="sub">{_e(subheading)}</p>' if subheading else ""
 
+    if box is not None:
+        # Anchored to the box's bottom edge, growing upward no further than its top.
+        place = (f"position:absolute;left:{box_x}px;bottom:{height - box_y - box_h}px;"
+                 f"max-height:{box_h}px;")
+        size = f"width:{box_w}px;height:auto;"
+    else:
+        # `position:relative` so a transparent card still anchors its own plate.
+        place = "position:relative;" if transparent else ""
+        size = f"width:{box_w}px;height:{box_h}px;"
+    # An auto-height card has no free space to hand a `flex:1` body, so the body is sized
+    # by its rows instead of by the leftovers.
+    boxed = "" if box is None else "\n.body{flex:0 0 auto}"
+    page_bg = ("transparent" if transparent else
+               f"radial-gradient(120% 60% at 18% 6%, {brand['bg_alt']} 0%, "
+               f"{brand['bg']} 58%, {brand['bg']} 100%)")
+    # The plate: a semi-opaque wash behind the card only, drawn as a pseudo-element so the
+    # opacity never touches the text sitting on it.
+    plate = "" if not transparent else f"""
+.card{{border-radius:{2.2 * unit:.0f}px;overflow:hidden}}
+.card::before{{content:'';position:absolute;inset:0;background:{brand['bg']};opacity:.74;
+  border:{max(1.0, 0.12 * unit):.1f}px solid {brand['accent']};border-radius:inherit}}
+.card>*{{position:relative;z-index:1}}"""
+
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{width:{width}px;height:{height}px;overflow:hidden;
-  background:radial-gradient(120% 60% at 18% 6%, {brand['bg_alt']} 0%, {brand['bg']} 58%, {brand['bg']} 100%);
+  background:{page_bg};
   color:{brand['fg']};font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
-.card{{width:{width}px;height:{height}px;display:flex;flex-direction:column;
+.card{{{place}{size}display:flex;flex-direction:column;
   padding:{4.6 * unit:.0f}px {4.5 * unit:.0f}px}}
 .brand{{display:flex;align-items:baseline;justify-content:space-between;gap:{2 * unit:.0f}px;
   font-size:{1.55 * unit:.1f}px;letter-spacing:.07em;text-transform:uppercase;
@@ -225,7 +292,7 @@ h1{{font-size:{h1_fs:.1f}px;line-height:1.06;font-weight:700;letter-spacing:-.01
   padding:{5 * unit:.0f}px {3 * unit:.0f}px;text-align:center;font-size:{2.4 * unit:.1f}px;
   color:{brand['muted']}}}
 .foot{{padding-top:{1.8 * unit:.0f}px;font-size:{1.7 * unit:.1f}px;font-weight:700;
-  color:{brand['accent']}}}
+  color:{brand['accent']}}}{boxed}{plate}
 </style></head><body>
 <div class="card">
   <div class="brand"><span class="bname">{_e(brand['name'])}</span><span class="burl">{_e(brand['url'])}</span></div>

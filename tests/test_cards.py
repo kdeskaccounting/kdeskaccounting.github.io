@@ -339,3 +339,112 @@ def test_card_html_matches_its_golden_file(template, data, name):
         path.write_text(html, encoding="utf-8")
     assert path.exists(), f"missing golden {path}; regenerate with KDESK_UPDATE_GOLDEN=1"
     assert html == path.read_text(encoding="utf-8")
+
+
+# --- the transparent / boxed variant (what the `media` overlay renders through) ---------
+
+BOX = (71, 922, 1154, 1170)
+
+
+def test_the_default_card_is_unchanged_by_the_new_keywords():
+    """Belt and braces beside the goldens: the defaults must be the old call exactly."""
+    plain = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304)
+    explicit = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                               transparent=False, box=None)
+    assert plain == explicit
+
+
+def test_a_transparent_card_drops_the_background_gradient():
+    html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                           transparent=True)
+    assert "background:transparent" in html
+    assert "radial-gradient" not in html
+
+
+def test_a_transparent_card_wears_its_plate_as_a_pseudo_element():
+    """The wash is semi-opaque; the text on it must not be. That is why it is ::before."""
+    html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                           transparent=True, box=BOX)
+    assert ".card::before" in html
+    assert "opacity:.74" in html
+    assert ".card>*{position:relative;z-index:1}" in html
+
+
+def test_a_boxed_card_is_anchored_to_the_bottom_of_its_box_and_grows_upward():
+    """The box's bottom edge is the one that clears the attribution watermark."""
+    left, top, w, h = BOX
+    html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                           transparent=True, box=BOX)
+    assert f"left:{left}px" in html
+    assert f"bottom:{2304 - top - h}px" in html
+    assert f"max-height:{h}px" in html
+    assert "height:auto" in html
+    assert "height:2304px;display:flex" not in html
+
+
+def test_a_boxed_card_sizes_its_body_by_its_rows_not_by_the_leftover_space():
+    """`flex:1` in an auto-height column has no free space to claim, so rows would vanish."""
+    html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                           transparent=True, box=BOX)
+    assert ".body{flex:0 0 auto}" in html
+
+
+def test_a_boxed_card_sizes_its_type_to_the_box_not_to_the_page():
+    left, top, w, h = BOX
+    boxed = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                            transparent=True, box=BOX)
+    same_canvas = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), w, h,
+                                  transparent=True)
+    boxed_h1 = re.search(r"h1\{font-size:([\d.]+)px", boxed).group(1)
+    canvas_h1 = re.search(r"h1\{font-size:([\d.]+)px", same_canvas).group(1)
+    assert boxed_h1 == canvas_h1
+
+
+def test_a_boxed_card_still_enforces_the_row_caps():
+    data = dict(RANKED, items=[{"rank": i, "label": f"Ride {i}", "value": i}
+                               for i in range(9)])
+    with pytest.raises(ValueError):
+        cards.card_html("ranked_list", data, cards.brand_tokens(BRAND), 1296, 2304,
+                        transparent=True, box=BOX)
+
+
+# --- spec_credits ----------------------------------------------------------------------
+
+def test_spec_credits_renders_the_top_level_credits_as_a_block():
+    spec = {"credits": ["Imagery: Google Earth", "Wait times: Queue-Times.com"]}
+    assert cards.spec_credits(spec) == ("Credits:\n"
+                                        "- Imagery: Google Earth\n"
+                                        "- Wait times: Queue-Times.com")
+
+
+def test_spec_credits_picks_up_every_media_scenes_own_credit_line():
+    """A credit burned into a frame belongs in the description too."""
+    spec = {"scenes": [{"kind": "media", "credit": "Imagery: Google Earth"},
+                       {"kind": "card"},
+                       {"kind": "media", "credit": "Footage: NASA"}]}
+    assert cards.spec_credits(spec) == ("Credits:\n"
+                                        "- Imagery: Google Earth\n"
+                                        "- Footage: NASA")
+
+
+def test_spec_credits_mentions_a_repeated_credit_once():
+    spec = {"credits": ["Imagery: Google Earth"],
+            "scenes": [{"kind": "media", "credit": "Imagery: Google Earth"},
+                       {"kind": "media", "credit": "  Imagery: Google Earth  "}]}
+    assert cards.spec_credits(spec) == "Credits:\n- Imagery: Google Earth"
+
+
+def test_spec_credits_appends_the_disclaimer_under_the_block():
+    spec = {"credits": ["Imagery: Google Earth"],
+            "disclaimer": "Wait times are estimates and change minute to minute."}
+    assert cards.spec_credits(spec) == ("Credits:\n- Imagery: Google Earth\n\n"
+                                        "Wait times are estimates and change minute to minute.")
+
+
+def test_spec_credits_renders_a_disclaimer_with_no_credits_at_all():
+    assert cards.spec_credits({"disclaimer": "Not financial advice."}) == "Not financial advice."
+
+
+def test_spec_credits_of_a_spec_that_claims_nothing_is_empty():
+    assert cards.spec_credits({"slug": "x", "scenes": [{"kind": "card"}]}) == ""
+    assert cards.spec_credits({}) == ""
