@@ -170,6 +170,54 @@ def test_a_video_may_omit_the_credit():
     assert media.check_credit("image", CREDIT) is None
 
 
+# --- motion vs kind -------------------------------------------------------------------
+#
+# The wrong pairing is not a style choice. `clip` on a still hangs ffmpeg forever (the input
+# is looped, an image2 input restarts PTS every pass, so `trim=duration=` is never reached and
+# `-t` never fires: 0 bytes out, still spinning at two minutes). `kenburns` on footage
+# silently freezes frame 0, because zoompan's `d=` counts INPUT frames, not output ones.
+
+def test_the_motions_allowed_for_each_kind():
+    assert media.MOTIONS_FOR == {"image": ("kenburns", "hold"), "video": ("clip", "hold")}
+
+
+@pytest.mark.parametrize("kind,motion", [
+    ("image", "kenburns"), ("image", "hold"), ("video", "clip"), ("video", "hold"),
+])
+def test_check_motion_allows_every_sensible_pairing(kind, motion):
+    assert media.check_motion(kind, motion) is None
+
+
+def test_clip_on_a_still_is_refused_because_it_hangs_ffmpeg():
+    with pytest.raises(ValueError) as e:
+        media.check_motion("image", "clip")
+    text = str(e.value)
+    assert "clip" in text and "image" in text
+    assert "kenburns" in text and "hold" in text     # names the way out
+    assert "never" in text or "forever" in text      # says why, not just no
+
+
+def test_kenburns_on_footage_is_refused_because_it_freezes_frame_zero():
+    with pytest.raises(ValueError) as e:
+        media.check_motion("video", "kenburns")
+    text = str(e.value)
+    assert "kenburns" in text and "video" in text
+    assert "clip" in text and "hold" in text
+    assert "freeze" in text or "frozen" in text
+
+
+def test_check_motion_is_also_the_gate_on_an_unknown_motion():
+    """One call validates the motion, so no caller can check the pair but not the name."""
+    with pytest.raises(ValueError) as e:
+        media.check_motion("image", "wiggle")
+    assert "wiggle" in str(e.value)
+
+
+def test_the_default_motion_is_always_an_allowed_pairing():
+    for kind in ("image", "video"):
+        assert media.check_motion(kind, media.default_motion(kind)) is None
+
+
 # --- the attribution exclusion zone ---------------------------------------------------
 
 def test_the_watermark_zone_is_the_bottom_right_twenty_by_eight_percent():

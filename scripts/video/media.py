@@ -46,6 +46,11 @@ import cards
 
 MOTIONS = ("clip", "kenburns", "hold")
 
+#: Which motions actually work on which kind of source. `clip` needs frames to play and
+#: `kenburns` needs a single frame to zoom; the wrong pairing hangs ffmpeg or silently
+#: freezes the footage. See check_motion() for the mechanics of each failure.
+MOTIONS_FOR = {"image": ("kenburns", "hold"), "video": ("clip", "hold")}
+
 VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v")
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
 
@@ -98,6 +103,38 @@ def is_media(scene: dict) -> bool:
 def default_motion(kind: str) -> str:
     """A still needs manufactured motion; footage already has its own."""
     return "clip" if kind == "video" else "kenburns"
+
+
+def check_motion(kind: str, motion: str) -> None:
+    """Refuse a motion that cannot work on this kind of source.
+
+    Not a style rule — each rejected pairing is a concrete failure:
+
+      clip on a still      `clip` plays frames and a still has one. The source is looped at
+                           the input (CLIP_INPUT_ARGS), and an image2 input restarts its PTS
+                           on every pass, so `trim=duration=` is never reached and `-t` never
+                           fires: ffmpeg writes 0 bytes and runs forever.
+      kenburns on footage  zoompan's `d=` counts INPUT frames, not output frames, so on a
+                           video it consumes frame 0 and holds it — the scene is a freeze
+                           frame that looks like a still by mistake.
+
+    `hold` is the one motion both kinds share: on a still it clones the frame, on footage it
+    plays the clip through and then freezes the last frame for the rest of the scene.
+    """
+    if motion not in MOTIONS:
+        raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
+    if kind not in MOTIONS_FOR:
+        raise ValueError(f"unknown media kind {kind!r}; known: {', '.join(MOTIONS_FOR)}")
+    allowed = MOTIONS_FOR[kind]
+    if motion in allowed:
+        return None
+    why = ("`clip` plays frames and a still has only one: looped at the input it never "
+           "reaches the trim point, so ffmpeg writes nothing and runs forever"
+           if motion == "clip" else
+           "zoompan counts INPUT frames, so on footage `kenburns` consumes frame 0 and "
+           "holds it — the scene comes out a freeze frame")
+    raise ValueError(f"motion {motion!r} cannot be used with a {kind} src: {why}. "
+                     f"Use one of: {', '.join(allowed)}")
 
 
 # --- the source file ------------------------------------------------------------------

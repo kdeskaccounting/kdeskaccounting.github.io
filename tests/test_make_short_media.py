@@ -243,3 +243,50 @@ def test_every_media_scene_is_pinned_to_limited_range_like_every_other_scene(stu
     for cmd in _media_cmds(stub_main):
         chain = cmd[cmd.index("-filter_complex") + 1]
         assert f"scale={M.OUT_W}:{M.OUT_H}:flags=lanczos:out_range=tv" in chain
+
+
+# --- motion vs kind, at the pipeline level ------------------------------------------------
+
+def test_an_image_with_motion_clip_is_refused_before_any_ffmpeg_runs(stub_main):
+    """It hangs ffmpeg forever — 0 bytes out, still spinning at two minutes — so the only
+    safe place to catch it is before the encode starts."""
+    stub_main.spec["scenes"][0]["motion"] = "clip"
+    with pytest.raises(ValueError) as e:
+        M.main()
+    assert "clip" in str(e.value) and "image" in str(e.value)
+    assert not stub_main.cmds, "no ffmpeg command may be built for a wedging combination"
+    assert not stub_main.shots, "no Chrome screenshot either"
+
+
+def test_a_video_with_motion_kenburns_is_refused(stub_main):
+    """It would silently encode a freeze frame, which no one notices until the Short ships."""
+    stub_main.spec["scenes"][1]["motion"] = "kenburns"
+    with pytest.raises(ValueError) as e:
+        M.main()
+    assert "kenburns" in str(e.value) and "video" in str(e.value)
+
+
+def test_run_bounds_every_ffmpeg_call_with_a_timeout(monkeypatch):
+    """A wedged ffmpeg must become an error, not a job that never returns."""
+    seen = {}
+
+    def fake(cmd, **kwargs):
+        seen.update(kwargs)
+        return types.SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(M.subprocess, "run", fake)
+    M.run(["ffmpeg", "-version"])
+    assert seen.get("timeout") == M.RUN_TIMEOUT
+    assert M.RUN_TIMEOUT >= 600
+
+
+def test_a_wedged_ffmpeg_is_reported_as_a_failure_not_a_hang(monkeypatch):
+    import subprocess as sp
+
+    def fake(cmd, **kwargs):
+        raise sp.TimeoutExpired(cmd, kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(M.subprocess, "run", fake)
+    with pytest.raises(SystemExit) as e:
+        M.run(["ffmpeg", "-i", "x"])
+    assert "timed out" in str(e.value)

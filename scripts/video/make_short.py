@@ -25,8 +25,16 @@ CAP_BAR = 118                                                  # caption bar hei
 NAVY, BLUE = "#1F3864", "#2E75B6"
 GRAD = f"radial-gradient(1100px 700px at 20% 10%, {BLUE} 0%, {NAVY} 45%, #0d1a33 100%)"
 
+#: Ceiling on any single ffmpeg call. Generous — a 59 s Short encodes in well under a minute —
+#: but finite: a filter graph that can never terminate (see media.check_motion) has to surface
+#: as a failed render, not as a job that never returns.
+RUN_TIMEOUT = 600
+
 def run(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"ffmpeg timed out after {RUN_TIMEOUT}s:\n{' '.join(map(str, cmd))}")
     if r.returncode != 0: raise SystemExit(f"ffmpeg failed:\n{' '.join(cmd)}\n{r.stderr[-1500:]}")
 def dur_of(p):
     return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(p)], capture_output=True, text=True).stdout.strip() or 0)
@@ -199,6 +207,7 @@ def main():
             src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
             media.check_credit(kind, sc.get("credit"))
             motion = sc.get("motion") or media.default_motion(kind)
+            media.check_motion(kind, motion)
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
