@@ -1023,3 +1023,19 @@ def test_a_cache_hit_leaves_the_words_file_untouched(drive):
     assert drive.run() == 0
     assert drive.calls == []
     assert C.words_path(drive.out / "scene_00.wav").read_text() == stamp
+
+
+def test_an_empty_fold_is_stored_as_no_timings_rather_than_an_empty_list(drive, capsys):
+    """A fold that came back empty is a scene with no captions, not a scene with zero words.
+
+    Caching `[]` would be a cache hit that promises words and delivers none; make_short would
+    read it as falsy and skip the scene anyway, but silently. Normalise it to `null`, warn, and
+    let the next run re-synthesize if the text changes.
+    """
+    import captions as C
+    drive.words = []
+    assert drive.run() == 0
+    assert C.words_path(drive.out / "scene_00.wav").read_text() == "null"
+    assert C.read_words(drive.out / "scene_00.wav") is None
+    err = capsys.readouterr().err
+    assert "scene 00" in err and "captions" in err

@@ -757,10 +757,14 @@ def main(argv: list | None = None) -> int:
         # Written BEFORE the meta, for the same reason the meta is dropped before synthesis:
         # the meta is what says this scene is cached, so nothing may claim a hit until every
         # file a hit promises is on disk.
-        captions.write_words(wav, words)
-        if words is None:
+        # `not words`, not `words is None`: a fold that came back EMPTY is a scene with no
+        # captions, not a scene with zero words, and caching `[]` would be a cache hit that
+        # promises timings and delivers none. Normalised to `null` so it reads back as absent.
+        if not words:
+            words = None
             print(f"scene {i:02d}: {scene_cfg.provider} returned no word timings — captions "
                   f"will be skipped for this scene", file=sys.stderr, flush=True)
+        captions.write_words(wav, words)
         meta.write_text(json.dumps({"hash": cache_hash(scene_cfg, text), "seconds": seconds,
                                     "voice": scene_cfg.voice,
                                     "provider_used": scene_cfg.provider,
