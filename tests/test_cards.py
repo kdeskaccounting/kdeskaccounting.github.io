@@ -642,3 +642,29 @@ def test_heatmap_type_fits_inside_the_cell_it_is_given(n):
     # 1.2 is the normal line box each span gets, plus the flex gap between them.
     assert 1.2 * (day + score) + 0.15 * unit <= column, \
         f"{n} cells: {1.2 * (day + score):.0f}px of type in a {column:.0f}px cell"
+
+
+def test_the_curve_is_drawn_under_a_uniform_scale():
+    """preserveAspectRatio="none" stretched the viewBox into the card's box — 1.7x vertically.
+
+    Under that the marker circle renders as an ellipse, the annotation text is stretched, and
+    a stroke's apparent width depends on its segment's angle. The fix is a uniform scale: the
+    SVG keeps its viewBox's own ratio, so nothing is distorted at any card or box width.
+    """
+    html = cards.card_html("wait_curve", CURVE, cards.brand_tokens(None), 1296, 2304)
+
+    assert 'preserveAspectRatio="xMidYMid meet"' in html
+    assert 'preserveAspectRatio="none"' not in html
+
+    view_box = re.search(r'viewBox="0 0 (\d+) (\d+)"', html)
+    assert (int(view_box.group(1)), int(view_box.group(2))) \
+        == (int(cards.CURVE_W), int(cards.CURVE_H))
+
+    # "meet" only avoids letterboxing if the box it is given carries the same ratio.
+    ratio = re.search(r"\.plot\{[^}]*aspect-ratio:(\d+)\s*/\s*(\d+)", html)
+    assert ratio, "the plot box must be tied to the viewBox's ratio"
+    assert (int(ratio.group(1)), int(ratio.group(2))) \
+        == (int(cards.CURVE_W), int(cards.CURVE_H))
+
+    # A fixed height would put the mismatch straight back.
+    assert not re.search(r"\.plot\{[^}]*height:", html), "a fixed plot height re-stretches it"

@@ -198,11 +198,14 @@ def _cells_heatmap(items: list[dict]) -> str:
     return "\n      ".join(out)
 
 
-#: The curve's own coordinate space. The SVG scales to the card body with viewBox, so these
-#: are arbitrary units chosen to make the arithmetic below readable.
+#: The curve's own coordinate space. The SVG scales to the card body with viewBox under a
+#: UNIFORM scale (`preserveAspectRatio="xMidYMid meet"` against a box carrying this same
+#: ratio), so these units are arbitrary but their RATIO is not: it is the shape the plot
+#: occupies on the card. 1000x720 is close to the box the old stretched drawing was given,
+#: so the curve keeps its proportions while the marker circle is finally round.
 CURVE_W = 1000.0
-CURVE_H = 420.0
-CURVE_PAD = 24.0
+CURVE_H = 720.0
+CURVE_PAD = 40.0
 
 
 def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
@@ -224,12 +227,12 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
     label = str(annotation.get("label") or "")
     # Flip the label inside the box near the right edge so it can never be clipped.
     anchor = "end" if mx > CURVE_W * 0.72 else "start"
-    dx = -16 if anchor == "end" else 16
+    dx = -26 if anchor == "end" else 26
     mark = (
-        f'<circle cx="{mx}" cy="{my}" r="13" fill="{brand["accent"]}" '
-        f'stroke="{brand["bg"]}" stroke-width="5"/>'
+        f'<circle cx="{mx}" cy="{my}" r="16" fill="{brand["accent"]}" '
+        f'stroke="{brand["bg"]}" stroke-width="7"/>'
         + (
-            f'<text x="{mx + dx}" y="{max(my - 26, 28)}" text-anchor="{anchor}" '
+            f'<text x="{mx + dx}" y="{max(my - 34, 52)}" text-anchor="{anchor}" '
             f'class="ann">{_e(label)}</text>'
             if label
             else ""
@@ -240,8 +243,8 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
     )
     return (
         f'<div class="curve">\n'
-        f'      <svg viewBox="0 0 {CURVE_W:.0f} {CURVE_H:.0f}" preserveAspectRatio="none" '
-        f'class="plot">\n'
+        f'      <svg viewBox="0 0 {CURVE_W:.0f} {CURVE_H:.0f}" '
+        f'preserveAspectRatio="xMidYMid meet" class="plot">\n'
         f'        <polygon points="{area}" class="fill"/>\n'
         f'        <polyline points="{poly}" class="line"/>\n'
         f'        {mark}\n'
@@ -403,11 +406,11 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     elif template == "wait_curve":
         extra = f"""
 .curve{{display:flex;flex-direction:column;gap:{1.2 * unit:.0f}px}}
-.plot{{width:100%;height:{34 * unit:.0f}px;overflow:visible}}
-.plot .line{{fill:none;stroke:{brand['accent']};stroke-width:8;stroke-linejoin:round;
+.plot{{width:100%;aspect-ratio:{CURVE_W:.0f}/{CURVE_H:.0f};overflow:visible}}
+.plot .line{{fill:none;stroke:{brand['accent']};stroke-width:12;stroke-linejoin:round;
   stroke-linecap:round}}
 .plot .fill{{fill:{brand['accent']};opacity:.16}}
-.plot .ann{{fill:{brand['fg']};font-family:{brand['font']};font-weight:700;font-size:34px}}
+.plot .ann{{fill:{brand['fg']};font-family:{brand['font']};font-weight:700;font-size:52px}}
 .xlabels{{display:flex;justify-content:space-between;color:{brand['muted']};
   font-size:{1.7 * unit:.1f}px;font-variant-numeric:tabular-nums}}"""
 
