@@ -208,11 +208,21 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # sheet/pan scene (whose hook band starts at y=0). Captions are for imagery, not for a card
 # that is already all text.
 #
+# A `kind: card` scene is NOT skipped: the CARD moves instead, into the frame below the band
+# (make_short.card_box_under_captions -> cards.card_html's `box`/`fill`), so a card-only data
+# Short is captioned too. Only the legacy sheet/pan layout is skipped, because its hook band
+# really does start at y=0. Captions off = no box passed = the full-frame card, byte-identical.
+#
 # HOW: one transparent PNG per spoken word (this ffmpeg has no drawtext), composited with
 # `overlay ... enable='between(t,a,b)'` in the pass that ALREADY concatenates the parts — that
 # concat was a `-c:v copy`, so a captioned Short costs exactly one re-encode, loudnorm and all,
 # not a second pass. Scene offsets are measured from the encoded parts (one ffprobe each) so a
 # frame of rounding per scene cannot drift the highlight off the syllable.
+# A captioned render writes scripts/video/build/<slug>/short/captions.json — the plan it
+# actually burned in (band, accent, one row per word window with its cue, lit word and PNG).
+# It answers "which word was on screen at 12.3 s?", and tests/test_captions_e2e.py reads it to
+# check the real render against real pixels; those two tests SKIP until the demo below has been
+# rendered in this checkout, so render it before trusting a green suite on caption geometry.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
   --spec marketing/video/media-demo/scenes.yaml            # captions: on in that spec
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --no-captions

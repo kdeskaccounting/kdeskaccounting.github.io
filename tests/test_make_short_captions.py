@@ -378,6 +378,39 @@ def test_a_card_scene_is_captioned_alongside_the_media_scenes(stub):
     assert any(PART_SECONDS <= start < 2 * PART_SECONDS for start, _e in wins)
 
 
+# --- the plan that was actually burned in --------------------------------------------------------
+
+def test_the_burned_in_caption_plan_is_written_beside_the_parts(stub):
+    """So a pixel test over a finished Short reads what was rendered, not a re-derivation.
+
+    Re-deriving the windows from the spec would let a broken render agree with a broken
+    derivation, and it would need a YAML parser the bare pytest environment does not have.
+    """
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text(encoding="utf-8"))
+    assert plan["band"] == list(M.caption_plan(stub.spec, stub.spec["short"])[0])
+    assert plan["accent"] == "#ffe234"
+    assert len(plan["windows"]) == sum(len(w) for w in WORDS.values())
+    first = plan["windows"][0]
+    assert first["lit"] == "Magic" and first["text"].startswith("Magic")
+    assert first["png"] == "cap_0000.png"
+    assert (first["start"], first["end"]) == _windows(_final(stub))[0]
+
+
+def test_every_plan_row_names_the_png_that_ffmpeg_was_given(stub):
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text(encoding="utf-8"))
+    assert [row["png"] for row in plan["windows"]] == \
+        [p.name for p in _caption_pngs(stub)]
+    assert [(row["start"], row["end"]) for row in plan["windows"]] == _windows(_final(stub))
+
+
+def test_no_plan_is_written_when_nothing_was_burned_in(stub):
+    stub.spec = _spec()
+    stub.go()
+    assert not (stub.work / "captions.json").exists()
+
+
 # --- render_sheets passes the box through -------------------------------------------------------
 
 def test_render_card_scene_hands_its_box_to_the_card_renderer(tmp_path, monkeypatch):

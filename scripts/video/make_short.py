@@ -236,6 +236,23 @@ def render_captions(cues, cfg, brand, work, box):
     return out
 
 
+def caption_plan_json(cues, overlays, box, cfg):
+    """What was actually burned in, as a dict: the band, the accent, one row per word window.
+
+    Written beside the parts so the pixel test over a finished Short reads the render's own
+    plan instead of re-deriving it from the spec — a re-derivation can agree with a broken
+    render, and it would need a YAML parser the bare `uv run --with pytest` environment does
+    not have. It also answers "which word was on screen at 12.3 s?" without re-running
+    anything. `overlays` came straight from word_windows(cues), so the two zip exactly.
+    """
+    rows = []
+    for (png, start, end), win in zip(overlays, captions.word_windows(cues)):
+        cue = cues[win.cue]
+        rows.append({"start": round(start, 3), "end": round(end, 3), "text": cue.text,
+                     "lit": cue.words[win.word].text, "png": pathlib.Path(png).name})
+    return {"band": list(box), "accent": cfg.accent, "windows": rows}
+
+
 def caption_filter(overlays, y):
     """The filter graph that burns the word PNGs into the concatenated video.
 
@@ -438,10 +455,13 @@ def main():
     # Captions are burned in HERE, in the pass that was already joining the parts, rather than
     # in a second one: the concat is a stream copy today, so this is the only re-encode the
     # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
-    overlays = render_captions(caption_cues(cap_scenes, build / "audio", cap_skip), cap,
-                               cards.brand_tokens(spec.get("brand")), work,
+    cap_cues = caption_cues(cap_scenes, build / "audio", cap_skip) if cap.enabled else []
+    overlays = render_captions(cap_cues, cap, cards.brand_tokens(spec.get("brand")), work,
                                cap_box) if cap.enabled else []
     if overlays:
+        (work / "captions.json").write_text(
+            json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
+            encoding="utf-8")
         args = ["-f", "concat", "-safe", "0", "-i", str(lst)]
         for png, _s, _e in overlays:
             args += ["-i", str(png)]

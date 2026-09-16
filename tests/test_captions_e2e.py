@@ -24,6 +24,9 @@ import render_sheets as R
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 DEMO_SHORT = REPO / "scripts" / "video" / "build" / "media-demo" / "media-demo-short.mp4"
+#: The plan make_short burned in, written beside the parts. Reading it is what lets the
+#: real-render pixel test run in the bare `uv run --with pytest` environment, which has no yaml.
+DEMO_PLAN = DEMO_SHORT.parent / "short" / "captions.json"
 
 ACCENT = "#ffe234"
 ACCENT_RGB = (0xFF, 0xE2, 0x34)
@@ -169,34 +172,42 @@ def test_nothing_is_ever_drawn_below_the_safe_zone_or_in_the_attribution_corner(
 # --- the real demo render, when it is on disk ---------------------------------------------------
 
 @needs_ffmpeg
-@pytest.mark.skipif(not DEMO_SHORT.exists(),
+@pytest.mark.skipif(not DEMO_PLAN.exists(),
                     reason=f"{DEMO_SHORT} has not been rendered in this checkout")
 def test_the_rendered_demo_short_carries_the_highlight_only_while_a_cue_is_up():
-    """marketing/video/media-demo/scenes.yaml is the one spec in this repo with captions on."""
+    """marketing/video/media-demo/scenes.yaml is the one spec in this repo with captions on.
+
+    Driven off `short/captions.json`, the plan make_short actually burned in, so this needs no
+    YAML parser (the documented `uv run --with pytest` environment has none) and cannot pass
+    by agreeing with a re-derivation that is wrong in the same way the render is.
+    """
     import json
-    yaml = pytest.importorskip("yaml", reason="the bare pytest environment has no yaml")
-    spec = yaml.safe_load((REPO / "marketing/video/media-demo/scenes.yaml").read_text())
-    assert captions.settings(spec).enabled is True
-    build = DEMO_SHORT.parent
-    work = build / "short"
-    box, skipped = M.caption_plan(spec, spec["short"])
-    scenes, at = [], 0.0
-    for k, idx in enumerate(spec["short"]["scenes"]):
-        seconds = M.dur_of(work / f"scene_{k}.mp4")
-        scenes.append((idx, at, at + seconds))
-        at += seconds
-    total = at + M.dur_of(work / "end.mp4")
-    cues = M.caption_cues(scenes, build / "audio", skipped)
-    windows = captions.word_windows(cues)
+    plan = json.loads(DEMO_PLAN.read_text(encoding="utf-8"))
+    box, windows = tuple(plan["band"]), plan["windows"]
     assert windows, "the demo rendered no caption windows at all"
-    for window in windows[:: max(1, len(windows) // 5)]:
-        mid = (window.start + window.end) / 2
+    assert plan["accent"] == ACCENT
+    for row in windows[:: max(1, len(windows) // 5)]:
+        mid = (row["start"] + row["end"]) / 2
         assert _accent_pixels(_rgb(DEMO_SHORT, mid, box)) > 300, \
-            f"no highlight at t={mid:.2f}, mid-window on {cues[window.cue].text!r}"
-    covered = [(w.start, w.end) for w in windows]
+            f"no highlight at t={mid:.2f}, mid-window on {row['text']!r} ({row['lit']!r} lit)"
+    total = M.dur_of(DEMO_SHORT)
     for at in (0.1, total - 0.5):
-        assert not any(s <= at <= e for s, e in covered)
+        assert not any(row["start"] <= at <= row["end"] for row in windows)
         assert _accent_pixels(_rgb(DEMO_SHORT, at, (0, 0, M.OUT_W, M.OUT_H))) == 0, \
             f"accent pixels at t={at:.2f}, which no cue covers"
-    assert json.loads((build / "audio" / "scene_00.words.json").read_text()), \
+    assert json.loads((DEMO_SHORT.parent / "audio" / "scene_00.words.json").read_text()), \
         "the demo's word timings went missing"
+
+
+@needs_ffmpeg
+@pytest.mark.skipif(not DEMO_PLAN.exists(),
+                    reason=f"{DEMO_SHORT} has not been rendered in this checkout")
+def test_the_rendered_demo_captions_every_scene_including_the_card():
+    """The card scene moves below the band rather than being skipped, so nothing is dropped."""
+    import json
+    plan = json.loads(DEMO_PLAN.read_text(encoding="utf-8"))
+    ends = [row["end"] for row in plan["windows"]]
+    thirds = M.dur_of(DEMO_SHORT) / 3
+    for lo, hi in ((0, thirds), (thirds, 2 * thirds), (2 * thirds, 3 * thirds)):
+        assert any(lo < end <= hi for end in ends), \
+            f"no caption anywhere between {lo:.0f}s and {hi:.0f}s"
