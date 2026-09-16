@@ -148,7 +148,7 @@ def test_a_media_scene_composites_into_a_short_ready_mp4(tmp_path):
     assert out.exists() and out.stat().st_size > 10_000
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries",
-         "stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate",
+         "stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate,pix_fmt",
          "-show_entries", "format=duration", "-of", "json", str(out)],
         capture_output=True, text=True, timeout=120)
     info = json.loads(probe.stdout)
@@ -156,6 +156,8 @@ def test_a_media_scene_composites_into_a_short_ready_mp4(tmp_path):
     audio = next(s for s in info["streams"] if s["codec_type"] == "audio")
     assert (video["width"], video["height"]) == (M.OUT_W, M.OUT_H) == (1080, 1920)
     assert video["r_frame_rate"] == "30/1" and video["codec_name"] == "h264"
+    # Limited range like every other scene kind, so `-c:v copy` concat has nothing to jump.
+    assert video["pix_fmt"] == "yuv420p"
     assert audio["codec_name"] == "aac" and audio["sample_rate"] == "48000"
     # The 3-second source was looped and trimmed to the 4-second scene, not cut short.
     assert abs(float(info["format"]["duration"]) - 4.0) < 0.15
@@ -219,6 +221,10 @@ def test_a_still_with_no_credit_stops_the_render(tmp_path):
                     .replace("slug: media-demo", "slug: media-demo-nocredit")
                     .replace('    credit: "Imagery: placeholder, generated with ffmpeg"\n', ""),
                     encoding="utf-8")
-    proc = _run([str(BUILD_VIDEO), "--spec", str(spec), "--frames-only"], timeout=300)
-    assert proc.returncode != 0
-    assert "credit" in proc.stderr
+    build = REPO / "scripts" / "video" / "build" / "media-demo-nocredit"
+    try:
+        proc = _run([str(BUILD_VIDEO), "--spec", str(spec), "--frames-only"], timeout=300)
+        assert proc.returncode != 0
+        assert "credit" in proc.stderr
+    finally:
+        shutil.rmtree(build, ignore_errors=True)

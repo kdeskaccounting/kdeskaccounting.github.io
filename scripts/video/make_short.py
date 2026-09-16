@@ -73,7 +73,11 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
         # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
         steps.append(f"[{stage}][{i + 2}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
         stage = f"m{i + 1}"
-    steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos,fade=t=in:st=0:d=0.3,"
+    # out_range=tv because a JPEG still decodes full-range: without it that scene encodes
+    # yuvj420p while every card and sheet scene encodes yuv420p, and `-c:v copy` concat
+    # would put a brightness jump at the cut.
+    steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv,"
+                 f"fade=t=in:st=0:d=0.3,"
                  f"fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p[v]")
     steps.append("[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")

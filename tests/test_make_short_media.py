@@ -232,3 +232,14 @@ def test_a_media_only_short_concatenates_into_the_slugs_final_mp4(stub_main):
     listed = (stub_main.work / "concat.txt").read_text().splitlines()
     assert listed == [f"file '{stub_main.work / n}'"
                       for n in ("scene_0.mp4", "scene_1.mp4", "end.mp4")]
+
+
+def test_every_media_scene_is_pinned_to_limited_range_like_every_other_scene(stub_main):
+    """A JPEG is full-range; a card PNG encodes limited. Parts are concatenated with
+    `-c:v copy`, so a media scene that kept its source's range would put a brightness jump
+    at the cut — and leave the Short's own range depending on which scene happened to be
+    first."""
+    M.main()
+    for cmd in _media_cmds(stub_main):
+        chain = cmd[cmd.index("-filter_complex") + 1]
+        assert f"scale={M.OUT_W}:{M.OUT_H}:flags=lanczos:out_range=tv" in chain

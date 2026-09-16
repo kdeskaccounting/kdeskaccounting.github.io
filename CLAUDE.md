@@ -132,6 +132,34 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/s
 # phone. Worked example of all three: marketing/video/card-demo/scenes.yaml.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/card-demo/scenes.yaml
 
+# The `media` scene kind — real footage or a still, under an optional card overlay. Same
+# workbook-free deal as `card`: a spec whose scenes are all card/media needs no Excel file.
+#   - kind: media
+#     src: media/earth/magic-kingdom.mp4   # repo-relative to the SPEC FILE's own repo root
+#                                          # (nearest .git / pyproject.toml above it), or
+#                                          # absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
+#     motion: clip | kenburns | hold       # clip: play it, trimmed to the narration (+0.6 s
+#                                          # like cards), looped if shorter. kenburns: 1.0 ->
+#                                          # 1.08 zoom. hold: static. Default: kenburns for a
+#                                          # still, clip for footage.
+#     credit: "Imagery: Google Earth, Maxar Technologies"   # REQUIRED when src is a still
+#     overlay: {template: …, data: {…}}    # optional; the `card` contract unchanged
+# A 16:9 source is scaled and cropped to FILL the 9:16 frame — no letterbox bars.
+# Worked example of both: marketing/video/media-demo/scenes.yaml (its two placeholder assets
+# are synthetic and committed; marketing/video/media-demo/assets/generate.py remakes them).
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
+
+# NEVER DRAW IN THE BOTTOM-RIGHT 20% x 8% OF A FRAME. That is where Google Earth Studio burns
+# its attribution watermark ("Google · Maxar Technologies"), and the imagery terms require it
+# to stay visible — covering it is a licence breach, not a layout preference. The rule is
+# media.WATERMARK_W_FRAC / WATERMARK_H_FRAC: the credit plate is anchored bottom-LEFT and
+# stops short of that zone horizontally, the card overlay's bottom edge stops short of it
+# vertically. tests/test_media.py checks the boxes never intersect it, and
+# tests/test_media_scene_e2e.py checks the PNGs Chrome actually drew are transparent there —
+# so a CSS tweak that dodges the constants still fails. A still must carry a `credit:`
+# (footage can credit itself on screen; a still cannot) and build_video/make_short refuse the
+# render without one.
+
 # Narration provider — per spec (2026-09-15). No `tts:` block, or a legacy top-level
 # `voice: am_michael`, still means Kokoro (local, free), so every existing spec is unchanged.
 #   tts:
