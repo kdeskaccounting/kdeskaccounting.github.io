@@ -16,7 +16,7 @@ documenting every platform-specific field. capabilities() reports form_variant s
 correction is one constant.
 
 Free tier: 10 uploads/month, YouTube + Instagram. TikTok needs the paid plan.
-Key from env UPLOAD_POST_KEY; profile from env UPLOAD_POST_PROFILE (default "kdesk").
+Key from env UPLOAD_POST_KEY; profile from env UPLOAD_POST_PROFILE (default "default" — the Upload-Post profile that owns the KDesk YouTube channel; "parksheet" owns the venture's).
 No key, or any non-2xx, or a per-platform failure -> queue() (never a silent failure).
 requests is imported lazily so this module stays stdlib-importable for tests.
 """
@@ -34,7 +34,7 @@ API_URL = "https://api.upload-post.com/api/upload"
 USERS_URL = "https://api.upload-post.com/api/uploadposts/users"
 FILE_FIELD = "video"
 PLATFORM_FIELD = "platform[]"
-DEFAULT_PROFILE = "kdesk"
+DEFAULT_PROFILE = "default"
 TITLE_MAX = 100          # YouTube's limit; the shortest of the three, so it is the safe cap
 FREE_TIER_PLATFORMS = ("youtube", "instagram")
 UPLOAD_TIMEOUT_S = 600   # an mp4 upload, not an API ping

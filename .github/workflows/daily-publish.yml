@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       UPLOAD_POST_KEY: ${{ secrets.UPLOAD_POST_KEY }}
-      UPLOAD_POST_PROFILE: kdesk
+      UPLOAD_POST_PROFILE: default   # the Upload-Post profile holding the KDesk YouTube channel
       GH_TOKEN: ${{ github.token }}
       # The boolean comparison happens in the expression; the shell only ever sees the
       # resulting flag or an empty string. On a schedule the inputs context is empty, so

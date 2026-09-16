@@ -130,7 +130,7 @@ def test_the_api_key_never_reaches_stdout_or_the_ledger(rig, monkeypatch, capsys
     key = "up_live_CLISECRET1"
     monkeypatch.setenv("UPLOAD_POST_KEY", key)
     monkeypatch.setattr(up, "_http_post", lambda *a, **k: (
-        401, {"success": False, "message": f"Invalid credential {key} for profile kdesk"}))
+        401, {"success": False, "message": f"Invalid credential {key} for profile default"}))
     assert _run(rig, "youtube") == 1
     assert key not in capsys.readouterr().out
     assert key not in rig["rows"][0]["action"]
@@ -138,7 +138,7 @@ def test_the_api_key_never_reaches_stdout_or_the_ledger(rig, monkeypatch, capsys
     assert key not in card.read_text(encoding="utf-8")
 
 
-# --- --whoami answers "is user=kdesk the right profile?" from the documented profile
+# --- --whoami answers "is user=default the right profile?" from the documented profile
 # listing, before the first upload burns a slot on a 400 "Username required in form data".
 
 def test_whoami_without_a_key_exits_one_and_calls_nothing(monkeypatch, capsys):
@@ -153,10 +153,10 @@ def test_whoami_prints_the_profiles_and_never_the_key(monkeypatch, capsys):
     key = "up_live_WHOAMIKEY1"
     monkeypatch.setenv("UPLOAD_POST_KEY", key)
     monkeypatch.setattr(up, "_http_get", lambda url, headers, params: (
-        200, {"success": True, "profiles": [{"username": "kdesk", "key_echo": key}]}))
+        200, {"success": True, "profiles": [{"username": "default", "key_echo": key}]}))
     assert publish.main(["--whoami"]) == 0
     out = capsys.readouterr().out
-    assert "kdesk" in out
+    assert "user='default'" in out
     assert key not in out
 
 
