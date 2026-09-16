@@ -721,3 +721,37 @@ def test_a_heatmap_score_is_legible_on_every_step_of_the_ramp():
     for step in cards.HEATMAP_RAMP:
         ratio = _contrast(ink, step)
         assert ratio >= MIN_CELL_CONTRAST, f"score on {step} is {ratio:.2f}:1"
+
+
+def _cell_of(value):
+    """The single rendered cell for one caller value: (printed text, background colour)."""
+    html = cards.card_html("calendar_heatmap",
+                           {**HEATMAP, "items": [{"label": "1", "value": value}]},
+                           cards.brand_tokens(None))
+    cell = re.search(r'<li class="cell[^"]*" style="background:(#[0-9A-Fa-f]{6})">'
+                     r'<span class="d">[^<]*</span><span class="v">([^<]*)</span></li>', html)
+    assert cell, "one item must render exactly one cell"
+    return cell.group(2), cell.group(1)
+
+
+@pytest.mark.parametrize("value,printed", [
+    (99, "10"), (11, "10"), (10, "10"),          # above the scale clamps to its top
+    (0, "1"), (-4, "1"), (1, "1"),               # below it clamps to its bottom
+    (9.4, "9.4"), (8.0, "8"), (7, "7"),          # in range, the caller's own formatting stands
+])
+def test_a_heatmap_prints_the_same_score_it_colours(value, printed):
+    """A cell that colours as a 10 must not print 99: the ramp and the number are two
+    renderings of ONE score, and disagreeing is worse than either alone."""
+    text, colour = _cell_of(value)
+
+    assert text == printed
+    assert colour == cards.HEATMAP_RAMP[cards._ramp_index(value)]
+
+
+@pytest.mark.parametrize("value", [None, "", "n/a"])
+def test_a_heatmap_cell_with_no_readable_score_prints_nothing_rather_than_inventing_one(value):
+    """Clamping must not become fabrication — an absent score has no number to show."""
+    text, colour = _cell_of(value)
+
+    assert text == ""
+    assert colour == cards.HEATMAP_RAMP[0]

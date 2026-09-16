@@ -194,6 +194,29 @@ def _ramp_index(value: object) -> int:
     return min(len(HEATMAP_RAMP) - 1, (step - 1) * len(HEATMAP_RAMP) // 10)
 
 
+def _heatmap_score_text(value: object) -> str:
+    """The score a cell PRINTS: clamped to 1-10, exactly like the colour it is given.
+
+    `_ramp_index` already clamps, so without this a 99 colours as a 10 and prints 99 — the
+    ramp and the number are two renderings of one score, and disagreeing is worse than
+    either alone. Clamping is not fabrication, though: a value the card cannot read as a
+    number at all (missing, "", "n/a") prints nothing and keeps the coolest step, which is
+    what an absent score has always drawn. In range, the caller's own formatting stands, so
+    a 9.4 crowd score is still a 9.4.
+    """
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return ""
+    if number < 1:
+        return "1"
+    if number > 10:
+        return "10"
+    return _value_text(value)
+
+
 def _cells_heatmap(items: list[dict]) -> str:
     out = []
     for item in items:
@@ -201,7 +224,7 @@ def _cells_heatmap(items: list[dict]) -> str:
         klass = "cell hot" if item.get("highlight") else "cell"
         out.append(f'<li class="{klass}" style="background:{colour}">'
                    f'<span class="d">{_e(item.get("label"))}</span>'
-                   f'<span class="v">{_e(_value_text(item.get("value")))}</span></li>')
+                   f'<span class="v">{_e(_heatmap_score_text(item.get("value")))}</span></li>')
     return "\n      ".join(out)
 
 

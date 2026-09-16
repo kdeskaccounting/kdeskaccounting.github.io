@@ -136,7 +136,9 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec /path/to/s
 #     data: {heading, subheading, items: [...], footer}
 # calendar_heatmap takes up to 42 {label, value, highlight} cells laid out 7 across — a month
 # of crowd scores, value 1-10 mapped onto cards.HEATMAP_RAMP, `highlight: true` ringing one
-# day in the brand accent. wait_curve takes up to 16 {label, value} points plus
+# day in the brand accent. An out-of-range score is CLAMPED for both the colour and the
+# printed number (99 colours and prints as 10), and a score the card cannot read as a number
+# prints nothing rather than inventing one. wait_curve takes up to 16 {label, value} points plus
 # `annotation: {label, index}`, and draws an inline SVG line with that point circled; the
 # index is clamped, a flat series is safe, and there is no charting library (this file is
 # stdlib-only). Both honour `box`/`fill`/`transparent` like every other template, so they
