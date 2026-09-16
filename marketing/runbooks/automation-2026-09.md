@@ -254,10 +254,22 @@ scripts/video/.venv-tts/bin/python scripts/video/gumroad_workflows_ui.py --check
 python3 scripts/publishers/tiktok_web.py --check
 ```
 
-Any drift shows up here, in the digest, before a driver is actually needed. TikTok's row matters
-more than the others: every one of its selectors is still `UNVERIFIED`, so the first green
-`tiktok_web.py --check` is also the moment to delete the names it confirmed from
-`selectors_tiktok.UNVERIFIED` and commit that.
+Any drift shows up here, in the digest, before a driver is actually needed. TikTok's row is read
+differently from the others, because half its anchors *cannot* be resolved read-only:
+
+| mark | means |
+| --- | --- |
+| `OK` | the anchor is on the page right now |
+| `MISSING` | it should be and is not — the selector drifted, exit 1 |
+| `n/a  post-file only` | it does not exist until a video is handed to TikTok, and selecting a file starts a real upload. Not a failure |
+| `n/a  account has no posts yet` | the row anchor has no row to match. Becomes a real check the moment @park.sheet has posted anything |
+| `CHANGED` | something asserted *absent* came back (a Scheduled tab). The driver assumes one posts list; go re-read `selectors_tiktok` |
+
+A 2026-09-15 read-only pass confirmed the URLs, the file input, the uploader stage, the posts table
+and the empty-state copy, and those names have left `selectors_tiktok.UNVERIFIED`. What is left in
+that list is the post-file form and the row shape — neither can be confirmed without actually
+posting, so the first real Saturday run is when they get their date. Delete a name from
+`UNVERIFIED` in the same commit that confirms it.
 
 ---
 
@@ -316,11 +328,19 @@ and never handle 2FA, so this is Stephen's, once:
 
 The session then persists in that profile, so this is a monthly-ish chore, not a weekly one.
 
-**What the driver guarantees, and what it does not.** It reads the Scheduled tab before it uploads
+**What the driver guarantees, and what it does not.** It reads the posts list before it uploads
 and skips any day whose caption (first 40 characters) and date are already there — so re-running a
 week, or resuming after a crash, does not double-post. A failure *after* the submit click is
 deliberately **not** retried: the video may already be scheduled, and the card says so. When you see
-that card, look at the Scheduled tab yourself before running that day again.
+that card, look at the posts list yourself before running that day again.
+
+There is **no Scheduled tab** to open: as of 2026-09-15 TikTok Studio shows posted and scheduled
+videos in one table ("Your posted and scheduled videos will appear here"), so the read navigates and
+reads and clicks nothing. One consequence worth knowing: the list is paginated, and the driver reads
+only the first page. While ParkSheet has a handful of posts that is every post; once the account has
+enough to paginate, a scheduled post could fall off page 1 and the skip-if-present check would stop
+seeing it — which is a **double-post risk**, not a cosmetic one. Revisit before the account gets
+busy.
 
 **Scheduling limits.** `--schedule` needs a full ISO 8601 stamp *with an offset*
 (`2026-09-21T14:00:00-07:00`); `schedule_week.py` builds them in `America/Los_Angeles` so 14:00 stays

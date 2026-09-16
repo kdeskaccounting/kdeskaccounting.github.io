@@ -9,7 +9,7 @@
 The render batch leaves `day-1.mp4 … day-7.mp4` with a `day-N.json` beside each. This maps
 day N onto the Nth day of the week (shifted by `--start-day`) at `--hour` **America/
 Los_Angeles**, and hands each to the TikTok Studio driver, which skips any day already on
-the Scheduled tab. Re-running the same week is therefore a no-op that prints the state.
+the posts list. Re-running the same week is therefore a no-op that prints the state.
 
 Exit codes, because the batch branches on them:
 
