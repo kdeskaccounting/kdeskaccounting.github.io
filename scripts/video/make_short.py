@@ -44,6 +44,10 @@ def encode_scene(png, wav, dur, crf):
 
     Slow zoom to 1.06x over the whole scene, 0.3 s fades either end, audio padded so the last
     word is never clipped. Every scene kind - sheet, pan and card - encodes through here.
+
+    `-color_range tv` TAGS the output limited range. The pixels always were; only some parts
+    carried the tag, and the parts are concatenated with `-c:v copy`, so the finished Short's
+    declared range depended on which scene happened to be encoded first.
     """
     n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
     vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
@@ -55,8 +59,8 @@ def encode_scene(png, wav, dur, crf):
          f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
          f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
-         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-c:a", "aac",
-         "-b:a", "128k", str(out)])
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
+         "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
 def encode_media_scene(src, motion, layers, wav, dur, crf, out):
@@ -91,8 +95,8 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
-         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-c:a", "aac",
-         "-b:a", "128k", str(out)])
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
+         "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
 

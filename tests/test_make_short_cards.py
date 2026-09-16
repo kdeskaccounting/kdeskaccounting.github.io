@@ -37,7 +37,11 @@ DURATIONS = {"0": 4.0, "1": 6.0}
 
 
 def _expected_encode_cmd(png, wav, out, dur, crf=26):
-    """The ffmpeg command as make_short built it before encode_scene was extracted."""
+    """The ffmpeg command as make_short built it before encode_scene was extracted.
+
+    Plus `-color_range tv`, added later so the TAG matches the limited-range pixels every
+    scene kind already produced — see the colour-range tests below.
+    """
     n = math.ceil(dur * 30)
     dz = (1.06 - 1.0) / n
     vf = (f"scale=1296:2304:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},1.06)':"
@@ -48,8 +52,8 @@ def _expected_encode_cmd(png, wav, out, dur, crf=26):
             f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
             f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
             "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
-            "-preset", "medium", "-crf", str(crf), "-r", "30", "-c:a", "aac",
-            "-b:a", "128k", str(out)]
+            "-preset", "medium", "-crf", str(crf), "-r", "30", "-color_range", "tv",
+            "-c:a", "aac", "-b:a", "128k", str(out)]
 
 
 # --- encode_scene ---------------------------------------------------------------------
@@ -150,3 +154,16 @@ def test_a_traversing_slug_is_rejected_before_it_is_used_to_open_a_spec(stub_mai
     with pytest.raises(SystemExit) as e:
         M.main()
     assert "slug" in str(e.value)
+
+
+# --- colour range ------------------------------------------------------------------------
+
+def test_every_scene_kind_tags_its_output_limited_range(tmp_path, monkeypatch):
+    """The pixels were always limited range; only the TAG was missing, and only on some
+    parts. Parts are concatenated with `-c:v copy`, so mixed tagging leaves the finished
+    Short's range depending on which scene happened to be encoded first."""
+    seen = []
+    monkeypatch.setattr(M, "run", seen.append)
+    M.encode_scene(tmp_path / "scene_0.png", tmp_path / "scene_00.wav", 5.0, 26)
+    cmd = seen[0]
+    assert cmd[cmd.index("-color_range") + 1] == "tv"
