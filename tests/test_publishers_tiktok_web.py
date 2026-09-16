@@ -794,3 +794,38 @@ def test_a_skeleton_list_is_not_retried_into_an_upload(pub, asset, monkeypatch):
     result = pub.publish(asset, META, dry_run=False)
     assert result.ok is False
     assert not _uploads(page)
+
+
+# CRITICAL 3. read_scheduled navigated to the content page and read whichever tab was
+# showing — SCHEDULED_TAB_TEXT existed only in the manual steps and the --check probes. The
+# default tab is published posts, so a scheduled post was invisible to the idempotency read
+# and every re-run would upload it again.
+
+def test_the_scheduled_tab_is_opened_before_the_list_is_read(pub, asset):
+    page = _Page(rows_reads=[[]])
+    pub.read_scheduled(page)
+    calls = page.calls
+    assert f"click:text:{S.SCHEDULED_TAB_TEXT}" in calls, "the default tab is not the one we want"
+    assert calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}") < calls.index("evaluate")
+    assert calls.index(f"goto:{S.CONTENT_URL}") < calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}")
+
+
+def test_the_list_is_waited_for_after_the_tab_click_not_before(pub, asset):
+    """Clicking the tab replaces the rows; a wait that ran first would settle on the old ones."""
+    page = _Page(rows_reads=[[]])
+    pub.read_scheduled(page)
+    assert (page.calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}")
+            < page.calls.index("wait_for_function") < page.calls.index("evaluate"))
+
+
+def test_the_tab_is_waited_for_before_it_is_clicked(pub, asset):
+    page = _Page(rows_reads=[[]])
+    pub.read_scheduled(page)
+    assert (page.calls.index(f"wait_for:text:{S.SCHEDULED_TAB_TEXT}")
+            < page.calls.index(f"click:text:{S.SCHEDULED_TAB_TEXT}"))
+
+
+def test_both_list_reads_in_a_full_run_open_the_scheduled_tab(pub, asset):
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    pub.drive(page, asset, META)
+    assert len([c for c in page.calls if c == f"click:text:{S.SCHEDULED_TAB_TEXT}"]) == 2

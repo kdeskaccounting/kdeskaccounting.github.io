@@ -484,8 +484,20 @@ class TikTokWebPublisher(Publisher):
             raise SessionLost(f"{status.detail} (requested {url}, landed on {status.final_url})")
 
     def read_scheduled(self, page) -> list:
-        """The live Scheduled list. Read-only, and the only thing idempotency rests on."""
+        """The live Scheduled list. Read-only, and the only thing idempotency rests on.
+
+        The tab click is load-bearing, not cosmetic: the content page opens on published
+        posts, so reading whatever tab happens to be showing means a scheduled post is
+        invisible to this check and every re-run uploads it again. Clicking an already-open
+        tab is harmless; not clicking it is a duplicate.
+
+        The settle-wait comes AFTER the click, because the click replaces the rows — waiting
+        first would settle on the previous tab's list and then read the new one mid-swap.
+        """
         self.goto(page, S.CONTENT_URL)
+        tab = page.get_by_text(S.SCHEDULED_TAB_TEXT, exact=True).first
+        tab.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
+        tab.click()
         page.wait_for_function(scheduled_ready_js(), timeout=LIST_TIMEOUT_MS)
         return check_rows_sane(page.evaluate(scheduled_rows_js()))
 
