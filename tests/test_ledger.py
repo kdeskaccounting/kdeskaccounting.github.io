@@ -417,11 +417,25 @@ def test_an_earlier_entry_cannot_approve_a_later_one(tmp_path):
 
 
 def test_an_earlier_entry_cannot_veto_a_later_one_either(tmp_path):
-    """The rule is symmetric — and a row says no about ITSELF with status: vetoed."""
+    """An old row cannot pre-veto a decision nobody had made yet, any more than approve it."""
     p = _ledger_with(tmp_path, _veto(entry_id=10, ids=(69,)), _entry())
     ok, why = ledger.t2_window_open(69, AFTER, path=p)
     assert ok is True
     assert "closed" in why
+
+
+def test_a_row_can_veto_itself_even_though_it_cannot_approve_itself(tmp_path):
+    """The one asymmetry, and it is deliberate: a stop is never ignored on a technicality.
+
+    `vetoes` counts from the answered row itself (id >= the id answered); `approves` needs a
+    strictly later row. Self-approval is the dangerous direction — a T2 row waving through its
+    own veto window — and self-veto is the safe one.
+    """
+    p = _ledger_with(tmp_path, _entry(vetoes=[69]))
+    ok, why = ledger.t2_window_open(69, AFTER, path=p)
+    assert ok is False
+    assert "VETOED" in why
+    assert "entry #69" in why
 
 
 def test_the_very_next_entry_is_late_enough_to_approve(tmp_path):

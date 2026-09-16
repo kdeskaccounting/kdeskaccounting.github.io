@@ -10,7 +10,9 @@ Two optional fields, written only when given, let a LATER row answer an earlier 
 by id — the only way to do it in an append-only file: `approves: [69, 70]` (Stephen said
 yes; only on a row whose status is "approved" or "executed") and `vetoes: [69]` (he said
 no). The gate below reads them, and the LAST such row in file order wins, so an approval can
-be taken back by a later veto. Entry #85 approves 69 and 70.
+be taken back by a later veto. An approval must come from a strictly greater id (nothing
+approves itself); a veto counts from the answered row onwards, because a stop is never
+ignored on a technicality. Entry #85 approves 69 and 70.
 
   python3 scripts/ledger.py --tail 5
 Stdlib only, so it imports cleanly inside `uv run --with pytest pytest tests/`.
@@ -227,13 +229,16 @@ def _row_id(row: dict) -> int:
 def answer(entry_id: int, rows: list[dict] | None) -> tuple[str, dict] | None:
     """The LAST row in `rows` that answers `entry_id`, as ("approves"|"vetoes", row), or None.
 
-    Only a LATER row answers: its id must be strictly greater than `entry_id`. Ids are
-    allocated in file order in an append-only log, so id order and file order are the same
-    ordering, and `ts` is deliberately not consulted (it is a string a hand-written row can
-    set to anything). Without that rule an entry could approve ITSELF — exactly what a T2 row
-    asking for a veto window would be doing — and a row written in 2020 could pre-authorise a
-    decision nobody had made yet. A row says no about itself with `status: "vetoed"`, which
-    the gate checks separately; a self-reference in `approves`/`vetoes` is ignored.
+    Only a LATER row answers, with one deliberate asymmetry: an **approval** must come from a
+    strictly greater id, while a **veto** counts from the answered row itself onwards (id >=
+    `entry_id`). Self-approval is the dangerous direction — a T2 row waving through its own
+    veto window — and a stop is never ignored on a technicality, so a row that vetoes itself
+    closes its own gate (as `status: "vetoed"` does, which the gate checks separately).
+
+    Ids are allocated in file order in an append-only log, so id order and file order are the
+    same ordering, and `ts` is deliberately not consulted (it is a string a hand-written row
+    can set to anything). Without the ordering rule a row written in 2020 could pre-authorise
+    — or pre-veto — a decision nobody had made yet.
 
     Among the rows that do answer, the last one wins: the ledger is append-only, so "later in
     the file" is the only record of "said more recently". An approval can therefore be taken
@@ -245,11 +250,13 @@ def answer(entry_id: int, rows: list[dict] | None) -> tuple[str, dict] | None:
     """
     found: tuple[str, dict] | None = None
     for row in rows or []:
-        if _row_id(row) <= entry_id:
+        row_id = _row_id(row)
+        if row_id < entry_id:
             continue
         if entry_id in answered_ids(row, "vetoes"):
             found = ("vetoes", row)
-        elif (entry_id in answered_ids(row, "approves")
+        elif (row_id > entry_id
+                and entry_id in answered_ids(row, "approves")
                 and str(row.get("status", "")).strip().lower() in APPROVAL_STATUSES):
             found = ("approves", row)
     return found
@@ -293,8 +300,8 @@ def veto_gate(entry: dict | None, now: dt.datetime, entry_id: int = 0, *,
         field, row = answered
         if field == "vetoes":
             return False, (f"was VETOED by entry #{row.get('id')} ({_stamp(row)}) — Stephen "
-                           f"said no after the fact. An elapsed window does not turn a veto "
-                           f"into permission; this action must not happen")
+                           f"said no. An elapsed window does not turn a veto into "
+                           f"permission; this action must not happen")
         return True, (f"was approved early by entry #{row.get('id')} ({_stamp(row)}) — a "
                       f"later entry answers this window, so it does not have to elapse first")
     return veto_ok(entry.get("veto_window_close"), now)
