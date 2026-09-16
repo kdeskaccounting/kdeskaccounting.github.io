@@ -366,6 +366,28 @@ def test_a_short_with_no_timings_at_all_falls_back_to_the_plain_concat(stub, cap
     assert _caption_pngs(stub) == []
 
 
+def test_asking_for_captions_and_getting_none_says_so_instead_of_going_quiet(stub, capsys):
+    """Silently shipping an uncaptioned Short is how a broken narrate.py run goes unnoticed."""
+    stub.words = {0: None, 1: None, 2: None}
+    stub.go()
+    out = capsys.readouterr().out
+    assert "captions: enabled, but no scene produced a window" in out
+
+
+def test_a_short_that_did_produce_windows_does_not_print_the_empty_summary(stub, capsys):
+    stub.go()
+    out = capsys.readouterr().out
+    assert "no scene produced a window" not in out
+    assert "word windows burned in" in out
+
+
+def test_captions_off_prints_neither_summary(stub, capsys):
+    stub.spec = _spec()
+    stub.go()
+    out = capsys.readouterr().out
+    assert "captions:" not in out
+
+
 # --- the command line -------------------------------------------------------------------------
 
 def test_the_captions_flag_turns_them_on_for_a_spec_that_does_not_ask(stub):

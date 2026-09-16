@@ -431,6 +431,14 @@ def main():
         print(f"captions: {len(overlays)} word windows burned in "
               f"(accent {cap.accent}, band y={cap_box[1]}-{cap_box[3]})", flush=True)
     else:
+        if cap.enabled:
+            # A spec that asked for captions and got none is almost always a narration
+            # problem, not a caption one — and an uncaptioned Short that nobody was warned
+            # about is how a broken narrate.py run reaches a publish queue.
+            print("captions: enabled, but no scene produced a window — every selected scene "
+                  "was either skipped (its own layout owns the top of the frame) or has no "
+                  "word timings. Re-run narrate.py to write the scene_NN.words.json files; "
+                  "rendering without captions.", flush=True)
         run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
     total = dur_of(final)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
