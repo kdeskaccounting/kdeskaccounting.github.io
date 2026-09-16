@@ -39,6 +39,18 @@ credits:
   - "Placeholder imagery: generated with ffmpeg, no third-party source"
 disclaimer: >
   A rendering smoke test. The wait times shown are invented and describe nothing real.
+# Word-timed ("karaoke") burned-in captions, at the top of the frame. Off everywhere else —
+# every walkthrough Short in this directory predates them and must keep rendering unchanged —
+# and on here because this is the spec the caption pixel test renders. The timings come from
+# scene_NN.words.json, which narrate.py writes beside each WAV; Kokoro supplies them for an
+# English voice, and a scene with none renders uncaptioned with a line saying so.
+#   enabled:  default false
+#   accent:   hex only (it is interpolated into CSS); the spoken word wears it, the rest are white
+#   position: top (the only one so far)
+captions:
+  enabled: true
+  accent: "#ffe234"
+  position: top
 short:
   hook: "Footage, a credit, and a card on top"
   scenes: [0, 1, 2]
