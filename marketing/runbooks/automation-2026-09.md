@@ -117,6 +117,8 @@ scripts/video/.venv-tts/bin/python scripts/video/narrate.py \
 python3 scripts/update_sheet.py --week 2026-W39 --dry-run          # diff vs live sheet, writes nothing
 python3 scripts/membership_sync.py --dry-run                       # (Phase 4) Drive grant/revoke it would do
 
+Note: the ElevenLabs cache key changed on 2026-09-15 (speed left the key); every scene cached before that re-synthesizes once on its next render. One-time cost, not a leak.
+
 # ── 9. Chrome, only for one-time setup ────────────────────────────────────────
 python3 scripts/browser/ensure_chrome.py                           # launches or verifies debug Chrome
 python3 scripts/browser/session.py --check gumroad mailerlite      # logged-in status per site
