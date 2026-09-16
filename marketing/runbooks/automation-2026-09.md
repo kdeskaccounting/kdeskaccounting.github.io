@@ -91,6 +91,9 @@ python3 scripts/publishers/publish.py --platform youtube,tiktok,instagram \
   --asset <mp4> --meta <json> --dry-run                            # one entry point, exit 0 ok / 1 queued / 2 error
 python3 scripts/publishers/publish.py --platform site --asset <mp4> --meta <json>   # cross-post + embed
 python3 scripts/video/reupload_locked.py --dry-run                 # the 20 locked videos (#71), Upload-Post
+# TikTok is NOT in the list above: Upload-Post reaches it only on the paid plan. It is scheduled
+# through Chrome on the Mac instead — see "TikTok (Chrome, Saturday)" below.
+python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR>   # dry run by default
 python3 scripts/content/emit_pages.py --week 2026-W39              # (Phase 2) blog + LLM-citable reference page
 
 # ── 5. Human-only surfaces — these write CARDS, they never post ───────────────
@@ -123,6 +126,8 @@ Note: the ElevenLabs cache key changed on 2026-09-15 (speed left the key); every
 python3 scripts/browser/ensure_chrome.py                           # launches or verifies debug Chrome
 python3 scripts/browser/session.py --check gumroad mailerlite      # logged-in status per site
 python3 scripts/video/gumroad_covers_ui.py --check                 # read-only; exits 0 with no changes
+python3 scripts/browser/session.py --check tiktok                  # TikTok Studio login (weekly, not one-time)
+python3 scripts/publishers/tiktok_web.py --check                   # read-only; every Studio anchor resolves
 
 # ── 10. What still works today, unchanged ─────────────────────────────────────
 KDESK_SEO_SKIP_COMMIT=1 uv run scripts/pull_seo_snapshot.py
@@ -243,12 +248,85 @@ While the debug Chrome is up on a Monday:
 
 ```bash
 python3 scripts/browser/ensure_chrome.py
-python3 scripts/browser/session.py --check gumroad mailerlite
+python3 scripts/browser/session.py --check gumroad mailerlite tiktok
 scripts/video/.venv-tts/bin/python scripts/video/gumroad_covers_ui.py --check
 scripts/video/.venv-tts/bin/python scripts/video/gumroad_workflows_ui.py --check
+python3 scripts/publishers/tiktok_web.py --check
 ```
 
-Any drift shows up here, in the digest, before a driver is actually needed.
+Any drift shows up here, in the digest, before a driver is actually needed. TikTok's row matters
+more than the others: every one of its selectors is still `UNVERIFIED`, so the first green
+`tiktok_web.py --check` is also the moment to delete the names it confirmed from
+`selectors_tiktok.UNVERIFIED` and commit that.
+
+---
+
+## TikTok (Chrome, Saturday)
+
+**Why this is not Upload-Post.** Upload-Post reaches TikTok only on its paid plan, and Stephen
+declined it (2026-09-15). TikTok Studio's own web uploader schedules for free, and the debug Chrome
+is already the browser he logs in with — so the week's Shorts are scheduled there instead, by
+`scripts/publishers/tiktok_web.py`. `publish.py --platform tiktok` (Upload-Post) stays in the tree,
+unused, for the day the plan changes.
+
+**This is a semi-supervised weekly step and never a scheduled job.** Spec Chrome rule 1 already
+says Chrome is never on the recurring path; here there is a second reason. Driving a logged-in
+session against TikTok's web app is a **ToS grey area** — TikTok's terms discourage automated
+access, and the failure mode is not a broken script but a restricted account carrying the brand.
+So: it runs beside Stephen on a Saturday, a handful of posts at a time, at human pace, and every
+failure stops and asks instead of retrying. Do not put it in `daily-publish.yml`, do not loop it,
+and do not raise the batch size to "catch up" after a missed week. If TikTok ever makes the Content
+Posting API available on terms that fit, that is the replacement.
+
+**The run, in order:**
+
+```bash
+python3 scripts/browser/ensure_chrome.py                    # 1. Chrome up on :9222
+python3 scripts/browser/session.py --check tiktok           # 2. still logged in?
+python3 scripts/publishers/tiktok_web.py --check            # 3. anchors still resolve?
+python3 scripts/publishers/schedule_week.py --week 2026-W39 \
+  --assets-dir ~/parksheet/release/2026-W39                 # 4. the plan (dry run: the DEFAULT)
+python3 scripts/publishers/schedule_week.py --week 2026-W39 \
+  --assets-dir ~/parksheet/release/2026-W39 --go            # 5. go — the only flag that posts
+find scripts/browser/runs -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
+```
+
+**Prune the traces (step 6, every Saturday).** Every driver run leaves a `trace.zip` under
+`scripts/browser/runs/<date>/` holding that run's requests and the headers that went with them —
+a logged-in session, on a laptop that travels. The directory is gitignored, so nothing publishes
+it, but nothing deletes it either. The `find` above drops anything older than 14 days, which is
+long enough to debug last week's failure and short enough that the pile does not become an
+archive of every session the Mac has ever driven.
+
+**Nothing reaches TikTok without `--go`.** A bare invocation prints the plan and opens no browser,
+so a forgotten flag cannot schedule a week of posts to the live account.
+
+Step 4 is not optional. It is the only place the week's caption/day/time table is visible before
+anything is typed into TikTok, and it opens no browser.
+
+**Logging in (the QR step).** Steps 2 or 3 print `not logged in` when the profile's TikTok session
+has lapsed, and write a card under `marketing/publish-queue/manual/`. Scripts never type a password
+and never handle 2FA, so this is Stephen's, once:
+
+1. `python3 scripts/browser/ensure_chrome.py` — the debug window opens on the `~/.kdesk/chrome-debug`
+   profile.
+2. Go to <https://www.tiktok.com/tiktokstudio>, choose **Use QR code**, and scan it with the TikTok
+   app on the phone that holds the account.
+3. Confirm with `python3 scripts/browser/session.py --check tiktok` — it should print `OK`.
+
+The session then persists in that profile, so this is a monthly-ish chore, not a weekly one.
+
+**What the driver guarantees, and what it does not.** It reads the Scheduled tab before it uploads
+and skips any day whose caption (first 40 characters) and date are already there — so re-running a
+week, or resuming after a crash, does not double-post. A failure *after* the submit click is
+deliberately **not** retried: the video may already be scheduled, and the card says so. When you see
+that card, look at the Scheduled tab yourself before running that day again.
+
+**Scheduling limits.** `--schedule` needs a full ISO 8601 stamp *with an offset*
+(`2026-09-21T14:00:00-07:00`); `schedule_week.py` builds them in `America/Los_Angeles` so 14:00 stays
+14:00 across the DST change. TikTok Studio's ceiling is believed to be **10 days ahead**, which is
+`UNVERIFIED` — `capabilities()` says so, and a schedule past it is refused on our side with a clear
+message rather than inside TikTok's form.
 
 ---
 

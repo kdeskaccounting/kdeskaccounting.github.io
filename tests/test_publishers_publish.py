@@ -239,3 +239,102 @@ def test_there_is_no_flag_to_bypass_the_veto_gate(capsys):
 def test_the_gate_is_the_shared_ledger_helper_not_a_second_copy():
     assert publish.ledger.t2_window_open is not None
     assert publish.VETO_ENTRY == 69
+
+
+# --- tiktok_web: the Chrome-driven TikTok scheduler (2026-09-15). Upload-Post's TikTok
+# needs the paid plan Stephen declined, so the week's Shorts are scheduled through TikTok
+# Studio instead. It reaches this CLI like any other publisher, plus one flag: --schedule.
+
+from publishers import tiktok_web as tw  # noqa: E402
+
+
+def _logged_out(monkeypatch):
+    """Make the tiktok preflight fail, so no test here can ever open a browser."""
+    monkeypatch.setattr(tw.session, "check", lambda *_a, **_k: tw.session.SiteStatus(
+        "tiktok", False, tw.S.STUDIO_URL, "https://www.tiktok.com/login", "not logged in"))
+
+
+def test_tiktok_web_is_a_known_platform():
+    assert "tiktok_web" in publish.PUBLISHERS
+    assert publish.PUBLISHERS["tiktok_web"] is tw.TikTokWebPublisher
+
+
+def test_the_upload_post_tiktok_publisher_is_still_there_under_its_own_name():
+    """Two transports for one platform; the paid one stays, unused, until the plan changes."""
+    assert "tiktok" in publish.PUBLISHERS
+    assert publish.PUBLISHERS["tiktok"] is not publish.PUBLISHERS["tiktok_web"]
+
+
+def test_schedule_is_threaded_into_the_meta_the_publisher_sees(rig, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(tw.TikTokWebPublisher, "publish",
+                        lambda self, asset, meta, dry_run: seen.update(meta) or
+                        tw.PublishResult(platform="tiktok_web", ok=True, url="u",
+                                         queued_path=None, detail="d"))
+    assert _run(rig, "tiktok_web", "--schedule", "2026-09-21T14:00:00-07:00") == 0
+    assert seen["schedule_at"] == "2026-09-21T14:00:00-07:00"
+
+
+def test_without_the_flag_no_schedule_at_is_invented(rig, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(tw.TikTokWebPublisher, "publish",
+                        lambda self, asset, meta, dry_run: seen.update(meta) or
+                        tw.PublishResult(platform="tiktok_web", ok=True, url="u",
+                                         queued_path=None, detail="d"))
+    assert _run(rig, "tiktok_web") == 0
+    assert "schedule_at" not in seen
+
+
+def test_an_unparseable_schedule_exits_two_before_any_publisher_runs(rig, capsys):
+    with pytest.raises(SystemExit) as exc:
+        _run(rig, "tiktok_web", "--schedule", "next tuesday")
+    assert exc.value.code == 2
+    assert "--schedule" in capsys.readouterr().err
+
+
+def test_a_schedule_without_an_offset_exits_two(rig, capsys):
+    """'14:00' is a different instant in Los Angeles and in London — refuse, never guess."""
+    with pytest.raises(SystemExit) as exc:
+        _run(rig, "tiktok_web", "--schedule", "2026-09-21T14:00:00")
+    assert exc.value.code == 2
+    assert "offset" in capsys.readouterr().err.lower()
+
+
+def test_a_dry_run_prints_the_schedule_and_writes_nothing(rig, capsys, monkeypatch):
+    monkeypatch.setattr(tw.session, "open_page", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("--dry-run must not open a browser")))
+    assert _run(rig, "tiktok_web", "--schedule", "2026-09-21T14:00:00-07:00", "--dry-run") == 0
+    assert "2026-09-21 14:00" in capsys.readouterr().out
+    assert rig["rows"] == []
+    assert not (rig["repo"] / "marketing").exists()
+
+
+def test_a_logged_out_profile_queues_a_card_and_exits_one(rig, monkeypatch):
+    _logged_out(monkeypatch)
+    assert _run(rig, "tiktok_web") == 1
+    assert len(rig["rows"]) == 1
+    assert rig["rows"][0]["files"], "the card must be named in the ledger line"
+    assert (rig["repo"] / rig["rows"][0]["files"][0]).exists()
+
+
+def test_the_studio_url_is_not_threaded_into_the_site_post_as_a_video_url(rig, monkeypatch):
+    """tiktok_web returns a Studio URL, not a public permalink — embedding it would 404."""
+    assert "tiktok_web" not in publish.VIDEO_PLATFORMS
+    monkeypatch.setattr(tw.TikTokWebPublisher, "publish",
+                        lambda self, asset, meta, dry_run: tw.PublishResult(
+                            platform="tiktok_web", ok=True, url=tw.S.CONTENT_URL,
+                            queued_path=None, detail="scheduled"))
+    seen = {}
+    monkeypatch.setattr(publish.SitePublisher, "publish",
+                        lambda self, asset, meta, dry_run: seen.update(meta) or
+                        tw.PublishResult(platform="site", ok=True, url="/s/", queued_path=None,
+                                         detail="d"))
+    assert _run(rig, "tiktok_web,site") == 0
+    assert "tiktokstudio" not in str(seen.get("video_url", ""))
+
+
+def test_a_live_tiktok_web_publish_is_gated_by_the_same_veto_entry(rig, monkeypatch, capsys):
+    _logged_out(monkeypatch)
+    assert _run(rig, "tiktok_web", now=BEFORE) == 2
+    assert "REFUSING" in capsys.readouterr().err
+    assert rig["rows"] == []

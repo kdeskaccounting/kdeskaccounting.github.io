@@ -10,10 +10,13 @@ from browser import session
 NOW = dt.datetime(2026, 9, 14, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-7)))
 
 
-def test_sites_cover_gumroad_and_mailerlite_with_dashboard_urls():
-    assert set(session.SITES) == {"gumroad", "mailerlite"}
+def test_sites_cover_every_driven_site_with_dashboard_urls():
+    # TikTok joined on 2026-09-15 with the Chrome-driven scheduler (publishers/tiktok_web.py);
+    # its own anchors are asserted in tests/test_browser_selectors_tiktok.py.
+    assert set(session.SITES) == {"gumroad", "mailerlite", "tiktok"}
     assert session.SITES["gumroad"].dashboard_url == "https://app.gumroad.com/products"
     assert session.SITES["mailerlite"].dashboard_url == "https://dashboard.mailerlite.com/campaigns"
+    assert session.SITES["tiktok"].dashboard_url == "https://www.tiktok.com/tiktokstudio"
 
 
 def test_classify_is_ok_when_the_dashboard_url_holds():
@@ -435,7 +438,8 @@ def test_the_ambient_environment_is_hidden_from_every_test():
     assert leaked == [], f"credential-named variables visible to tests: {leaked}"
 
 
-# ============================ ElevenLabs narration key ============================
+# ============================ ElevenLabs narration key =====================
+
 
 # --- The ElevenLabs key lives in a token FILE beside MailerLite's and Bing's
 # (~/kdesk-analytics/elevenlabs-api-key.txt, 0600), and scripts/video/narrate.py prints
@@ -460,3 +464,28 @@ def test_known_secrets_includes_the_elevenlabs_key_file(tmp_path, monkeypatch):
 
 def test_the_elevenlabs_environment_variable_is_swept_as_a_credential():
     assert session.is_credential_name("ELEVENLABS_API_KEY")
+=======
+# --- fail_card wrote every card into publish-queue/manual/ regardless of the driver, so a
+# publisher that advertises its own queue dir was pointing at a directory nothing arrived in.
+# The subdir is now the caller's, defaulting to "manual" for the login/canary cards.
+
+class _ShotPage:
+    def __init__(self):
+        self.shots = []
+
+    def screenshot(self, path):
+        self.shots.append(path)
+
+
+def test_fail_card_defaults_to_the_manual_queue(tmp_path):
+    card = session.fail_card(tmp_path, _ShotPage(), kind="login", slug="gumroad",
+                             title="t", detail="d", steps=["s"], run_name="r")
+    assert card.parent == tmp_path / "marketing" / "publish-queue" / "manual"
+
+
+def test_fail_card_writes_into_the_subdir_the_caller_names(tmp_path):
+    card = session.fail_card(tmp_path, _ShotPage(), kind="tiktok_web", slug="day-1",
+                             title="t", detail="d", steps=["s"], run_name="r",
+                             subdir="tiktok")
+    assert card.parent == tmp_path / "marketing" / "publish-queue" / "tiktok"
+    assert card.exists()

@@ -742,3 +742,45 @@ def test_the_lite_reader_agrees_with_pyyaml():
         if True in real:  # PyYAML reads the `on:` key as the boolean True
             real["on"] = real.pop(True)
         assert lite_load(path.read_text()) == real, path.name
+
+
+# --------------------------------------------------------------------------------------
+# Chrome is never on the recurring path (spec Chrome rule 1), and for TikTok there is a
+# second reason: driving a logged-in web session is a ToS grey area that stays
+# semi-supervised on the Mac. Both facts live in prose today, which is exactly the kind of
+# rule that erodes the first time a scheduled job "just needs" one more step. A workflow
+# file is where that erosion would land, so this is the assertion that catches it.
+# --------------------------------------------------------------------------------------
+
+CHROME_ONLY_SCRIPTS = ("scripts/publishers/tiktok_web.py", "scripts/publishers/schedule_week.py",
+                       "scripts/browser/session.py", "scripts/browser/ensure_chrome.py")
+
+
+@pytest.mark.parametrize("workflow", sorted(WF.glob("*.yml")), ids=lambda p: p.name)
+def test_no_workflow_drives_chrome_or_schedules_tiktok(workflow):
+    text = workflow.read_text()
+    for script in CHROME_ONLY_SCRIPTS:
+        assert script not in text, (
+            f"{workflow.name} references {script}. Chrome drivers run beside Stephen on the "
+            f"Mac, never in Actions — the runner has no logged-in profile, and for TikTok "
+            f"automating a logged-in session is a ToS grey area kept semi-supervised.")
+    # The basename alone would catch an invocation through a variable or a different path.
+    for name in ("tiktok_web.py", "schedule_week.py", "ensure_chrome.py"):
+        assert name not in text, f"{workflow.name} names {name}"
+
+
+def test_the_guard_covers_every_workflow_that_exists():
+    """A new workflow file must be swept too, not just the two named schedules."""
+    assert set(WF.glob("*.yml")) >= {WEEKLY, DAILY, DEPLOY}
+
+
+def test_the_runbook_says_to_prune_the_trace_directory():
+    """A Playwright trace records the session it drove — pruning is hygiene, not tidiness.
+
+    scripts/browser/runs/ is gitignored, so nothing publishes it, but nothing deletes it
+    either: every driver run leaves a trace.zip carrying that run's requests on a laptop
+    that travels.
+    """
+    text = (ROOT / "marketing" / "runbooks" / "automation-2026-09.md").read_text()
+    assert "scripts/browser/runs" in text
+    assert "-mtime +14" in text, "name the retention, not just the idea"

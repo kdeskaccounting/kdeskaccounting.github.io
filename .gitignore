@@ -33,3 +33,6 @@ decisions/decisions.jsonl.lock
 # this file is personal data by nature and this repo is public. Local-only, both machines
 # rebuild it by appending. Untracked 2026-09-14; see decisions/decisions.jsonl.
 marketing/seo-tracking/mailerlite-sync.jsonl
+
+# Session working notes from the superpowers/SDD flow (local evidence, not source)
+.superpowers/
