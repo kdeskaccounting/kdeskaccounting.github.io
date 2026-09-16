@@ -10,10 +10,13 @@ from browser import session
 NOW = dt.datetime(2026, 9, 14, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-7)))
 
 
-def test_sites_cover_gumroad_and_mailerlite_with_dashboard_urls():
-    assert set(session.SITES) == {"gumroad", "mailerlite"}
+def test_sites_cover_every_driven_site_with_dashboard_urls():
+    # TikTok joined on 2026-09-15 with the Chrome-driven scheduler (publishers/tiktok_web.py);
+    # its own anchors are asserted in tests/test_browser_selectors_tiktok.py.
+    assert set(session.SITES) == {"gumroad", "mailerlite", "tiktok"}
     assert session.SITES["gumroad"].dashboard_url == "https://app.gumroad.com/products"
     assert session.SITES["mailerlite"].dashboard_url == "https://dashboard.mailerlite.com/campaigns"
+    assert session.SITES["tiktok"].dashboard_url == "https://www.tiktok.com/tiktokstudio"
 
 
 def test_classify_is_ok_when_the_dashboard_url_holds():

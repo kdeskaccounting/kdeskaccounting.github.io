@@ -28,6 +28,8 @@ import urllib.parse
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import ledger  # noqa: E402  (scripts/ledger.py)
 
+from browser import selectors_tiktok as _tiktok  # noqa: E402  (constants only, stdlib-safe)
+
 REPO = pathlib.Path(__file__).resolve().parents[2]
 CDP_URL = "http://localhost:9222"
 
@@ -59,6 +61,12 @@ SITES: dict[str, Site] = {
                     "the products table", alt_hosts=("gumroad.com",)),
     "mailerlite": Site("mailerlite", "https://dashboard.mailerlite.com/campaigns", "/login",
                        "the campaigns list"),
+    # TikTok Studio. The URLs and the login marker come from selectors_tiktok so that a
+    # TikTok change is still a one-file fix (rule 6). Signed out, the studio bounces to
+    # /login?redirect_url=… on the same host, which is why the marker — not the host — is
+    # what catches it.
+    "tiktok": Site("tiktok", _tiktok.STUDIO_URL, _tiktok.LOGIN_MARKER,
+                   "the TikTok Studio dashboard", alt_hosts=_tiktok.ALT_HOSTS),
 }
 
 
