@@ -616,3 +616,29 @@ def test_the_three_original_templates_are_byte_identical_to_their_goldens():
             continue
         expected = (GOLDEN / f"{name}.html").read_text()
         assert cards.card_html(template, data, cards.brand_tokens(BRAND)) == expected
+
+
+def test_a_heatmap_column_can_actually_shrink_to_a_seventh_of_the_card():
+    """`1fr` floors at the cell's automatic minimum, which `aspect-ratio:1` ties to its
+    content height — seven such columns overflow the card and clip the last two days.
+    MEASURED 2026-09-16 on the first real render; `minmax(0,1fr)` is the fix."""
+    html = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(None), 1296, 2304)
+
+    assert "repeat(7,minmax(0,1fr))" in html
+    assert re.search(r"\.cell\{[^}]*min-width:0", html)
+
+
+@pytest.mark.parametrize("n", [7, 14, 30, 42])
+def test_heatmap_type_fits_inside_the_cell_it_is_given(n):
+    """Day label + score must stack inside one square cell, at every card-filling count."""
+    data = {**HEATMAP, "items": [{"label": str(i), "value": 5} for i in range(n)]}
+    html = cards.card_html("calendar_heatmap", data, cards.brand_tokens(None), 1296, 2304)
+
+    unit = 2304 / 100.0
+    gap = 0.55 * unit
+    column = (1296 - 9.0 * unit - 6.0 * gap) / 7.0
+    day = float(re.search(r"\.cell \.d\{font-size:([\d.]+)px", html).group(1))
+    score = float(re.search(r"\.cell \.v\{font-size:([\d.]+)px", html).group(1))
+    # 1.2 is the normal line box each span gets, plus the flex gap between them.
+    assert 1.2 * (day + score) + 0.15 * unit <= column, \
+        f"{n} cells: {1.2 * (day + score):.0f}px of type in a {column:.0f}px cell"

@@ -380,15 +380,24 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     # Per-template CSS. Empty for every existing template, so no golden can move.
     extra = ""
     if template == "calendar_heatmap":
-        cell = max(1.0, 9.0 - 0.06 * len(items))
+        # A cell's width is deterministic — the card's content width, less the six gaps,
+        # over seven columns — so the type is sized to the cell it actually gets instead of
+        # to a guess from the item count (7 across is 7 across whether there are 14 cells or
+        # 42; only the row count moves). `minmax(0,1fr)` is what lets a column shrink at all:
+        # a bare `1fr` is `minmax(auto,1fr)`, and `aspect-ratio:1` ties a cell's automatic
+        # minimum WIDTH to its own content HEIGHT, so tall type floors every column at ~230px
+        # and seven of them overflow a 1089px card — the grid clips from day 5 onward, taking
+        # the highlighted day with it. MEASURED 2026-09-16 on the first real render.
+        gap_px = 0.55 * unit
+        cell = (box_w - 9.0 * unit - 6.0 * gap_px) / 7.0
         extra = f"""
-.grid{{list-style:none;display:grid;grid-template-columns:repeat(7,1fr);
-  gap:{0.55 * unit:.0f}px}}
-.cell{{aspect-ratio:1;border-radius:{0.55 * unit:.0f}px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:{0.15 * unit:.0f}px;
+.grid{{list-style:none;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));
+  gap:{gap_px:.0f}px}}
+.cell{{aspect-ratio:1;min-width:0;border-radius:{0.55 * unit:.0f}px;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:{0.15 * unit:.0f}px;
   color:{brand['bg']};font-weight:700}}
-.cell .d{{font-size:{0.42 * cell * unit:.1f}px;opacity:.72}}
-.cell .v{{font-size:{0.62 * cell * unit:.1f}px;font-variant-numeric:tabular-nums}}
+.cell .d{{font-size:{0.26 * cell:.1f}px;opacity:.72}}
+.cell .v{{font-size:{0.42 * cell:.1f}px;font-variant-numeric:tabular-nums}}
 .cell.hot{{outline:{max(2.0, 0.28 * unit):.1f}px solid {brand['accent']};
   outline-offset:{0.22 * unit:.1f}px}}"""
     elif template == "wait_curve":
