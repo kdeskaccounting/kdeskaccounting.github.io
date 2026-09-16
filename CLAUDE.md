@@ -195,7 +195,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # that dodges the constants still fails. A still must carry a `credit:` (footage can credit
 # itself on screen; a still cannot) and build_video/make_short refuse the render without one.
 
-# Word-timed ("karaoke") burned-in captions — per spec (2026-09-15). OFF unless a spec asks,
+# Word-timed ("karaoke") burned-in captions — per spec (2026-09-15). OFF unless a spec asks, Captions render in ALL CAPS via CSS `text-transform: uppercase` (Stephen, 2026-09-16); cue text and words.json stay as spoken.
 # so every existing Short and every golden is unchanged. Only marketing/video/media-demo turns
 # them on today; ParkSheet sets the same key from its own `cards.build_spec` (that repo is not
 # edited from here — the key below is the whole contract).

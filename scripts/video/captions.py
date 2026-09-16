@@ -392,7 +392,9 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box) 
     side padding is the safe-zone margin, so the geometry still comes from `caption_box`
     alone.
 
-    White on a thick dark stroke, `paint-order: stroke fill` so the outline sits behind the
+    ALL CAPS (Stephen's call, 2026-09-16: `text-transform: uppercase`, so words.json and the
+    cue text stay as spoken while the frame reads in capitals). White on a thick dark stroke,
+    `paint-order: stroke fill` so the outline sits behind the
     glyph instead of eating into it: the captions have to stay legible over bright footage as
     well as over a dark card.
     """
@@ -411,7 +413,7 @@ html,body{{width:{int(width)}px;height:{band_h}px;overflow:hidden;background:tra
 .band{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   padding:0 {left}px}}
 .line{{text-align:center;font-weight:700;font-size:{fs:.1f}px;line-height:1.06;
-  letter-spacing:-.01em;color:#FFFFFF;
+  letter-spacing:.01em;text-transform:uppercase;color:#FFFFFF;
   -webkit-text-stroke:{0.085 * fs:.1f}px #0A0E14;paint-order:stroke fill;
   text-shadow:0 {0.07 * fs:.1f}px {0.11 * fs:.1f}px rgba(0,0,0,.72)}}
 .lit{{color:{colour}}}

@@ -477,3 +477,11 @@ def test_a_long_closing_word_is_not_rescued_so_prose_keeps_its_rhythm():
     words = [{"text": w, "start": i * 0.35, "end": i * 0.35 + 0.3} for i, w in enumerate(text.split())]
     cues = [c.text for c in C.build_cues(words)]
     assert all(len(c.split()) <= 3 for c in cues)
+
+
+def test_caption_overlays_render_in_all_caps_without_changing_the_cue_text():
+    """Stephen wants the burned-in captions in capitals; the transform is CSS so the karaoke
+    windows, words.json and the cue text stay exactly as spoken."""
+    doc = C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, C.caption_box(1080, 1920))
+    assert "text-transform:uppercase" in doc
+    assert "<span>Kingdom</span>" in doc  # source text untouched; the capitals are CSS
