@@ -413,3 +413,23 @@ def test_veto_ok_refuses_an_unparseable_window_rather_than_assuming_it_closed():
     ok, why = ledger.veto_ok("not a timestamp", AFTER)
     assert ok is False
     assert "unparseable" in why
+
+
+# --- the live decisions.jsonl -------------------------------------------------------------
+#
+# Structural facts only, never a mutable status: these stay true whatever Stephen decides
+# next. #85 approving 69 and 70 is one of them — a later veto would be #86, and #85 would
+# still say what it says.
+
+def test_the_live_ledger_parses_and_its_ids_are_contiguous():
+    rows = ledger.entries()
+    assert rows, "the repo's own decisions.jsonl must be readable"
+    assert [r["id"] for r in rows] == list(range(1, len(rows) + 1))
+
+
+def test_the_live_ledger_records_the_approval_of_69_and_70_as_entry_85():
+    row = ledger.find(85)
+    assert row is not None, "entry #85 is the row that unlocks #69 and #70"
+    assert ledger.answered_ids(row, "approves") == [69, 70]
+    assert row["status"] in ledger.APPROVAL_STATUSES
+    assert row["tier"] == 0, "recording an approval is a T0 act"
