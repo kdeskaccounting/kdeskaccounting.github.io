@@ -6,7 +6,7 @@
 
 1. **`marketing/plan-2026-09-10k-portfolio.md`** — the plan (decision 51, 2026-09-04): target **$10,000/mo**, the **$4,246/mo safety net** as the first milestone, five streams on five channels, kill criteria per stream. `marketing/roadmap-2026-09.md` ($300/mo) is superseded — its weekly cadence, fact-check rule and guardrails still apply where they don't conflict. `OPERATIONS_PLAN.md` (May 2026) is historical.
 2. **`marketing/plan-2026-09-14-automation.md`** — the automation plan (2026-09-14, ledger #69–#71): how the plan of record above gets executed with less of Stephen's time (< 30 min/wk), plus a **second, separate brand** (`parksheet`, a subscription living Google Sheet). It does **not** replace the revenue plan of record. Its session runbook is **`marketing/runbooks/automation-2026-09.md`** — pipeline map, one command per stage, current phase, open vetoes, the "if X is broken do Y" table, and (Phase 1, 2026-09-15) the two GitHub Actions schedules: what runs on Actions, what only runs on the Mac and why, the exact `gh secret set` commands, the launchd handover, and the weekly selector canary. Read both before touching publishing, the video pipeline, or the venture.
-3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#80** (80 entries, ids contiguous 1–80). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
+3. `decisions/decisions.jsonl` — append-only ledger; every autonomous action is logged. Currently at **#82** (82 entries, ids contiguous 1–82). **#52 repricing executed 2026-09-06 (decision 61): ASC 842 $249 · ASC 606 $249 · bundle $599.** **#81: Stephen approved #69 and #70.** **#82 (T0): TikTok publishes through Chrome, not Upload-Post — `scripts/publishers/tiktok_web.py` + `schedule_week.py`, every selector still UNVERIFIED until he logs in.** Open veto windows: **#69 marketing autonomy → T1 auto-publish** and **#70 the `parksheet` venture**, both closing **2026-09-16 12:00 PT**. **#71 (T0, executed): the 20 API-uploaded YouTube videos are locked private and must be re-uploaded — see "Credentials & external state".**
 4. `~/CommandCenter/02-Projects/KDesk-Blog.md` — the vault MOC: status, next action, blockers. The venture has its own MOC, `~/CommandCenter/02-Projects/ParkSheet.md`.
 5. **`marketing/runbooks/veto-executions-2026-09.md`** — step-by-step runbooks for the approved T2 actions whose veto windows close 2026-09-06/07 (repricing, RSU planner publish, ASC 340-40 kit publish) and the Monday scoreboard. In-session timers exist only while the session that set them is alive — a new session executes from the runbook.
 6. The **Currently working on** section below.
@@ -79,7 +79,7 @@ All live on **this Mac** unless noted:
 - **Google Workspace** (`gws` CLI): authed as `santiagokdesk@gmail.com` — NOT smichels1@gmail.com
 - **Search Console**: verified by DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
 - **YouTube uploads — DO NOT USE `scripts/video/youtube_publish.py` (verified 2026-09-14, ledger #71).** Uploads from this un-audited GCP project (`involuted-disk-489017-r3`) are **locked private, permanently**. The lock **cannot be appealed and cannot be flipped in YouTube Studio**; per Google support article 7300965 the affected videos **must be re-uploaded**. Passing the compliance audit only unlocks *future* uploads — it does not free the existing ones. Proof: all **20** videos the API uploaded 2026-09-05/09-07 are `private` with **0 views** in `marketing/seo-tracking/youtube-snapshots.jsonl` (2026-09-07), while the 10 uploaded through Chrome on 2026-09-02 are `public` and carrying views. **No uploads via the Data API until the audit passes**; re-upload the 20 via Upload-Post (holds audited credentials) or manually in Chrome. Read-only Data API use (`scripts/pull_youtube_snapshot.py`) is unaffected.
-- **Debug Chrome** for UI-only work (Gumroad covers, MailerLite editor, manual YouTube uploads): Stephen launches with `--remote-debugging-port=9222`, profile `~/.kdesk/chrome-debug`; drive it with `scripts/video/cdp.py` or Playwright `connect_over_cdp`
+- **Debug Chrome** for UI-only work (Gumroad covers, MailerLite editor, manual YouTube uploads, **TikTok scheduling**): Stephen launches with `--remote-debugging-port=9222`, profile `~/.kdesk/chrome-debug`; drive it with `scripts/video/cdp.py` or Playwright `connect_over_cdp`. **TikTok:** Upload-Post reaches it only on the paid plan (declined 2026-09-15), so the week's Shorts are scheduled through TikTok Studio in this profile — `scripts/publishers/tiktok_web.py`, semi-supervised on a Saturday, never an Actions job (ToS grey area; runbook section "TikTok (Chrome, Saturday)"). The profile is **not** logged in to TikTok yet: sign in once with **Use QR code** at <https://www.tiktok.com/tiktokstudio>.
 - **Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`, unreachable since 2026-09-01): Cloudflare API tokens, `dist/` binaries. Nothing current depends on it.
 
 ## Useful commands
@@ -139,6 +139,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 
 # List the 20 locked-private videos, whether each mp4 is ready, and re-upload once UPLOAD_POST_KEY exists (zero writes with --dry-run)
 python3 scripts/video/reupload_locked.py --dry-run
+
+# TikTok via Chrome (Upload-Post's TikTok needs the paid plan Stephen declined, 2026-09-15).
+# Semi-supervised, Mac-only, Saturday — never an Actions job. Runbook: "TikTok (Chrome, Saturday)".
+python3 scripts/browser/session.py --check tiktok                  # is the debug Chrome still logged in?
+python3 scripts/publishers/tiktok_web.py --check                   # read-only: every Studio anchor resolves
+python3 scripts/publishers/publish.py --platform tiktok_web --asset <mp4> --meta <json> \
+  --schedule 2026-09-21T14:00:00-07:00 --dry-run                   # one post; the offset is REQUIRED
+# The week's batch: day-N.mp4 + day-N.json in DIR onto the week's days at 14:00 Pacific.
+# Idempotent — a day already on the Scheduled tab is skipped. 0 all ok / 1 any queued / 2 hard error.
+python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR> --dry-run
+python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR> --hour 14:00
 ```
 
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
