@@ -268,8 +268,17 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
             else ""
         )
     )
+    # Each tick is placed at its OWN point's x. `space-between` pinned label EDGES to the
+    # container's edges instead, so a tick's centre drifted from its data point — worst at
+    # the two ends, which are the ones a viewer actually reads off. The end labels anchor by
+    # their near edge rather than their centre: `.body` clips its overflow, so a centred
+    # label on the first or last point would lose half its text off the side of the card.
+    last = len(points) - 1
     labels = "\n        ".join(
-        f'<span>{_e(item.get("label"))}</span>' for item in items
+        f'<span style="left:{x / CURVE_W * 100:.3f}%;transform:'
+        f'{"translateX(0)" if index == 0 else "translateX(-100%)" if index == last else "translateX(-50%)"}'
+        f'">{_e(item.get("label"))}</span>'
+        for index, ((x, _y), item) in enumerate(zip(points, items))
     )
     return (
         f'<div class="curve">\n'
@@ -441,8 +450,9 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
   stroke-linecap:round}}
 .plot .fill{{fill:{brand['accent']};opacity:.16}}
 .plot .ann{{fill:{brand['fg']};font-family:{brand['font']};font-weight:700;font-size:52px}}
-.xlabels{{display:flex;justify-content:space-between;color:{brand['muted']};
-  font-size:{1.7 * unit:.1f}px;font-variant-numeric:tabular-nums}}"""
+.xlabels{{position:relative;height:{2.2 * unit:.0f}px;color:{brand['muted']};
+  font-size:{1.7 * unit:.1f}px;font-variant-numeric:tabular-nums}}
+.xlabels span{{position:absolute;top:0;white-space:nowrap}}"""
 
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 *{{box-sizing:border-box;margin:0;padding:0}}

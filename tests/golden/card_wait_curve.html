@@ -43,8 +43,9 @@ h1{font-size:101.4px;line-height:1.06;font-weight:700;letter-spacing:-.01em;
   stroke-linecap:round}
 .plot .fill{fill:#F2C14E;opacity:.16}
 .plot .ann{fill:#FFFFFF;font-family:Carlito, Arial, Helvetica, sans-serif;font-weight:700;font-size:52px}
-.xlabels{display:flex;justify-content:space-between;color:#AAB6C4;
+.xlabels{position:relative;height:51px;color:#AAB6C4;
   font-size:39.2px;font-variant-numeric:tabular-nums}
+.xlabels span{position:absolute;top:0;white-space:nowrap}
 </style></head><body>
 <div class="card">
   <div class="brand"><span class="bname">Demo Brand</span><span class="burl">example.com</span></div>
@@ -59,12 +60,12 @@ h1{font-size:101.4px;line-height:1.06;font-weight:700;letter-spacing:-.01em;
         <circle cx="400.0" cy="40.0" r="16" fill="#F2C14E" stroke="#101418" stroke-width="7"/><text x="426.0" y="52" text-anchor="start" class="ann">95 min by 11</text>
       </svg>
       <div class="xlabels">
-        <span>9a</span>
-        <span>10a</span>
-        <span>11a</span>
-        <span>12p</span>
-        <span>1p</span>
-        <span>2p</span>
+        <span style="left:0.000%;transform:translateX(0)">9a</span>
+        <span style="left:20.000%;transform:translateX(-50%)">10a</span>
+        <span style="left:40.000%;transform:translateX(-50%)">11a</span>
+        <span style="left:60.000%;transform:translateX(-50%)">12p</span>
+        <span style="left:80.000%;transform:translateX(-50%)">1p</span>
+        <span style="left:100.000%;transform:translateX(-100%)">2p</span>
       </div>
     </div>
   </div>

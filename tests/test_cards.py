@@ -755,3 +755,47 @@ def test_a_heatmap_cell_with_no_readable_score_prints_nothing_rather_than_invent
 
     assert text == ""
     assert colour == cards.HEATMAP_RAMP[0]
+
+
+def _curve_points(html: str) -> list[float]:
+    raw = re.search(r'<polyline points="([^"]+)"', html).group(1)
+    return [float(pair.split(",")[0]) for pair in raw.split()]
+
+
+def _curve_label_positions(html: str) -> list[float]:
+    return [float(x) for x in re.findall(r'<span style="left:([\d.]+)%', html)]
+
+
+def test_every_curve_x_label_sits_at_the_point_it_names():
+    """`justify-content:space-between` pins label EDGES to the container's edges, so a tick's
+    centre drifts from its data point — worst at the two ends, which are the ones a viewer
+    reads off. Each label is positioned at its own point's x instead."""
+    html = cards.card_html("wait_curve", CURVE, cards.brand_tokens(None))
+    xs = _curve_points(html)
+    lefts = _curve_label_positions(html)
+
+    assert len(lefts) == len(xs) == len(CURVE["items"])
+    for x, left in zip(xs, lefts):
+        assert abs(left - x / cards.CURVE_W * 100) < 0.01
+    assert lefts[0] == 0.0 and lefts[-1] == 100.0
+    assert not re.search(r"\.xlabels\{[^}]*space-between", html), "space-between drifts"
+    assert re.search(r"\.xlabels\{[^}]*position:relative", html)
+
+
+def test_the_end_labels_are_anchored_on_their_point_without_hanging_off_the_card():
+    """The body clips its overflow, so a centred end label would lose half its text."""
+    html = cards.card_html("wait_curve", CURVE, cards.brand_tokens(None))
+    spans = re.findall(r'<span style="left:[\d.]+%;transform:([^"]+)"', html)
+
+    assert len(spans) == len(CURVE["items"])
+    assert spans[0] == "translateX(0)"
+    assert spans[-1] == "translateX(-100%)"
+    assert set(spans[1:-1]) == {"translateX(-50%)"}
+
+
+@pytest.mark.parametrize("count", [2, 3, 6, 16])
+def test_curve_labels_and_points_stay_in_step_at_every_series_length(count):
+    data = {**CURVE, "items": [{"label": f"h{n}", "value": n * 3} for n in range(count)]}
+    html = cards.card_html("wait_curve", data, cards.brand_tokens(None))
+
+    assert len(_curve_label_positions(html)) == len(_curve_points(html)) == count
