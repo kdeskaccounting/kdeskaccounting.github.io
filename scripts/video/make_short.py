@@ -134,21 +134,44 @@ def media_layers(scene, brand, work, k):
     return layers
 
 
-def caption_box_for(spec, short, width=OUT_W, height=OUT_H):
-    """The caption band for a whole Short: one band, clearing the highest card it will meet.
+def scene_card_top(scene, width=OUT_W, height=OUT_H):
+    """The top edge of whatever this scene draws where a caption wants to go, or None.
 
-    Captions run across every scene, so the band cannot move scene by scene without jumping.
-    It is therefore sized against the card that reaches highest — in practice
-    media.overlay_box, which is the same rectangle for every media scene — and captions.
-    caption_box shrinks or lifts the band to clear it (or refuses, if there is no room).
+    A `media` scene is imagery: the top of the frame is free unless it carries a card overlay,
+    and then the constraint is media.overlay_box, the same rectangle every media scene uses.
+    EVERYTHING else owns the top of the frame from y=0 — a full-frame `kind: card` puts its
+    heading there, and the legacy sheet/pan layout puts the Short's hook there — so a caption
+    over one of those is text printed on text.
     """
-    tops = [media.overlay_box(width, height)[1]
-            for idx in short["scenes"]
-            if media.is_media(spec["scenes"][idx] or {}) and (spec["scenes"][idx].get("overlay"))]
-    return captions.caption_box(width, height, min(tops) if tops else None)
+    scene = scene or {}
+    if media.is_media(scene):
+        return media.overlay_box(width, height)[1] if scene.get("overlay") else None
+    return 0
 
 
-def caption_cues(scenes, audio_dir):
+def caption_plan(spec, short, width=OUT_W, height=OUT_H):
+    """(the band, the scene indexes it cannot cover) for one Short.
+
+    Captions run the length of the Short, so there is ONE band and it cannot move scene by
+    scene without jumping. It is sized against the card that reaches highest among the scenes
+    it can cover, and captions.caption_box shrinks or lifts it to clear that card. A scene
+    that leaves no readable band at all — caption_box refuses it — is dropped from the caption
+    pass rather than overprinted, and said out loud in caption_cues.
+    """
+    tops, skipped = {}, set()
+    for idx in short["scenes"]:
+        top = scene_card_top((spec.get("scenes") or [])[idx], width, height)
+        try:
+            captions.caption_box(width, height, top)
+        except ValueError:
+            skipped.add(idx)
+        else:
+            tops[idx] = top
+    limits = [t for t in tops.values() if t is not None]
+    return captions.caption_box(width, height, min(limits) if limits else None), skipped
+
+
+def caption_cues(scenes, audio_dir, skipped=()):
     """[(scene index, part start, part end)] -> the cues for the whole Short.
 
     `part end` is the limit each scene's captions are clamped to, so a held phrase never
@@ -160,6 +183,11 @@ def caption_cues(scenes, audio_dir):
     """
     cues = []
     for idx, start, end in scenes:
+        if idx in skipped:
+            print(f"scene {idx:02d}: captions skipped — this scene's own layout owns the top "
+                  f"of the frame (a full-frame card, or the legacy hook band), and a caption "
+                  f"there would print text over text", flush=True)
+            continue
         words = captions.read_words(pathlib.Path(audio_dir) / f"scene_{idx:02d}.wav")
         if not words:
             print(f"scene {idx:02d}: no word timings — captions skipped for this scene "
@@ -284,7 +312,7 @@ def main():
     media.validate_spec(spec, spec_path)
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
-    cap_box = caption_box_for(spec, sh) if cap.enabled else None
+    cap_box, cap_skip = caption_plan(spec, sh) if cap.enabled else (None, set())
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
@@ -387,7 +415,7 @@ def main():
     # Captions are burned in HERE, in the pass that was already joining the parts, rather than
     # in a second one: the concat is a stream copy today, so this is the only re-encode the
     # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
-    overlays = render_captions(caption_cues(cap_scenes, build / "audio"), cap,
+    overlays = render_captions(caption_cues(cap_scenes, build / "audio", cap_skip), cap,
                                cards.brand_tokens(spec.get("brand")), work,
                                cap_box) if cap.enabled else []
     if overlays:

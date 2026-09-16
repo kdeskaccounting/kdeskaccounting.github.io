@@ -64,14 +64,23 @@ def _spec(captions_block=None):
         "scenes": [
             {"kind": "media", "src": "assets/still.png", "motion": "kenburns",
              "credit": CREDIT, "overlay": dict(OVERLAY), "narration": "one"},
-            {"kind": "card", "template": "countdown",
-             "data": {"heading": "Two", "items": [], "footer": "x"}, "narration": "two"},
             {"kind": "media", "src": "assets/clip.mp4", "motion": "clip",
-             "credit": CREDIT, "narration": "three"},
+             "credit": CREDIT, "narration": "two"},
+            {"kind": "media", "src": "assets/clip.mp4", "motion": "hold",
+             "credit": CREDIT, "overlay": dict(OVERLAY), "narration": "three"},
         ],
     }
     if captions_block is not None:
         spec["captions"] = captions_block
+    return spec
+
+
+def _with_card_scene(captions_block=None):
+    """The same Short with a full-frame `kind: card` in the middle — it owns the whole frame."""
+    spec = _spec(captions_block)
+    spec["scenes"][1] = {"kind": "card", "template": "countdown",
+                         "data": {"heading": "Two", "items": [], "footer": "x"},
+                         "narration": "two"}
     return spec
 
 
@@ -265,8 +274,9 @@ def test_the_overlays_land_on_the_caption_band_and_nowhere_else(stub):
 
 def test_the_band_clears_the_card_overlay_of_a_media_scene(stub):
     stub.go()
-    box = M.caption_box_for(stub.spec, stub.spec["short"])
+    box, skipped = M.caption_plan(stub.spec, stub.spec["short"])
     card = media.overlay_box(M.OUT_W, M.OUT_H)
+    assert skipped == set()
     assert not media.boxes_overlap(box, card)
     assert not media.boxes_overlap(box, media.watermark_box(M.OUT_W, M.OUT_H))
     assert box[3] <= round(M.OUT_H * captions.SAFE_BOTTOM_FRAC)
@@ -276,15 +286,53 @@ def test_a_spec_with_no_card_overlay_still_gets_the_same_band(stub):
     """The stock card starts at 40% of the frame, far below a band centred on 22%."""
     plain = dict(stub.spec)
     plain["scenes"] = [dict(s) for s in stub.spec["scenes"]]
-    plain["scenes"][0].pop("overlay")
-    assert M.caption_box_for(plain, plain["short"]) == \
+    for scene in plain["scenes"]:
+        scene.pop("overlay", None)
+    assert M.caption_plan(plain, plain["short"])[0] == \
         captions.caption_box(M.OUT_W, M.OUT_H)
+
+
+# --- a scene whose own layout owns the top of the frame ---------------------------------------
+
+def test_a_media_scenes_card_is_the_only_thing_that_constrains_the_band():
+    scene = {"kind": "media", "src": "x.mp4", "overlay": dict(OVERLAY)}
+    assert M.scene_card_top(scene) == media.overlay_box(M.OUT_W, M.OUT_H)[1]
+    assert M.scene_card_top({"kind": "media", "src": "x.mp4"}) is None
+
+
+@pytest.mark.parametrize("scene", [
+    {"kind": "card", "template": "countdown", "data": {}},        # the card IS the frame
+    {"sheet": "Lease", "caption": "a legacy walkthrough scene"},  # hook band at the very top
+])
+def test_a_scene_that_owns_the_top_of_the_frame_reports_a_card_at_zero(scene):
+    assert M.scene_card_top(scene) == 0
+
+
+def test_a_full_frame_card_scene_is_dropped_from_the_caption_pass_not_overprinted(stub, capsys):
+    """Its heading sits exactly where a caption would: text over text is worse than neither."""
+    stub.spec = _with_card_scene({"enabled": True})
+    box, skipped = M.caption_plan(stub.spec, stub.spec["short"])
+    assert skipped == {1}
+    assert box == captions.caption_box(M.OUT_W, M.OUT_H,
+                                       media.overlay_box(M.OUT_W, M.OUT_H)[1])
+    stub.go()
+    out = capsys.readouterr().out
+    assert "scene 01" in out and "captions skipped" in out
+    wins = _windows(_final(stub))
+    assert not any(PART_SECONDS <= start < 2 * PART_SECONDS for start, _e in wins)
+    assert len(wins) == len(WORDS[0]) + len(WORDS[2])
+
+
+def test_the_scenes_that_can_be_captioned_still_are(stub):
+    stub.spec = _with_card_scene({"enabled": True})
+    stub.go()
+    assert len(_caption_pngs(stub)) == len(WORDS[0]) + len(WORDS[2])
 
 
 def test_the_caption_pngs_are_the_band_not_the_whole_frame(stub):
     """A full-frame RGBA PNG per spoken word is six times the memory for nothing."""
     stub.go()
-    box = M.caption_box_for(stub.spec, stub.spec["short"])
+    box = M.caption_plan(stub.spec, stub.spec["short"])[0]
     for args, kwargs in stub.shots:
         if "cap_" in pathlib.Path(args[1]).name:
             assert args[2:] == (M.OUT_W, box[3] - box[1])
