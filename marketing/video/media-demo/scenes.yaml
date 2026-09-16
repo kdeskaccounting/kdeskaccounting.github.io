@@ -1,6 +1,8 @@
 # Media-scene smoke spec: real footage and a still under a card, no workbook, no LibreOffice.
 # It is the spec tests/test_media_scene_e2e.py renders, and the worked example of the
-# `kind: media` contract a caller outside this repo emits.
+# `kind: media` contract a caller outside this repo emits. Scene 1 is a plain `card`, so this
+# is also the mixed-kind smoke test: card and media parts must encode to the same stream or
+# the `-c:v copy` concat that assembles a Short cannot join them.
 #
 #   src:      repo-relative to the SPEC FILE's own repo root (nearest .git / pyproject.toml
 #             above it) or absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
@@ -39,7 +41,7 @@ disclaimer: >
   A rendering smoke test. The wait times shown are invented and describe nothing real.
 short:
   hook: "Footage, a credit, and a card on top"
-  scenes: [0, 1]
+  scenes: [0, 1, 2]
   cta: "One scene kind, any imagery"
 meta:
   title: The media scene kind — footage under a card overlay
@@ -68,6 +70,22 @@ scenes:
       This scene is a still photograph, not a rendered card. It fills the whole frame, it
       drifts slowly inward, and the card you can read sits on top of it as a semi transparent
       plate. The credit line stays in the lower left corner the entire time.
+
+  # A plain card between the two media scenes, so the demo renders a MIXED spec. The parts
+  # are joined with `-c:v copy`, which only works because a media scene encodes to exactly the
+  # stream a card scene does — this is the scene that proves it end to end.
+  - kind: card
+    template: countdown
+    data:
+      heading: Two scene kinds, one Short
+      subheading: Concatenated without re-encoding
+      items:
+        - {rank: 2, label: "Card: text on a brand background", value: ""}
+        - {rank: 1, label: "Media: the same text over imagery", value: ""}
+      footer: kdeskaccounting.com
+    narration: >
+      This scene is an ordinary card, sitting between two media scenes. Both kinds encode to
+      the same stream, so the finished Short is joined together without re-encoding anything.
 
   - kind: media
     src: marketing/video/media-demo/assets/placeholder-clip.mp4

@@ -71,6 +71,12 @@ def test_the_demo_spec_resolves_both_of_its_sources_from_this_repos_root():
         assert media.resolve_src(SPEC, src) == (ASSETS / name).resolve()
 
 
+def test_the_demo_is_a_mixed_spec():
+    """Card and media in one spec is the case the `-c:v copy` concat has to survive."""
+    text = SPEC.read_text(encoding="utf-8")
+    assert "- kind: card" in text and "- kind: media" in text
+
+
 def test_the_demo_spec_documents_the_watermark_rule():
     """Someone copying this spec into another repo must be told about the corner."""
     text = SPEC.read_text(encoding="utf-8")
@@ -176,13 +182,14 @@ def test_build_video_frames_only_renders_every_media_scene():
     proc = _run([str(BUILD_VIDEO), "--spec", str(SPEC), "--frames-only"])
     assert proc.returncode == 0, proc.stderr[-2000:]
     frames = build / "frames"
-    for i in range(2):
+    for i in range(3):
         png = frames / f"scene_{i:02d}.png"
         assert png.exists(), f"{png} missing\n{proc.stdout}"
         assert png.stat().st_size > 10_000, f"{png} is suspiciously small"
     focus = json.loads((frames / "focus.json").read_text())
-    assert all(focus[str(i)]["static"] is True for i in range(2))
+    assert all(focus[str(i)]["static"] is True for i in range(3))
     assert "media" in proc.stdout
+    assert "card" in proc.stdout, "the demo is a MIXED spec; scene 1 is a plain card"
     # no workbook was staged or recalculated: the spec has no `source:` key
     assert not (build / "src.xlsx").exists()
     assert not (build / "recalc").exists()
@@ -232,3 +239,64 @@ def test_a_still_with_no_credit_stops_the_render(tmp_path):
         assert "credit" in proc.stderr
     finally:
         shutil.rmtree(build, ignore_errors=True)
+
+
+# --- the concat claim, against a real mixed render ----------------------------------------
+
+@needs_chrome
+@needs_ffmpeg
+def test_a_card_part_and_a_media_part_concatenate_into_one_continuous_stream(tmp_path):
+    """The load-bearing claim: parts are joined with `-c:v copy`, so a media scene has to
+    encode to exactly the stream a card scene does. If it does not, the concat either fails
+    or produces a file whose second half is a different stream — which is why this asserts
+    the JOINED file, not the two parts."""
+    import cards
+    import make_short as M
+    wav = tmp_path / "narration.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "anullsrc=r=48000:cl=mono", "-t", "3", str(wav)],
+                   check=True, capture_output=True, timeout=120)
+    brand = cards.brand_tokens(None)
+    data = {"heading": "A card scene", "subheading": "Text on a brand background",
+            "items": [{"rank": 1, "label": "Row", "value": 1}], "footer": "kdeskaccounting.com"}
+
+    card_png = tmp_path / "scene_0.png"
+    R.render_card_scene(card_png, "ranked_list", data, None, M.RW, M.RH, html_dir=tmp_path)
+    card_part = M.encode_scene(card_png, wav, 3.0, 30)
+
+    layers = M.media_layers({"credit": "Imagery: placeholder"}, brand, tmp_path, 1)
+    media_part = M.encode_media_scene(ASSETS / "placeholder-clip.mp4", "clip", layers, wav,
+                                      3.0, 30, tmp_path / "scene_1.mp4")
+
+    lst = tmp_path / "concat.txt"
+    lst.write_text("".join(f"file '{p.resolve()}'\n" for p in (card_part, media_part)))
+    joined = tmp_path / "mixed.mp4"
+    M.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+           "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+           str(joined)])
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries",
+         "stream=codec_type,codec_name,width,height,r_frame_rate,pix_fmt,color_range",
+         "-show_entries", "format=duration,nb_streams", "-of", "json", str(joined)],
+        capture_output=True, text=True, timeout=120)
+    info = json.loads(probe.stdout)
+    # One video stream and one audio stream — not two of each, which is what a stream the
+    # concat demuxer refused to join would look like.
+    assert int(info["format"]["nb_streams"]) == 2
+    videos = [s for s in info["streams"] if s["codec_type"] == "video"]
+    assert len(videos) == 1
+    assert (videos[0]["width"], videos[0]["height"]) == (M.OUT_W, M.OUT_H)
+    assert videos[0]["r_frame_rate"] == "30/1" and videos[0]["pix_fmt"] == "yuv420p"
+    assert videos[0]["color_range"] == "tv"
+    assert abs(float(info["format"]["duration"]) - 6.0) < 0.3, "both parts must be present"
+
+    # And the two parts really did agree, which is what let `-c:v copy` work.
+    def stream_of(path):
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+             "stream=codec_name,profile,width,height,r_frame_rate,pix_fmt,color_range",
+             "-of", "json", str(path)], capture_output=True, text=True, timeout=120)
+        return json.loads(out.stdout)["streams"][0]
+
+    assert stream_of(card_part) == stream_of(media_part)

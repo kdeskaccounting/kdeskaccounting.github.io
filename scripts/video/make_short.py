@@ -30,6 +30,13 @@ GRAD = f"radial-gradient(1100px 700px at 20% 10%, {BLUE} 0%, {NAVY} 45%, #0d1a33
 #: as a failed render, not as a job that never returns.
 RUN_TIMEOUT = 600
 
+#: Every part's pixels are limited range, but libx264 only writes the VUI flag saying so when
+#: a conversion actually happened — so a still-sourced media part came out tagged `tv` while
+#: every card, sheet and footage part came out untagged. Parts are joined with `-c:v copy`, so
+#: the finished Short inherited whichever tag the first part carried. This bitstream filter
+#: writes the flag unconditionally, and it survives the copy.
+RANGE_BSF = "h264_metadata=video_full_range_flag=0"
+
 def run(cmd):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
@@ -45,9 +52,9 @@ def encode_scene(png, wav, dur, crf):
     Slow zoom to 1.06x over the whole scene, 0.3 s fades either end, audio padded so the last
     word is never clipped. Every scene kind - sheet, pan and card - encodes through here.
 
-    `-color_range tv` TAGS the output limited range. The pixels always were; only some parts
-    carried the tag, and the parts are concatenated with `-c:v copy`, so the finished Short's
-    declared range depended on which scene happened to be encoded first.
+    `-color_range tv` + RANGE_BSF tag the output limited range. The pixels always were; only
+    some parts carried the tag, and the parts are concatenated with `-c:v copy`, so the
+    finished Short's declared range depended on which scene was encoded first.
     """
     n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
     vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
@@ -60,7 +67,7 @@ def encode_scene(png, wav, dur, crf):
          f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
          "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
-         "-c:a", "aac", "-b:a", "128k", str(out)])
+         "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
 def encode_media_scene(src, motion, layers, wav, dur, crf, out):
@@ -96,7 +103,7 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
          "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
-         "-c:a", "aac", "-b:a", "128k", str(out)])
+         "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
 

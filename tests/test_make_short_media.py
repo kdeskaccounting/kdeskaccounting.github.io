@@ -140,7 +140,8 @@ def test_the_encode_flags_match_the_card_and_sheet_scenes_so_concat_still_works(
     for cmd in _media_cmds(stub_main):
         for flag, value in (("-c:v", "libx264"), ("-preset", "medium"),
                             ("-r", "30"), ("-c:a", "aac"), ("-b:a", "128k"),
-                            ("-crf", "26"), ("-color_range", "tv")):
+                            ("-crf", "26"), ("-color_range", "tv"),
+                            ("-bsf:v", "h264_metadata=video_full_range_flag=0")):
             assert cmd[cmd.index(flag) + 1] == value
         chain = cmd[cmd.index("-filter_complex") + 1]
         assert f"scale={M.OUT_W}:{M.OUT_H}" in chain

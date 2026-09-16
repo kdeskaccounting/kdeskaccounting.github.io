@@ -53,6 +53,7 @@ def _expected_encode_cmd(png, wav, out, dur, crf=26):
             f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
             "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
             "-preset", "medium", "-crf", str(crf), "-r", "30", "-color_range", "tv",
+            "-bsf:v", "h264_metadata=video_full_range_flag=0",
             "-c:a", "aac", "-b:a", "128k", str(out)]
 
 
@@ -167,3 +168,7 @@ def test_every_scene_kind_tags_its_output_limited_range(tmp_path, monkeypatch):
     M.encode_scene(tmp_path / "scene_0.png", tmp_path / "scene_00.wav", 5.0, 26)
     cmd = seen[0]
     assert cmd[cmd.index("-color_range") + 1] == "tv"
+    # libx264 only signals limited range in the VUI when a conversion actually happened, so
+    # -color_range alone leaves most parts untagged. The bitstream filter writes the flag
+    # unconditionally, and it survives the `-c:v copy` concat.
+    assert cmd[cmd.index("-bsf:v") + 1] == "h264_metadata=video_full_range_flag=0"
