@@ -1,3 +1,4 @@
+import re
 #!/usr/bin/env python3
 """
 Assemble scene PNGs (2400x1350) + scene WAVs into a 1080p30 mp4 with ffmpeg.
@@ -18,12 +19,26 @@ def dur_of(p):
                          capture_output=True, text=True).stdout.strip()
     return float(out or 0)
 
+SCENE_PNG = re.compile(r"^scene_(\d+)\.png$")
+
+
+def scene_frames(frames_dir: pathlib.Path) -> list[pathlib.Path]:
+    """The full-frame scene stills, in index order — and nothing else.
+
+    A `kind: media` scene leaves its layers beside the still (scene_00-credit.png,
+    scene_00-overlay.png, scene_00-poster.png); a bare ``scene_*.png`` glob swept those in
+    and crashed on ``int("00-credit")``. Only ``scene_NN.png`` is a scene.
+    """
+    return sorted((f for f in frames_dir.glob("scene_*.png") if SCENE_PNG.match(f.name)),
+                  key=lambda f: int(SCENE_PNG.match(f.name).group(1)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--build", required=True); ap.add_argument("--out", required=True)
     ap.add_argument("--crf", type=int, default=27)
     a = ap.parse_args(); b = pathlib.Path(a.build)
-    frames = sorted((b / "frames").glob("scene_*.png"))
+    frames = scene_frames(b / "frames")
     scenes_dir = b / "scenes"; scenes_dir.mkdir(exist_ok=True)
     fj = b / "frames" / "focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
