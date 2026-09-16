@@ -177,7 +177,7 @@ def test_a_key_echoed_bare_in_an_error_body_is_masked_in_the_card(tmp_path, monk
     asset = tmp_path / "x.mp4"
     asset.write_bytes(b"v")
     monkeypatch.setattr(up, "_http_post", lambda *a, **k: (
-        401, {"success": False, "message": f"Invalid or expired credential {KEY} for profile kdesk"}))
+        401, {"success": False, "message": f"Invalid or expired credential {KEY} for profile default"}))
     res = up.UploadPostPublisher("youtube", repo=tmp_path, api_key=KEY).publish(
         asset, META, dry_run=False)
     assert res.ok is False

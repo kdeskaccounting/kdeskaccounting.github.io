@@ -174,6 +174,8 @@ gh secret set GUMROAD_ACCESS_TOKEN --repo "$R" \
 
 # From https://www.upload-post.com/ after connecting YouTube, TikTok and Instagram.
 gh secret set UPLOAD_POST_KEY --repo "$R"        # prompts, so the key never reaches shell history
+# Upload-Post profiles (free tier, 2 max): `default` = KDesk YouTube; `parksheet` = ParkSheet YouTube + IG @park.sheet.
+# KDesk jobs pass UPLOAD_POST_PROFILE=default (also the code default); ParkSheet passes parksheet.
 
 gh secret list --repo "$R"
 ```
