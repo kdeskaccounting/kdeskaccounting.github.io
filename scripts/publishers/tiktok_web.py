@@ -310,6 +310,9 @@ class TikTokWebPublisher(Publisher):
         self._status = None
         # The page currently being driven, so queue() can put a screenshot on the card.
         self._page = None
+        # True once the submit button has been clicked for the attempt in flight. Reset per
+        # _do_publish call; while set, nothing is retried (see _do_publish).
+        self._submitted = False
 
     # -- contract ---------------------------------------------------------------------
 
@@ -383,10 +386,17 @@ class TikTokWebPublisher(Publisher):
     def _do_publish(self, asset: pathlib.Path, meta: dict) -> PublishResult:
         """Open one traced page and drive it, with one retry (spec Chrome rule 7).
 
-        The retry is safe precisely because `drive` re-reads the Scheduled list first: an
-        attempt that actually landed but lost the confirmation is recognised on the second
-        pass and skipped. VerificationFailed is excluded — see its docstring.
+        **The submit click is the point of no return.** Both confirmation waits raise after
+        the click — `expect_response` on `__exit__`, `wait_for_url` on the call — so "the
+        retry is safe because drive() re-reads the list first" was wrong in the one direction
+        that matters: TikTok processes a scheduled post asynchronously, the re-read can easily
+        happen before the row exists, and the retry would then upload the video a second time.
+
+        So `self._submitted` is set immediately before the click and nothing is retried once
+        it is set. The flag is reset here, not in __init__, because schedule_week reuses one
+        publisher for the whole week and day 2 must start clean.
         """
+        self._submitted = False
         with session.open_page(self.platform, repo=self.repo) as page:
             self._page = page
             try:
@@ -394,6 +404,12 @@ class TikTokWebPublisher(Publisher):
             except VerificationFailed:
                 raise
             except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
+                if self._submitted:
+                    raise VerificationFailed(
+                        f"{type(exc).__name__}: {exc} — this happened AFTER the "
+                        f"{S.SCHEDULE_BUTTON_TEXT}/{S.POST_BUTTON_TEXT} button was clicked, "
+                        f"so TikTok may have taken the post. NOT retrying: a second attempt "
+                        f"would upload {pathlib.Path(asset).name} twice.") from exc
                 print(f"{self.platform}: retrying once after "
                       f"{session.redact_secrets(f'{type(exc).__name__}: {exc}')[:160]}",
                       file=sys.stderr)
@@ -508,8 +524,9 @@ class TikTokWebPublisher(Publisher):
         """Click Schedule/Post and wait on the response, then on the redirect.
 
         Two independent confirmations on purpose: POST_RESPONSE is UNVERIFIED, so if the
-        fragment is wrong this times out, the single retry re-reads the list, finds the post
-        and returns "already scheduled". A wrong guess costs a retry, never a duplicate.
+        fragment is wrong this times out — and BOTH waits raise after the click, which is why
+        `self._submitted` is set first. From that line on, every failure is a card telling
+        Stephen to look at the Scheduled tab; none of them is a retry.
         """
         label = S.SCHEDULE_BUTTON_TEXT if when is not None else S.POST_BUTTON_TEXT
         button = page.get_by_role("button", name=label).first
@@ -517,6 +534,7 @@ class TikTokWebPublisher(Publisher):
         with page.expect_response(
                 lambda r: S.POST_RESPONSE in r.url and r.request.method == "POST",
                 timeout=UPLOAD_TIMEOUT_MS):
+            self._submitted = True      # point of no return — never re-upload past here
             button.click()
         page.wait_for_url(lambda url: S.CONTENT_URL in url, timeout=NAV_TIMEOUT_MS)
 

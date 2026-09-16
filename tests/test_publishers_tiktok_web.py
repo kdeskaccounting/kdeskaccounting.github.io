@@ -82,7 +82,8 @@ class _Keyboard:
 class _Page:
     """Records every interaction; returns queued values for the two JS reads."""
 
-    def __init__(self, rows_reads=(), url=S.STUDIO_URL):
+    def __init__(self, rows_reads=(), url=S.STUDIO_URL, post_response_fails=False,
+                 redirect_fails=False):
         self.calls = []
         self.counts = {}
         self.values = {}
@@ -92,6 +93,10 @@ class _Page:
         self.url = url
         self.rows_reads = list(rows_reads)
         self.keyboard = _Keyboard(self)
+        # Playwright raises these on __exit__ / on the call — i.e. AFTER the button was
+        # clicked and TikTok may already have taken the post.
+        self.post_response_fails = post_response_fails
+        self.redirect_fails = redirect_fails
 
     # navigation ------------------------------------------------------------
     def goto(self, url, **kw):
@@ -103,6 +108,8 @@ class _Page:
 
     def wait_for_url(self, *a, **kw):
         self.calls.append("wait_for_url")
+        if self.redirect_fails:
+            raise TimeoutError("Timeout 60000ms exceeded waiting for url")
 
     def wait_for_function(self, js, **kw):
         self.calls.append("wait_for_function")
@@ -132,6 +139,8 @@ class _Page:
         def _cm():
             self.calls.append("expect_response")
             yield
+            if self.post_response_fails:
+                raise TimeoutError("Timeout 300000ms exceeded waiting for response")
         return _cm()
 
     def screenshot(self, path):
@@ -643,3 +652,82 @@ def test_there_are_no_fixed_sleeps_anywhere_in_the_driver():
     src = pathlib.Path(tw.__file__).read_text(encoding="utf-8")
     for banned in ("wait_for_timeout", "time.sleep"):
         assert banned not in src, banned
+
+
+# ======================================================================== fix round 1
+#
+# CRITICAL 1. Both confirmation waits raise AFTER the button was clicked — expect_response
+# on __exit__, wait_for_url on the call — and _do_publish excluded only VerificationFailed,
+# so each fell into the generic retry and re-ran drive(). The re-read that "makes the retry
+# safe" happens before TikTok has finished processing the schedule, so the retry finds
+# nothing and uploads the video a SECOND time. The click is now the point of no return.
+
+def _uploads(page):
+    return [c for c in page.calls if c.startswith("set_input_files")]
+
+
+def _submit_clicks(page):
+    return [c for c in page.calls if c.startswith("click:role:button:")]
+
+
+def test_a_response_timeout_after_the_click_uploads_once_and_queues(pub, asset, monkeypatch):
+    page = _Page(rows_reads=[[], [], []], post_response_fails=True)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+
+    result = pub.publish(asset, META, dry_run=False)
+
+    assert result.ok is False
+    assert len(_uploads(page)) == 1, "the video must not be uploaded twice"
+    assert len(_submit_clicks(page)) == 1
+    cards = list((pub.repo / "marketing" / "publish-queue").rglob("*.md"))
+    assert len(cards) == 1
+
+
+def test_a_redirect_timeout_after_the_click_uploads_once_and_queues(pub, asset, monkeypatch):
+    page = _Page(rows_reads=[[], [], []], redirect_fails=True)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+
+    result = pub.publish(asset, META, dry_run=False)
+
+    assert result.ok is False
+    assert len(_uploads(page)) == 1
+    assert len(_submit_clicks(page)) == 1
+
+
+def test_the_card_for_a_post_submit_failure_says_it_may_already_be_live(pub, asset,
+                                                                        monkeypatch):
+    page = _Page(rows_reads=[[], [], []], post_response_fails=True)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    body = (pub.repo / result.queued_path).read_text(encoding="utf-8")
+    assert "DO NOT re-run" in body
+    assert "Timeout 300000ms exceeded" in result.detail
+
+
+def test_a_failure_before_the_click_is_still_retried_once(pub, asset, monkeypatch):
+    """The retry is not gone — only its reach past the click is."""
+    page = _Page(rows_reads=[[], [], [_row(tw.caption_of(META))]])
+    calls = []
+    real_upload = pub.upload
+
+    def flaky(page_, a, c, w):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("Timeout 30000ms exceeded waiting for input")
+        return real_upload(page_, a, c, w)
+
+    monkeypatch.setattr(pub, "upload", flaky)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+    assert pub.publish(asset, META, dry_run=False).ok is True
+    assert len(calls) == 2
+
+
+def test_the_submitted_flag_does_not_leak_between_days_of_a_batch(pub, asset, monkeypatch):
+    """schedule_week reuses one publisher for the whole week; day 2 must start clean."""
+    page1 = _Page(rows_reads=[[], [], []], post_response_fails=True)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page1))
+    assert pub.publish(asset, META, dry_run=False).ok is False
+
+    page2 = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page2))
+    assert pub.publish(asset, META, dry_run=False).ok is True
