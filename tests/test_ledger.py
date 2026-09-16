@@ -89,6 +89,65 @@ def test_append_accepts_pending_veto_status_and_round_trips_it(tmp_path):
     assert ledger.entries(p)[0]["status"] == "pending_veto"
 
 
+# --- approves / vetoes: how a LATER entry answers an earlier T2 window -------------------
+#
+# The ledger is append-only, so Stephen approving #69 early cannot edit #69. It has to be a
+# new row that names the ids it answers for, in a field the gate can read - which is what
+# `approves` (and its symmetric `vetoes`) is. Entry #81 said the same thing in prose and the
+# gate could not see it.
+
+def test_append_writes_approves_only_when_it_is_given(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    plain = ledger.append("no ids answered", 0, "executed", "r", [], path=p)
+    assert "approves" not in plain, "the field is absent, not null, on an ordinary row"
+    assert "vetoes" not in plain
+    assert "approves" not in json.loads(p.read_text().splitlines()[0])
+
+
+def test_append_records_approves_as_a_list_of_ints_and_round_trips_it(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    written = ledger.append("Stephen approved 69 and 70", 0, "executed", "r", [],
+                            approves=[69, 70], path=p)
+    assert written["approves"] == [69, 70]
+    saved = json.loads(p.read_text().splitlines()[0])
+    assert saved["approves"] == [69, 70]
+    assert ledger.entries(p)[0]["approves"] == [69, 70]
+
+
+def test_append_records_vetoes_symmetrically(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    written = ledger.append("Stephen VETOED 69", 0, "executed", "r", [],
+                            vetoes=[69], path=p)
+    assert written["vetoes"] == [69]
+    assert ledger.entries(p)[0]["vetoes"] == [69]
+    assert "approves" not in written
+
+
+def test_append_accepts_the_approved_status(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    written = ledger.append("Approved", 0, "approved", "r", [], approves=[69], path=p)
+    assert written["status"] == "approved"
+    assert ledger.entries(p)[0]["status"] == "approved"
+
+
+def test_append_refuses_approves_on_a_row_that_did_not_happen(tmp_path):
+    """`approves` is a record of Stephen saying yes, not of intending to ask him."""
+    p = tmp_path / "decisions.jsonl"
+    with pytest.raises(ValueError, match="approves"):
+        ledger.append("planning to ask", 0, "planned", "r", [], approves=[69], path=p)
+    assert not p.exists(), "a rejected append writes nothing"
+
+
+def test_append_refuses_an_approves_value_that_is_not_a_list_of_ints(tmp_path):
+    p = tmp_path / "decisions.jsonl"
+    for bad in ("69", 69, [69, "70"], [69.5]):
+        with pytest.raises(ValueError, match="approves"):
+            ledger.append("x", 0, "executed", "r", [], approves=bad, path=p)
+    with pytest.raises(ValueError, match="vetoes"):
+        ledger.append("x", 0, "executed", "r", [], vetoes="69", path=p)
+    assert not p.exists()
+
+
 def test_entries_and_append_raise_ledger_error_naming_the_bad_line(tmp_path):
     p = tmp_path / "decisions.jsonl"
     good = {"id": 1, "ts": "t", "tier": 0, "status": "executed", "action": "a",

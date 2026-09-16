@@ -6,6 +6,12 @@ Schema (fixed, matching entries 1-68; status also covers pending_veto, used by e
 69-70 for T2 act-with-veto-window actions): id, ts, tier, status, action, reasoning, files,
 veto_window_close, stephen_reviewed.
 
+Two optional fields, written only when given, let a LATER row answer an earlier T2 window
+by id — the only way to do it in an append-only file: `approves: [69, 70]` (Stephen said
+yes; only on a row whose status is "approved" or "executed") and `vetoes: [69]` (he said
+no). The gate below reads them, and the LAST such row in file order wins, so an approval can
+be taken back by a later veto. Entry #85 approves 69 and 70.
+
   python3 scripts/ledger.py --tail 5
 Stdlib only, so it imports cleanly inside `uv run --with pytest pytest tests/`.
 """
@@ -23,8 +29,13 @@ import re
 REPO = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_PATH = REPO / "decisions" / "decisions.jsonl"
 TIERS = (0, 1, 2, 3)
-STATUSES = ("executed", "in_progress", "planned", "pending_veto", "vetoed")
+STATUSES = ("executed", "in_progress", "planned", "approved", "pending_veto", "vetoed")
 VETO_TIER = 2                     # "act, with a veto window" — the only tier a gate can open
+# A later row may answer an earlier T2 window by id, in `approves` / `vetoes`. An approval
+# only counts from a row that records something that actually happened — Stephen said yes —
+# so these are the statuses that may carry `approves`. A veto counts from any status: a stop
+# is never ignored on a technicality.
+APPROVAL_STATUSES = ("approved", "executed")
 
 
 class LedgerError(ValueError):
@@ -68,6 +79,39 @@ def _norm_files(value: object) -> list[str]:
         if isinstance(parsed, (list, tuple)):
             return [str(v) for v in parsed]
         return [str(parsed)]
+    return []
+
+
+def _norm_ids(value: object, field: str) -> list[int]:
+    """Validate an `approves`/`vetoes` value: a list of plain ints, or raise naming the field.
+
+    Deliberately strict on the way in. A bare `approves=69`, a stringified `"69"` or a float
+    would all read as "approves nothing" to the gate below, which fails open in the one
+    direction that matters — so they are rejected where they are written, not tolerated where
+    they are read.
+    """
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{field} must be a list of ints, got {value!r}")
+    ids: list[int] = []
+    for item in value:
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise ValueError(f"{field} must be a list of ints, got {value!r}")
+        ids.append(int(item))
+    return ids
+
+
+def answered_ids(row: dict, field: str) -> list[int]:
+    """The ids `row` answers in `field` ("approves"/"vetoes"), tolerating a hand-written row.
+
+    The reader is lenient where the writer is strict: a row someone typed by hand may carry
+    `"approves": "69"` or a null, and that must not crash a gate. Anything unreadable simply
+    answers no ids.
+    """
+    value = row.get(field)
+    if isinstance(value, (list, tuple)):
+        return [int(v) for v in value if isinstance(v, int) and not isinstance(v, bool)]
+    if isinstance(value, int) and not isinstance(value, bool):
+        return [int(value)]
     return []
 
 
@@ -202,19 +246,34 @@ def t2_window_open(entry_id: int, now: dt.datetime,
 
 def append(action: str, tier: int, status: str, reasoning: str, files: list[str],
            veto_window_close: str | None = None, *, path: pathlib.Path | None = None,
-           now: dt.datetime | None = None) -> dict:
+           now: dt.datetime | None = None, approves: list[int] | None = None,
+           vetoes: list[int] | None = None) -> dict:
+    """Write one line. `approves`/`vetoes` name earlier entry ids this row answers for.
+
+    Both are omitted from the row entirely unless given, so the eight fixed fields are still
+    exactly what entries 1-84 carry. `approves` may only be written on a row whose status is
+    one of APPROVAL_STATUSES — it records Stephen having said yes, not a plan to ask him.
+    """
     if tier not in TIERS:
         raise ValueError(f"tier must be one of {TIERS}, got {tier!r}")
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}, got {status!r}")
     if not action.strip():
         raise ValueError("action must not be empty")
+    extra: dict[str, list[int]] = {}
+    if approves is not None:
+        if status not in APPROVAL_STATUSES:
+            raise ValueError(f"approves may only be written on a row whose status is one of "
+                             f"{APPROVAL_STATUSES}, got {status!r}")
+        extra["approves"] = _norm_ids(approves, "approves")
+    if vetoes is not None:
+        extra["vetoes"] = _norm_ids(vetoes, "vetoes")
     p = _path(path)
     stamp = (now or dt.datetime.now().astimezone()).strftime("%Y-%m-%dT%H:%M:%S%z")
     with _locked(p):
         row = {"id": last_id(p) + 1, "ts": stamp, "tier": int(tier), "status": status,
                "action": action, "reasoning": reasoning, "files": [str(f) for f in files],
-               "veto_window_close": veto_window_close, "stephen_reviewed": False}
+               "veto_window_close": veto_window_close, "stephen_reviewed": False, **extra}
         with p.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row) + "\n")
     return row
