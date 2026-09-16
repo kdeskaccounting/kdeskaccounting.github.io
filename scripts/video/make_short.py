@@ -299,6 +299,21 @@ html,body{{width:{RW}px;height:{RH}px;background:{NAVY}}}
 <div class="bot"><div class="cap">{html.escape(caption)}</div><div class="url">kdeskaccounting.com</div></div>
 </body></html>"""
 
+def end_card_wanted(short, override=None):
+    """Whether this Short closes on a CTA plate.
+
+    A terminal CTA plate occupies the single highest-retention second of a Short and spends
+    it on an ask. ParkSheet's script v2 (2026-09-16) replaces it with a <= 6-word sign-off
+    spoken OVER the payoff frame, and its `short:` block therefore carries `hook`, `scenes`
+    and `signoff` with NO `cta:` -- so a plate here would put back exactly the thing the
+    sign-off removed. Every KDesk spec carries `cta:` and is unaffected.
+
+    `override` is --end-card / --no-end-card, and wins either way.
+    """
+    if override is not None:
+        return bool(override)
+    return bool(str((short or {}).get("cta") or "").strip())
+
 def end_html(cta, brand=None):
     """The closing CTA card.
 
@@ -306,6 +321,11 @@ def end_html(cta, brand=None):
     one signs off in its own name — a second venture's Short must not end on KDesk's tagline.
     Without it the card is byte-for-byte the KDesk outro every existing Short already uses.
     """
+    if not str(cta or "").strip():
+        raise KeyError(
+            "short.cta is empty: there is no copy for an end plate. A spec that signs off "
+            "over its payoff frame carries `signoff:` and no `cta:`, and must render with "
+            "--no-end-card (which is also the default for such a spec).")
     head, _, link = cta.partition("→"); head = head.strip() or cta; link = link.strip()
     link_html = f'<div class="link">{html.escape(link)}</div>' if link else ""
     grad = GRAD if brand is None else (f"radial-gradient(1100px 700px at 20% 10%, "
@@ -325,8 +345,9 @@ html,body{{width:{RW}px;height:{RH}px;background:{grad}}}
 </style></head><body><div class="wrap"><div class="brand"><i></i>{name}</div><div class="cta">{html.escape(head)}</div>{link_html}<div class="sub">{sub}</div></div></body></html>"""
 
 def main():
-    import yaml
-    from PIL import Image, ImageChops
+    # yaml and PIL are imported AFTER parse_args so `--help` needs the standard library
+    # alone — tests/test_make_short_signoff.py asks the real CLI which flags it exposes, and
+    # it runs in the bare `uv run --with pytest` environment, not the render venv.
     ap = argparse.ArgumentParser()
     where = ap.add_mutually_exclusive_group(required=True)
     where.add_argument("--slug", help="render marketing/video/<slug>/scenes.yaml from this repo")
@@ -340,7 +361,14 @@ def main():
                            "spec's `captions:` block says")
     caps.add_argument("--no-captions", dest="captions", action="store_false",
                       help="render without captions even if the spec asks for them")
+    ends = ap.add_mutually_exclusive_group()
+    ends.add_argument("--end-card", dest="end_card", action="store_true", default=None,
+                      help="append the closing CTA plate even if the spec has no `cta:`")
+    ends.add_argument("--no-end-card", dest="end_card", action="store_false",
+                      help="never append the closing CTA plate (script v2 signs off in-scene)")
     a = ap.parse_args()
+    import yaml
+    from PIL import Image, ImageChops
     # --slug also builds a path, so it is validated before it is used to open anything.
     slug = safe_slug(a.slug) if a.slug else None
     spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
@@ -444,12 +472,13 @@ def main():
         out = encode_scene(png, wav, dur, a.crf)
         add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
-    hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
-    out = work / "end.mp4"; n = int(1.5 * FPS)
-    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
-         f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
-         "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
-    add_part(out)
+    if end_card_wanted(sh, a.end_card):
+        hp = work / "end.html"; hp.write_text(end_html(sh["cta"], brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
+        out = work / "end.mp4"; n = int(1.5 * FPS)
+        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
+             f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
+             "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
+        add_part(out)
     lst = work / "concat.txt"; lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
     final = paths.final
     # Captions are burned in HERE, in the pass that was already joining the parts, rather than

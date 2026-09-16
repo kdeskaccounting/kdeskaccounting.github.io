@@ -209,6 +209,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # (capped at 2.2 s of silence) so the top of the frame never flickers, and inside a cue word k
 # is lit from its own start until the NEXT word's start. Rules and geometry: scripts/video/
 # captions.py, ported from kdeskgames/word-chain/video/captions.mjs.
+
+# The closing CTA plate is now OPTIONAL. A `short:` block with a `cta:` renders exactly as it
+# always has. A block with `signoff:` and NO `cta:` renders with no terminal plate at all --
+# that is ParkSheet's script v2 (2026-09-16): a <= 6-word sign-off spoken OVER the payoff
+# frame rather than a plate after it, because the plate spends the highest-retention second
+# of the Short on an ask and no platform's ranking documentation rewards one. ParkSheet's
+# spec therefore carries `short: {hook, scenes, signoff}`. --end-card / --no-end-card on
+# make_short.py override the spec either way; --end-card on a spec with no `cta:` raises,
+# because there is no copy to put on the plate. Decision-relevant for this repo: every
+# existing KDesk spec carries `cta:`, so nothing here changes. `signoff:` is narration copy
+# that ParkSheet writes into its own scene text; make_short does not read the key.
 #
 # TIMINGS come from `scene_NN.words.json`, which narrate.py now writes beside every scene WAV:
 # [{"text","start","end"}] in seconds against the FINISHED WAV — after the silence trim and the
