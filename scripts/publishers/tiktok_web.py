@@ -46,6 +46,9 @@ from publishers.base import REPO, Publisher, PublishResult  # noqa: E402
 
 PLATFORM = "tiktok_web"
 SITE = "tiktok"
+# Both TikTok transports queue into one folder: to Stephen a card is "a TikTok post that
+# needs a human", and which publisher wrote it is a detail inside the card.
+QUEUE_SUBDIR = "tiktok"
 # The first N characters of the caption are the idempotency key. Long enough that two Shorts
 # in a week cannot collide, short enough to survive the truncation the list applies.
 KEY_LEN = 40
@@ -365,7 +368,11 @@ class TikTokWebPublisher(Publisher):
                 "content_url": S.CONTENT_URL,
                 "recurring_job": False,       # rule 1: Chrome is never on the recurring path
                 "unverified": list(S.UNVERIFIED),
-                "queue_dir": str(self.repo / "marketing" / "publish-queue" / "manual")}
+                "queue_dir": str(self.queue_dir())}
+
+    def queue_dir(self) -> pathlib.Path:
+        """Where this publisher's failure cards and their mp4s land."""
+        return self.repo / "marketing" / "publish-queue" / QUEUE_SUBDIR
 
     def status(self):
         """The login preflight, once per publisher instance.
@@ -412,7 +419,7 @@ class TikTokWebPublisher(Publisher):
             when = None     # a card about a bad schedule must still be written
         asset = pathlib.Path(asset)
         card = session.fail_card(
-            self.repo, self._page,
+            self.repo, self._page, subdir=QUEUE_SUBDIR,
             kind=self.platform, slug=base.card_slug(meta, asset), run_name=self.platform,
             title=f"Schedule {asset.name} on TikTok Studio by hand",
             detail=detail,

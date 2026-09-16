@@ -232,7 +232,8 @@ def trace_path(directory: pathlib.Path) -> pathlib.Path:
 
 
 def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, detail: str,
-              steps: list[str], run_name: str, limit: int = 400) -> pathlib.Path:
+              steps: list[str], run_name: str, limit: int = 400,
+              subdir: str = "manual") -> pathlib.Path:
     """Turn a driver failure into a screenshot plus a paste-ready queue card.
 
     The single place a failure becomes a card, so redaction happens once rather than being
@@ -243,6 +244,11 @@ def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, det
     Pass the FULL exception text: `detail` is redacted and only then truncated to `limit`.
     Truncating first would cut a token in half and leave a usable prefix in a file that
     git tracks, which is exactly what the callers used to do with str(exc)[:300].
+
+    `subdir` is the queue folder under marketing/publish-queue/. It defaults to "manual" —
+    the login and canary cards, which are Stephen's to action whatever raised them — but a
+    publisher passes its own, so the directory its capabilities() advertises is the directory
+    its cards actually arrive in.
     """
     safe_slug = redact_secrets(slug).replace("/", "-")
     out = trace_dir(repo, f"{run_name}-fail-{safe_slug}")
@@ -260,7 +266,7 @@ def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, det
         title=redact_secrets(title),
         why=safe_detail + where,
         steps=[redact_secrets(s) for s in steps])
-    return write_queue_card(repo, "manual", f"{kind}-{safe_slug}", body)
+    return write_queue_card(repo, subdir, f"{kind}-{safe_slug}", body)
 
 
 @contextlib.contextmanager

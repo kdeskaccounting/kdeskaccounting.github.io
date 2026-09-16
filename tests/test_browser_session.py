@@ -436,3 +436,29 @@ def test_the_environment_sweep_leaves_an_innocent_lookalike_alone(tmp_path, monk
 def test_the_ambient_environment_is_hidden_from_every_test():
     leaked = [n for n in os.environ if session.is_credential_name(n)]
     assert leaked == [], f"credential-named variables visible to tests: {leaked}"
+
+
+# --- fail_card wrote every card into publish-queue/manual/ regardless of the driver, so a
+# publisher that advertises its own queue dir was pointing at a directory nothing arrived in.
+# The subdir is now the caller's, defaulting to "manual" for the login/canary cards.
+
+class _ShotPage:
+    def __init__(self):
+        self.shots = []
+
+    def screenshot(self, path):
+        self.shots.append(path)
+
+
+def test_fail_card_defaults_to_the_manual_queue(tmp_path):
+    card = session.fail_card(tmp_path, _ShotPage(), kind="login", slug="gumroad",
+                             title="t", detail="d", steps=["s"], run_name="r")
+    assert card.parent == tmp_path / "marketing" / "publish-queue" / "manual"
+
+
+def test_fail_card_writes_into_the_subdir_the_caller_names(tmp_path):
+    card = session.fail_card(tmp_path, _ShotPage(), kind="tiktok_web", slug="day-1",
+                             title="t", detail="d", steps=["s"], run_name="r",
+                             subdir="tiktok")
+    assert card.parent == tmp_path / "marketing" / "publish-queue" / "tiktok"
+    assert card.exists()

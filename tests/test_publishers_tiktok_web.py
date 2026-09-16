@@ -510,7 +510,7 @@ def test_a_failure_leaves_one_card_naming_the_file_the_caption_and_the_time(pub,
     result = pub.publish(asset, META, dry_run=False)
 
     assert result.ok is False
-    cards = list((pub.repo / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    cards = list((pub.repo / "marketing" / "publish-queue" / "tiktok").glob("*.md"))
     assert len(cards) == 1, "exactly one card, not one per layer"
     body = cards[0].read_text(encoding="utf-8")
     assert str(asset) in body
@@ -525,7 +525,7 @@ def test_the_queued_card_gets_the_mp4_next_to_it(pub, asset, monkeypatch):
     monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
     monkeypatch.setattr(pub, "drive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     pub.publish(asset, META, dry_run=False)
-    assert (pub.repo / "marketing" / "publish-queue" / "manual" / "day-1.mp4").exists()
+    assert (pub.repo / "marketing" / "publish-queue" / "tiktok" / "day-1.mp4").exists()
 
 
 def test_a_logged_out_profile_queues_before_the_browser_is_driven(tmp_path, asset,
@@ -536,7 +536,7 @@ def test_a_logged_out_profile_queues_before_the_browser_is_driven(tmp_path, asse
         AssertionError("preflight must stop before any page is opened")))
     result = out.publish(asset, META, dry_run=False)
     assert result.ok is False
-    card = next((tmp_path / "marketing" / "publish-queue" / "manual").glob("*.md"))
+    card = next((tmp_path / "marketing" / "publish-queue" / "tiktok").glob("*.md"))
     text = card.read_text(encoding="utf-8")
     assert "not logged in" in text
     assert S.LOGIN_QR_TEXT in text, "the QR login is the step Stephen actually performs"
@@ -890,3 +890,22 @@ def test_an_ellipsis_row_still_has_to_be_long_enough_to_identify_anything():
 def test_the_row_fallback_selector_excludes_navigation():
     assert "nav" in S.POST_ROW_FALLBACK, "a bare 'main li' matches the menu"
     assert S.POST_ROW_FALLBACK != "main li"
+
+
+# IMPORTANT 6. capabilities() advertised publish-queue/tiktok/ while session.fail_card wrote
+# every card into publish-queue/manual/. A queue nobody looks in is the same as no queue.
+
+def test_the_card_lands_in_the_queue_dir_capabilities_advertises(pub, asset, monkeypatch):
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
+    monkeypatch.setattr(pub, "drive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    result = pub.publish(asset, META, dry_run=False)
+    advertised = pathlib.Path(pub.capabilities()["queue_dir"])
+    assert (pub.repo / result.queued_path).parent == advertised
+    assert advertised.name == "tiktok"
+
+
+def test_the_mp4_lands_beside_the_card_in_that_same_dir(pub, asset, monkeypatch):
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
+    monkeypatch.setattr(pub, "drive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
+    pub.publish(asset, META, dry_run=False)
+    assert (pathlib.Path(pub.capabilities()["queue_dir"]) / "day-1.mp4").exists()
