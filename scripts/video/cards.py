@@ -64,8 +64,15 @@ MAX_CURVE_POINTS = 16
 
 #: Cool -> hot, six steps over a 1-10 score. Deliberately not the brand accent: the ramp has
 #: to be readable AS a ramp, and a single-hue tint of one brand colour is not.
+#:
+#: Every step also has to hold DARK TYPE, because a cell prints its day and its score in
+#: `brand['bg']`. The coolest step was #2F6F4F, which put the day label at 2.87:1 — below
+#: WCAG AA even for large text. It is lightened just far enough to clear the floor
+#: tests/test_cards.py asserts (3.5:1), while staying darker than the next step so the cool
+#: end still reads as a step rather than a flat pair. Change a value here and that test tells
+#: you whether the type survived.
 HEATMAP_RAMP: tuple[str, ...] = (
-    "#2F6F4F", "#5A8F3C", "#93B23A", "#D9B740", "#D98A3C", "#C94B35",
+    "#37855F", "#5A8F3C", "#93B23A", "#D9B740", "#D98A3C", "#C94B35",
 )
 
 #: Per-template row caps. The three original templates keep exactly the caps they had.
@@ -399,7 +406,7 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
 .cell{{aspect-ratio:1;min-width:0;border-radius:{0.55 * unit:.0f}px;display:flex;
   flex-direction:column;align-items:center;justify-content:center;gap:{0.15 * unit:.0f}px;
   color:{brand['bg']};font-weight:700}}
-.cell .d{{font-size:{0.26 * cell:.1f}px;opacity:.72}}
+.cell .d{{font-size:{0.26 * cell:.1f}px;opacity:.9}}
 .cell .v{{font-size:{0.42 * cell:.1f}px;font-variant-numeric:tabular-nums}}
 .cell.hot{{outline:{max(2.0, 0.28 * unit):.1f}px solid {brand['accent']};
   outline-offset:{0.22 * unit:.1f}px}}"""

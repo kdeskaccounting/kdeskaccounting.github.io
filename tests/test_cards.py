@@ -668,3 +668,56 @@ def test_the_curve_is_drawn_under_a_uniform_scale():
 
     # A fixed height would put the mismatch straight back.
     assert not re.search(r"\.plot\{[^}]*height:", html), "a fixed plot height re-stretches it"
+
+
+# --- heatmap legibility (WCAG 2.x relative luminance, computed here, not eyeballed) ---------
+
+def _linear(channel: float) -> float:
+    return channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+
+
+def _rgb(hex_colour: str) -> tuple[float, float, float]:
+    raw = hex_colour.lstrip("#")
+    return tuple(int(raw[i:i + 2], 16) / 255 for i in (0, 2, 4))
+
+
+def _luminance(hex_colour: str) -> float:
+    r, g, b = (_linear(c) for c in _rgb(hex_colour))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: str, b: str) -> float:
+    la, lb = _luminance(a), _luminance(b)
+    lo, hi = sorted((la, lb))
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _over(ink: str, plate: str, alpha: float) -> str:
+    """`ink` at `alpha` composited on `plate` — what CSS `opacity` actually paints."""
+    mixed = (alpha * i + (1 - alpha) * p for i, p in zip(_rgb(ink), _rgb(plate)))
+    return "#" + "".join(f"{round(c * 255):02X}" for c in mixed)
+
+
+#: Both cell strings are large bold type (the day >= 35px, the score >= 55px on the 9:16
+#: canvas), so WCAG AA asks 3:1. 3.5 keeps a little headroom for the ramp being tuned by eye.
+MIN_CELL_CONTRAST = 3.5
+
+
+def test_a_heatmap_day_label_is_legible_on_every_step_of_the_ramp():
+    """The day sits at reduced opacity on its own cell — the one place the ramp can hide it."""
+    html = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(None))
+    opacity = float(re.search(r"\.cell \.d\{[^}]*opacity:([\d.]+)", html).group(1))
+    ink = cards.DEFAULT_BRAND["bg"]
+
+    assert opacity >= 0.9, f"the day label is washed out at opacity {opacity}"
+    for step in cards.HEATMAP_RAMP:
+        ratio = _contrast(_over(ink, step, opacity), step)
+        assert ratio >= MIN_CELL_CONTRAST, \
+            f"day label on {step} is {ratio:.2f}:1 at opacity {opacity}"
+
+
+def test_a_heatmap_score_is_legible_on_every_step_of_the_ramp():
+    ink = cards.DEFAULT_BRAND["bg"]
+    for step in cards.HEATMAP_RAMP:
+        ratio = _contrast(ink, step)
+        assert ratio >= MIN_CELL_CONTRAST, f"score on {step} is {ratio:.2f}:1"
