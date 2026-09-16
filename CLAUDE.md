@@ -222,7 +222,7 @@ python3 scripts/publishers/tiktok_web.py --check                   # read-only: 
 python3 scripts/publishers/publish.py --platform tiktok_web --asset <mp4> --meta <json> \
   --schedule 2026-09-21T14:00:00-07:00 --dry-run                   # one post; the offset is REQUIRED
 # The week's batch: day-N.mp4 + day-N.json in DIR onto the week's days at 14:00 Pacific.
-# Idempotent — a day already on the Scheduled tab is skipped. 0 all ok / 1 any queued / 2 hard error.
+# Idempotent — a day already on the posts list is skipped. 0 all ok / 1 any queued / 2 hard error.
 python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR>   # dry run: the DEFAULT
 python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR> --hour 14:00 --go
 ```

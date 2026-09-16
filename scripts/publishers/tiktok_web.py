@@ -17,8 +17,12 @@ asks rather than retrying.
 **Shape** (spec Chrome rule 4, the same read → diff → apply → re-read → assert the Gumroad
 drivers use):
 
-    read the Scheduled tab ─► this caption + this date already there? ─► skip, ok
-                           └► no ─► upload, caption, schedule, submit ─► re-read ─► assert
+    read the Posts list ─► this caption + this date already there? ─► skip, ok
+                        └► no ─► upload, caption, schedule, submit ─► re-read ─► assert
+
+There is no "Scheduled" tab to open first: as of 2026-09-15 TikTok Studio shows posted and
+scheduled videos in one table ("Your posted and scheduled videos will appear here"), so the
+read navigates and reads, and clicks nothing at all. See selectors_tiktok for the evidence.
 
 Idempotency is the whole safety story. Re-running Saturday's batch, or resuming after a
 crash, must never put the same video on the account twice — so the list read comes first and
@@ -75,7 +79,7 @@ class ScheduleFieldError(RuntimeError):
 
 
 class ScrapeError(RuntimeError):
-    """The Scheduled list rendered, but no row's caption could be read.
+    """The posts list rendered, but no row's caption could be read.
 
     Distinct from "nothing is scheduled": rows exist, so the markup drifted. Reading that as
     an empty list is what would schedule a second copy of every post in the batch.
@@ -87,7 +91,7 @@ class SessionLost(RuntimeError):
 
 
 class VerificationFailed(RuntimeError):
-    """The submit went through but the post is not on the Scheduled list.
+    """The submit went through but the post is not on the posts list.
 
     Deliberately its own type: this is the one failure that must NOT be retried. The video
     may be scheduled already, and a second pass would upload it again.
@@ -194,8 +198,34 @@ def caption_key(caption: str) -> str:
     return _norm(caption)[:KEY_LEN]
 
 
-def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
-    """Is this Scheduled-list row the post `key` + `when` describes?
+def caption_candidates(row: dict) -> tuple[str, ...]:
+    """Every string in a row that could be its caption, normalised, best guess first.
+
+    A Studio row is a thumbnail, a caption, a date, a privacy badge and four counters, and
+    which line innerText puts first is TikTok's decision rather than ours — a duration badge
+    or a status word ahead of the caption would make a fixed line index read the wrong
+    string, fail the prefix test, and re-upload a video that is already scheduled. So every
+    line is a candidate and one match is enough.
+
+    That is not a loosening worth worrying about: a candidate still has to carry MIN_KEY_LEN
+    characters of the exact caption prefix, and row_matches still requires the target date in
+    the row. No real row has ever been read — @park.sheet has no posts — which is precisely
+    why this does not bet on a line number it cannot check.
+    """
+    out = [row.get("caption") or ""]
+    out += [str(x) for x in (row.get("lines") or [])]
+    if not any(_norm(x) for x in out):
+        out.append(row.get("text") or "")
+    seen, ordered = set(), []
+    for candidate in (_norm(x) for x in out):
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            ordered.append(candidate)
+    return tuple(ordered)
+
+
+def _candidate_matches(candidate: str, key: str) -> bool:
+    """The prefix rule, applied to one candidate string from a row.
 
     **One direction, with one explicit exception.** The key must be a prefix of the row's
     caption. The old rule — "the shorter of the two is a prefix of the longer" — let a short
@@ -206,6 +236,16 @@ def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
     prefix of the real caption and the comparison has to run the other way — refusing that case
     would turn every truncated row into a re-upload, which is the worse failure. It stays narrow:
     the ellipsis must be there, and what remains must still be MIN_KEY_LEN characters.
+    """
+    truncated = candidate.endswith(ELLIPSIS)
+    caption = candidate.rstrip("….") if truncated else candidate
+    if len(caption) < MIN_KEY_LEN:
+        return False
+    return key.startswith(caption) if truncated else caption.startswith(key)
+
+
+def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
+    """Is this Posts-list row the post `key` + `when` describes?
 
     When a schedule was asked for, the row's text must also carry that date — the same caption
     on two days is two different posts, and a menu item carries no date at all. That search is
@@ -214,15 +254,7 @@ def row_matches(row: dict, key: str, when: dt.datetime | None) -> bool:
     key = _norm(key)
     if len(key) < MIN_KEY_LEN:
         return False
-    raw = _norm(row.get("caption") or row.get("text") or "")
-    truncated = raw.endswith(ELLIPSIS)
-    caption = raw.rstrip("….") if truncated else raw
-    if len(caption) < MIN_KEY_LEN:
-        return False
-    if truncated:
-        if not key.startswith(caption):
-            return False
-    elif not caption.startswith(key):
+    if not any(_candidate_matches(c, key) for c in caption_candidates(row)):
         return False
     if when is None:
         return True
@@ -266,17 +298,27 @@ def scheduled_rows_js() -> str:
     but read empty, which is the difference between "nothing is scheduled" and "the markup
     moved". Filtering first made that guard unreachable.
 
+    Each row also carries `lines`, its innerText split and trimmed. The caption is not
+    reliably line 0 of a Studio row and no real row has ever been read, so `row_matches`
+    tries every line rather than betting on an index (see caption_candidates).
+
     Built by concatenating repr()d constants rather than an f-string — the 2026-09-14 Gumroad
     outage was an f-string segment spliced onto a plain one, where `}}` stayed two literal
     braces. The two row selectors are tried in order and the first that matches anything
-    wins; joining them with a comma would silently mix a table with a card grid.
+    wins; joining them with a comma would silently mix a table with a card grid. Each is
+    resolved inside a try: POST_ROW carries a `:not(:has(...))` to drop the column header,
+    and one unsupported selector must fall through to the fallback rather than throw the
+    whole read away — an exception here reads to the caller as "the list would not load".
     """
     sels = "[" + repr(S.POST_ROW) + "," + repr(S.POST_ROW_FALLBACK) + "]"
     return ("() => { let els = []; for (const s of " + sels + ") {"
-            " els = [...document.querySelectorAll(s)]; if (els.length) break; }"
+            " try { els = [...document.querySelectorAll(s)]; } catch (e) { els = []; }"
+            " if (els.length) break; }"
             " const rows = els.map(r => { const t = (r.innerText || '');"
+            " const lines = t.split('\\n').map(x => x.trim()).filter(Boolean)"
+            ".slice(0, " + repr(S.POST_ROW_MAX_LINES) + ");"
             " const a = r.querySelector('a[href]');"
-            " return {caption: (t.split('\\n').map(x => x.trim()).filter(Boolean)[0] || ''),"
+            " return {caption: (lines[0] || ''), lines: lines,"
             " text: t.replace(/\\s+/g, ' ').trim().slice(0, 400),"
             " url: (a ? a.href : '')}; }).filter(r => r.text);"
             " return {count: els.length, rows: rows}; }")
@@ -291,11 +333,16 @@ def scheduled_ready_js() -> str:
     skeleton row both match the row selector while the real rows are still loading, so
     `if (querySelectorAll(s).length) return true` declared the page settled a beat before it
     was. When neither condition appears the wait times out, which queues a card.
+
+    On an account with no posts the empty-state branch is the one that fires: POST_ROW
+    excludes the column header on purpose, so an empty list matches zero rows and the copy
+    "no posts yet" is the only thing that says the table finished rendering.
     """
     sels = "[" + repr(S.POST_ROW) + "," + repr(S.POST_ROW_FALLBACK) + "]"
-    return ("() => { for (const s of " + sels + ")"
-            " for (const r of document.querySelectorAll(s))"
-            " if (((r.innerText || '').trim()).length) return true;"
+    return ("() => { for (const s of " + sels + ") {"
+            " let els = []; try { els = [...document.querySelectorAll(s)]; } catch (e) {}"
+            " for (const r of els)"
+            " if (((r.innerText || '').trim()).length) return true; }"
             " const t = ((document.body && document.body.innerText) || '').toLowerCase();"
             " return t.includes(" + repr(S.SCHEDULED_EMPTY_TEXT) + "); }")
 
@@ -324,38 +371,84 @@ def manual_steps(asset: pathlib.Path, meta: dict, when: dt.datetime | None) -> l
         f"'{S.LOGIN_QR_TEXT}' and scan it with the phone app (the profile keeps the "
         f"session afterwards)",
         f"Upload this file: {pathlib.Path(asset).resolve()}",
+        f"Wait for the form to appear (the '{S.UPLOAD_READY_TEXT}' box) — it does not exist "
+        f"until TikTok has taken the file",
         f"Paste this caption: {caption}",
         f"Then {timing}",
-        f"Confirm it appears under the '{S.SCHEDULED_TAB_TEXT}' tab at {S.CONTENT_URL}",
-        "DO NOT re-run the scheduler for this day until you have looked at that tab — the "
+        f"Confirm it appears in the posts list at {S.CONTENT_URL} — posted and scheduled "
+        f"videos share one table, there is no separate tab to open",
+        "DO NOT re-run the scheduler for this day until you have looked at that list — the "
         "post may have gone through after the failure, and a second run would upload it twice",
     ]
 
 
 # ------------------------------------------------------------------------- the --check probes
 
-def check_probes() -> tuple[tuple[str, str, str, str], ...]:
-    """(page url, label, kind, value) for every anchor `--check` resolves, read-only.
+# What a probe row means. A canary that reports MISSING for something that cannot exist yet
+# is a canary Stephen learns to ignore, so the two cases are named apart:
+#   LIVE      — must be on the page right now; absent means the anchor drifted, exit 1.
+#   POST_FILE — only exists once TikTok has taken a video, and selecting a file starts a real
+#               upload. Reported as "post-file only", never as a failure.
+#   ROWS      — checkable only once the account HAS a post. While the posts list shows its
+#               empty state there is no row to match, and saying MISSING would be a lie; the
+#               moment ParkSheet has posted anything this probe starts being a real check,
+#               which matters because POST_ROW is the selector idempotency rests on.
+#   ABSENT    — asserted NOT to be there (the Scheduled tab that no longer exists). Finding
+#               one means TikTok changed back and the driver needs its tab click again.
+LIVE, POST_FILE, ROWS, ABSENT = "live", "post-file", "rows", "absent"
+
+
+def check_probes() -> tuple[tuple[str, str, str, str, str], ...]:
+    """(page url, label, kind, value, stage) for every anchor `--check` resolves, read-only.
 
     A table rather than code so the canary and the driver cannot disagree about what "the
     anchors resolve" means, and so a new anchor is one row.
     """
     return (
-        (S.UPLOAD_URL, "file input", "css", S.FILE_INPUT),
-        (S.UPLOAD_URL, "caption editor", "css", S.CAPTION_EDITOR),
-        (S.UPLOAD_URL, "schedule toggle", "text", S.SCHEDULE_TOGGLE_TEXT),
-        (S.UPLOAD_URL, "post button", "role", S.POST_BUTTON_TEXT),
-        (S.CONTENT_URL, "scheduled tab", "text", S.SCHEDULED_TAB_TEXT),
-        (S.CONTENT_URL, "post rows", "css", S.POST_ROW),
+        (S.UPLOAD_URL, "file input", "css", S.FILE_INPUT, LIVE),
+        (S.UPLOAD_URL, "select video", "css", S.SELECT_VIDEO_BUTTON, LIVE),
+        (S.UPLOAD_URL, "caption editor", "css", S.CAPTION_EDITOR, POST_FILE),
+        (S.UPLOAD_URL, "schedule toggle", "css", S.SCHEDULE_TOGGLE, POST_FILE),
+        (S.UPLOAD_URL, "schedule date", "css", S.SCHEDULE_DATE_INPUT, POST_FILE),
+        (S.UPLOAD_URL, "schedule time", "css", S.SCHEDULE_TIME_INPUT, POST_FILE),
+        (S.UPLOAD_URL, "post button", "role", S.POST_BUTTON_TEXT, POST_FILE),
+        (S.CONTENT_URL, "posts table", "css", S.POSTS_TABLE, LIVE),
+        (S.CONTENT_URL, "empty state", "body", S.SCHEDULED_EMPTY_TEXT, LIVE),
+        (S.CONTENT_URL, "post rows", "css", S.POST_ROW, ROWS),
+        (S.CONTENT_URL, "scheduled tab", "role-tab", "", ABSENT),
     )
 
 
+# The anchor each page is waited on before anything is counted. Without it the probe races
+# the render: a 2026-09-15 run that waited only on body text reported FILE_INPUT missing, and
+# the same page had it once the uploader stage had appeared. A canary that reports a race as
+# drift is worse than no canary.
+PAGE_READY = {S.UPLOAD_URL: S.UPLOAD_PAGE_READY, S.CONTENT_URL: S.CONTENT_PAGE_READY}
+
+
 def _resolve(page, kind: str, value: str):
+    """A locator for one probe row. Resolving only — nothing here clicks or types."""
     if kind == "css":
         return page.locator(value)
     if kind == "role":
-        return page.get_by_role("button", name=value)
+        # exact=True is load-bearing. Playwright matches an accessible name as a
+        # case-insensitive SUBSTRING by default, and the studio sidebar has a "Posts" entry
+        # that sorts before the form — which is why --check used to report the Post button
+        # present on a page that has no Post button at all.
+        return page.get_by_role("button", name=value, exact=True)
+    if kind == "role-tab":
+        return page.get_by_role("tab")
     return page.get_by_text(value, exact=True)
+
+
+def _probe_count(page, kind: str, value: str) -> int:
+    """How many times one probe row resolves. Read-only by construction."""
+    if kind == "body":
+        # The empty-state copy is stored lowercased because that is how scheduled_ready_js
+        # tests it, and get_by_text(exact=True) is case-SENSITIVE — probing it as a locator
+        # would report the live "No posts yet" as missing. Same test as the driver makes.
+        return ((page.inner_text("body") or "").lower()).count(value)
+    return _resolve(page, kind, value).count()
 
 
 # --------------------------------------------------------------------------- the publisher
@@ -511,7 +604,7 @@ class TikTokWebPublisher(Publisher):
                 queued_path=None,
                 detail=(f"already scheduled — a post matching {key!r}"
                         + (f" on {format_date(when)}" if when else "")
-                        + " is on the Scheduled tab; nothing uploaded"))
+                        + " is on the posts list; nothing uploaded"))
 
         self.upload(page, asset, caption, when)
 
@@ -521,7 +614,7 @@ class TikTokWebPublisher(Publisher):
                 f"submitted {pathlib.Path(asset).name} but no row matching {key!r}"
                 + (f" on {format_date(when)}" if when else "")
                 + f" appeared on {S.CONTENT_URL}. NOT retrying: it may have gone through. "
-                  f"Check the Scheduled tab by hand before running this day again.")
+                  f"Check the posts list by hand before running this day again.")
         return PublishResult(
             platform=self.platform, ok=True, url=hit.get("url") or S.CONTENT_URL,
             queued_path=None,
@@ -538,20 +631,24 @@ class TikTokWebPublisher(Publisher):
             raise SessionLost(f"{status.detail} (requested {url}, landed on {status.final_url})")
 
     def read_scheduled(self, page) -> list:
-        """The live Scheduled list. Read-only, and the only thing idempotency rests on.
+        """The live posts list. Read-only, and the only thing idempotency rests on.
 
-        The tab click is load-bearing, not cosmetic: the content page opens on published
-        posts, so reading whatever tab happens to be showing means a scheduled post is
-        invisible to this check and every re-run uploads it again. Clicking an already-open
-        tab is harmless; not clicking it is a duplicate.
+        **Nothing is clicked here, on purpose.** An earlier version opened a "Scheduled" tab
+        first, because the content page was believed to default to published posts. Live on
+        2026-09-15 there is no such tab — `[role=tab]` matches 0 and the page's own empty
+        state reads "Your posted and scheduled videos will appear here", one table for both.
+        So the click had nothing to hit: it timed out on every read and queued a card instead
+        of scheduling anything. `--check` now asserts the tab stays absent, and
+        selectors_tiktok.CONTENT_HAS_SCHEDULED_TAB is the flag to flip if it returns.
 
-        The settle-wait comes AFTER the click, because the click replaces the rows — waiting
-        first would settle on the previous tab's list and then read the new one mid-swap.
+        Two waits, in this order: the table itself (it renders whether or not the account has
+        posts, so it is the honest "the page arrived" signal), then the list settling into
+        either a row with text or the empty-state copy. The second without the first would
+        read a blank page as an empty list, which schedules a duplicate of the whole batch.
         """
         self.goto(page, S.CONTENT_URL)
-        tab = page.get_by_text(S.SCHEDULED_TAB_TEXT, exact=True).first
-        tab.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
-        tab.click()
+        page.locator(S.POSTS_TABLE).first.wait_for(state="attached",
+                                                   timeout=ANCHOR_TIMEOUT_MS)
         page.wait_for_function(scheduled_ready_js(), timeout=LIST_TIMEOUT_MS)
         return check_rows_sane(page.evaluate(scheduled_rows_js()))
 
@@ -559,11 +656,21 @@ class TikTokWebPublisher(Publisher):
         if when is not None:
             check_within_limit(when)
         self.goto(page, S.UPLOAD_URL)
+        # The file input is display:none (TikTok drives it from the "Select video" button),
+        # so it is waited on ATTACHED, never visible. set_input_files does not need it shown.
+        page.locator(S.FILE_INPUT).first.wait_for(state="attached",
+                                                  timeout=ANCHOR_TIMEOUT_MS)
         page.set_input_files(S.FILE_INPUT, str(pathlib.Path(asset).resolve()))
-        # The form only exists once TikTok has taken the file; this is the condition wait that
-        # replaces "sleep until the upload finishes".
-        page.get_by_text(S.UPLOAD_READY_TEXT, exact=False).first.wait_for(
-            state="visible", timeout=UPLOAD_TIMEOUT_MS)
+        # None of the form exists before this line. Verified read-only on 2026-09-15: the bare
+        # upload page carries one hidden file input and two data-e2e nodes, and zero rich-text
+        # editors, switches or text inputs. So the wait for the caption box belongs AFTER the
+        # file is handed over, and it takes the upload-length timeout rather than the anchor
+        # one — it covers TikTok ingesting and processing the mp4, not just a render.
+        #
+        # The wait is on the editor the driver actually types into, not on a label beside it:
+        # a reworded "Caption" heading would otherwise block a run whose form was fine.
+        page.locator(S.CAPTION_EDITOR).first.wait_for(state="visible",
+                                                      timeout=UPLOAD_TIMEOUT_MS)
         self.fill_caption(page, caption)
         if when is not None:
             self.enable_schedule(page)
@@ -580,11 +687,25 @@ class TikTokWebPublisher(Publisher):
         page.keyboard.type(caption)
 
     def enable_schedule(self, page) -> None:
-        """Turn the scheduler on only if it is off — read the state, then apply the diff."""
-        if page.locator(S.SCHEDULE_DATE_INPUT).count() == 0:
-            page.get_by_text(S.SCHEDULE_TOGGLE_TEXT, exact=True).first.click()
-            page.locator(S.SCHEDULE_DATE_INPUT).first.wait_for(
-                state="visible", timeout=ANCHOR_TIMEOUT_MS)
+        """Turn the scheduler on only if it is off — read the state, then apply the diff.
+
+        **The text path is guarded, and that guard is the point.** SCHEDULE_TOGGLE_TEXT and
+        SCHEDULE_BUTTON_TEXT are the same word, "Schedule": if TikTok ever renders the
+        scheduler's label inside a <button>, or sorts the submit button ahead of it, then
+        "click the text Schedule" is "click the submit button". That would post the video
+        immediately — and because this runs BEFORE `self._submitted` is set, the resulting
+        failure is retried and the video goes up a second time. So the switch role is tried
+        first, and the text match can only ever land on something that is not inside a button.
+        """
+        if page.locator(S.SCHEDULE_DATE_INPUT).count():
+            return
+        switch = page.locator(S.SCHEDULE_TOGGLE)
+        target = (switch.first if switch.count()
+                  else page.get_by_text(S.SCHEDULE_TOGGLE_TEXT, exact=True)
+                           .locator(S.NOT_INSIDE_A_BUTTON).first)
+        target.click()
+        page.locator(S.SCHEDULE_DATE_INPUT).first.wait_for(
+            state="visible", timeout=ANCHOR_TIMEOUT_MS)
 
     def set_schedule(self, page, when: dt.datetime) -> None:
         self.set_field(page, S.SCHEDULE_DATE_INPUT, format_date(when), str(when.day), "date")
@@ -615,10 +736,14 @@ class TikTokWebPublisher(Publisher):
         Two independent confirmations on purpose: POST_RESPONSE is UNVERIFIED, so if the
         fragment is wrong this times out — and BOTH waits raise after the click, which is why
         `self._submitted` is set first. From that line on, every failure is a card telling
-        Stephen to look at the Scheduled tab; none of them is a retry.
+        Stephen to look at the posts list; none of them is a retry.
         """
         label = S.SCHEDULE_BUTTON_TEXT if when is not None else S.POST_BUTTON_TEXT
-        button = page.get_by_role("button", name=label).first
+        # exact=True, and it is not cosmetic. Playwright matches an accessible name as a
+        # case-insensitive SUBSTRING by default, so name="Post" also matches the studio
+        # sidebar's "Posts" nav entry — which sorts FIRST in the DOM, so `.first` would have
+        # clicked the navigation instead of submitting, every single time a post-now run ran.
+        button = page.get_by_role("button", name=label, exact=True).first
         button.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
         with page.expect_response(
                 lambda r: S.POST_RESPONSE in r.url and r.request.method == "POST",
@@ -633,9 +758,19 @@ class TikTokWebPublisher(Publisher):
 def check(page, *, out=None) -> tuple[int, list[str]]:
     """Read-only: is the profile logged in, and does every anchor still resolve?
 
-    Navigates and counts. It never clicks, types or uploads — the Scheduled tab is *resolved*
-    rather than opened, because a canary that changes the view is a canary nobody trusts to
-    run while something else is in flight.
+    Navigates, waits for each page's own ready anchor, and counts. It never clicks, types,
+    selects a file or uploads: a canary that changes the view — or worse, starts an upload to
+    see the post-file form — is a canary nobody trusts to run while something else is in
+    flight. That is the whole reason the POST_FILE rows are reported rather than resolved.
+
+    Three marks, and only one of them is a failure:
+      OK              the anchor is on the page now.
+      MISSING         it should be and is not — the selector drifted. Exit 1.
+      post-file only  it cannot exist until a video is handed to TikTok, so nothing is
+                      claimed either way. Never exit 1: this is the honest answer, and
+                      printing MISSING for nine anchors every week trains Stephen to skim.
+    An ABSENT row inverts the test: finding one is the failure, because it means TikTok
+    brought back a UI the driver has been rewritten to do without.
     """
     lines: list[str] = []
     page.goto(S.STUDIO_URL, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
@@ -646,7 +781,7 @@ def check(page, *, out=None) -> tuple[int, list[str]]:
         return 1, lines
     rc = 0
     current = None
-    for url, label, kind, value in check_probes():
+    for url, label, kind, value, stage in check_probes():
         if url != current:
             page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
             page.wait_for_load_state("domcontentloaded")
@@ -655,12 +790,46 @@ def check(page, *, out=None) -> tuple[int, list[str]]:
             if not probe_status.ok:
                 lines.append(f"{'navigation':<16} FAIL {probe_status.detail}")
                 return 1, lines
+            # Settle on the page's own anchor before counting anything, or the probe races
+            # the render and reports a slow page as a drifted selector.
+            ready = PAGE_READY.get(url)
+            if ready:
+                try:
+                    page.locator(ready).first.wait_for(state="attached",
+                                                       timeout=ANCHOR_TIMEOUT_MS)
+                except Exception as exc:  # noqa: BLE001 — report it, do not traceback
+                    lines.append(f"{'page ready':<16} FAIL {ready!r} never appeared on "
+                                 f"{url} ({type(exc).__name__})")
+                    return 1, lines
+        if stage == POST_FILE:
+            lines.append(f"{label:<16} n/a  post-file only — {kind}={value!r} cannot be "
+                         f"resolved without starting an upload")
+            continue
         try:
-            found = _resolve(page, kind, value).count()
+            found = _probe_count(page, kind, value)
         except Exception as exc:  # noqa: BLE001 — a canary reports, it does not traceback
             found, exc_note = 0, f" ({type(exc).__name__})"
         else:
             exc_note = ""
+        if stage == ABSENT:
+            mark = "OK  " if not found else "CHANGED"
+            rc |= 1 if found else 0
+            lines.append(f"{label:<16} {mark} {kind} matched {found} (expected none — the "
+                         f"posts list has no tabs){exc_note}")
+            continue
+        if stage == ROWS and not found:
+            # No rows and the empty state showing is an empty account, not a drifted
+            # selector. No rows and no empty state is the ambiguous read the driver refuses
+            # to treat as "nothing is scheduled", so the canary refuses it too.
+            empty = _probe_count(page, "body", S.SCHEDULED_EMPTY_TEXT)
+            if empty:
+                lines.append(f"{label:<16} n/a  account has no posts yet — "
+                             f"{kind}={value!r} has no row to match")
+                continue
+            rc |= 1
+            lines.append(f"{label:<16} MISSING {kind}={value!r} matched 0 and the list is "
+                         f"not showing its empty state either{exc_note}")
+            continue
         mark = "OK  " if found else "MISSING"
         rc |= 0 if found else 1
         lines.append(f"{label:<16} {mark} {kind}={value!r} matched {found}{exc_note}")
