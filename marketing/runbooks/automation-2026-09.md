@@ -15,10 +15,10 @@ Phase 1 landed on 2026-09-15, including the two GitHub Actions schedules below.
 
 | | |
 |---|---|
-| **Phase** | **1 built, not yet live.** Phase 0 (documentation + ledger) and every Phase 1 script are done and tested. What remains is Stephen's: the five repository secrets below, an Upload-Post account, and the first Saturday render batch. |
-| **Open vetoes** | **#69** (marketing autonomy → T1 auto-publish) and **#70** (the `parksheet` venture), both close **2026-09-16 12:00 PT**. |
-| **Autonomy in force until 2026-09-16** | The OLD rule: **queues, not auto-posters.** Nothing publishes without Stephen. Do not auto-publish on the strength of #69 before the window closes. |
-| **Autonomy after 2026-09-16 (if unvetoed)** | T1 auto-publish for **YouTube Shorts · TikTok · Instagram Reels · blog posts · email nurture**, each behind the fact-check gate. **LinkedIn and Reddit stay human** — queue cards only, forever, not just for now. |
+| **Phase** | **1 built; the veto gate is now OPEN, the first live run is still Stephen's call.** Phase 0 (documentation + ledger) and every Phase 1 script are done and tested. What remains is Stephen's: **one finished video and the ParkSheet sheet to review before anything publishes**, the five repository secrets below, an Upload-Post account, and the first Saturday render batch. |
+| **Open vetoes** | **None.** **#69** (marketing autonomy → T1 auto-publish) and **#70** (the `parksheet` venture) were **approved early on 2026-09-15 by ledger #85**, which carries `approves: [69, 70]` — the field the gate reads. Their 2026-09-16 12:00 PT windows no longer matter. |
+| **Autonomy in force** | **The unlock is a capability, not a go.** `publish.py`, `schedule_week.py` and `send_reengage.py` no longer exit 2 — but Stephen asked to see **one finished video and the ParkSheet sheet** before the first live publish, so the first run waits on him, not on the clock. |
+| **Autonomy now in force (#69, approved)** | T1 auto-publish for **YouTube Shorts · TikTok · Instagram Reels · blog posts · email nurture**, each behind the fact-check gate. **LinkedIn and Reddit stay human** — queue cards only, forever, not just for now. |
 | **YouTube** | 🔴 **`scripts/video/youtube_publish.py` is DO-NOT-USE for uploads** (ledger #71). 20 locked videos await re-upload. |
 | **Blocked on Stephen** | Upload-Post account + KDesk channel connected · venture Google/Gumroad/TikTok/IG accounts · Cloudflare API token · YouTube audit form. See CLAUDE.md "Waiting on Stephen". |
 | **Plan of record (unchanged)** | `marketing/plan-2026-09-10k-portfolio.md` — $10k/mo, five streams, portfolio review 2026-12-01. This runbook does not replace it. |
@@ -70,6 +70,10 @@ Run from the repo root — shell cwd drifts, and several scripts resolve paths r
 ```bash
 # ── 0. Orientation ────────────────────────────────────────────────────────────
 python3 scripts/ledger.py --tail 5         # what happened last, and what vetoes are open
+# The T2 gate: a window is open once it has elapsed unvetoed, OR once a LATER entry's
+# `approves` names its id (#85 approves 69 and 70). A later `vetoes` closes it again, even
+# after the window elapsed; the last answering entry in the file wins. Both are written with
+# ledger.append(..., approves=[...]/vetoes=[...]) - prose in an entry does not move the gate.
 gh run list --limit 5                      # did the scheduled jobs pass
 
 # ── 1. Weekly plan: 7 scene specs + 1 blog post + 1 reference page ────────────
@@ -85,7 +89,7 @@ scripts/video/.venv-tts/bin/python scripts/video/build_video.py \
   --spec marketing/video/card-demo/scenes.yaml --frames-only      # `card` scene kind, no TTS
 scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --tts-check   # ElevenLabs voice_id exists? (0/2)
 
-# ── 4. Publish (T1 after 2026-09-16; ALWAYS --dry-run first) ──────────────────
+# ── 4. Publish (T1 since #85 approved #69; ALWAYS --dry-run first) ────────────
 python3 scripts/publishers/publish.py --capabilities               # which platforms are actually connected
 python3 scripts/publishers/publish.py --platform youtube,tiktok,instagram \
   --asset <mp4> --meta <json> --dry-run                            # one entry point, exit 0 ok / 1 queued / 2 error
@@ -105,7 +109,7 @@ python3 scripts/content/run_daily.py --dry-run                     # (Phase 2) t
 
 # ── 7. Sales + digest ─────────────────────────────────────────────────────────
 python3 scripts/sales/crm_sync.py --dry-run                        # private Google Sheet CRM (live needs gws)
-python3 scripts/sales/send_reengage.py --dry-run                   # the 14 re-engagement emails, veto-gated
+python3 scripts/sales/send_reengage.py --dry-run                   # the 14 re-engagement emails (gate open since #85)
 python3 scripts/content/weekly_digest.py --week 2026-W39 --dry-run # (Phase 2)
 python3 scripts/digest.py --dry-run                                # compose only
 python3 scripts/digest.py --send --vault                           # Mac only: Gmail 07:30 + vault daily note

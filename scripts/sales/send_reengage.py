@@ -20,9 +20,10 @@ died at recipient 7 resumes rather than emailing the first six a second time (--
 overrides, deliberately).
 
 Refuses to send unless the named ledger entry exists, is a T2 act-with-veto-window entry,
-was not vetoed, and its veto_window_close has passed. Entry 69 (the T1-loosening decision)
-closes 2026-09-16T12:00:00-0700, so a live run before then refuses and sends nothing. Confirm
-which entry carries the window first:  python3 scripts/ledger.py --tail 5
+was not vetoed, and is authorised: either its veto_window_close has passed, or a LATER ledger
+entry's `approves` names it. Entry 69 (the T1-loosening decision) was approved early by entry
+85 on 2026-09-15, so the gate is open; a later entry whose `vetoes` names 69 closes it again.
+Confirm what the gate says first:  python3 scripts/ledger.py --tail 5
 
 PRIVACY (this repo is public — see CLAUDE.md "Privacy"): the address exists in exactly one
 place, the MIME envelope handed to gws. Everything else — stdout, the queue cards under

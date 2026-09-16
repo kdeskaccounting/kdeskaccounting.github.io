@@ -16,8 +16,9 @@ Exit code 0 only when every requested platform published. A queued card is a non
 on purpose: the daily job must surface it in the digest.
 
 A live run is gated on ledger entry 69, the T2 decision that authorises auto-publishing:
-until its veto window has closed, and unless its status is not "vetoed", any non-dry-run
-publish refuses with exit 2 and publishes nothing. There is no override flag. --dry-run is
+unless that decision is authorised — its veto window has closed unvetoed, or a later entry's
+`approves` names it (entry 85 did, on 2026-09-15) — any non-dry-run publish refuses with exit
+2 and publishes nothing. There is no override flag; the unlock is a ledger entry. --dry-run is
 never gated, because it writes nothing.
 
 Everything printed or written to the ledger goes through session.redact_secrets first;
@@ -51,10 +52,11 @@ PUBLISHERS: dict[str, type] = {"youtube": YouTubePublisher, "tiktok": TikTokPubl
 # post has no public URL yet), and embedding that would put a 404 behind a reader's click.
 VIDEO_PLATFORMS = ("youtube", "tiktok", "instagram")
 # The T2 decision that authorises auto-publishing at all: 2026-09-14, "marketing autonomy
-# loosened to T1 auto-publish for five surfaces", veto window closing 2026-09-16 12:00 PT.
-# Until that window closes unvetoed the standing rule is "queues, not auto-posters", so a
-# live publish refuses. The ledger rows this script writes cite the decision by number; they
-# must not be written while the decision is still pending.
+# loosened to T1 auto-publish for five surfaces", veto window 2026-09-16 12:00 PT — approved
+# early by entry 85 on 2026-09-15, which is what opens this gate today. Until a decision is
+# answered the standing rule is "queues, not auto-posters", so a live publish refuses. The
+# ledger rows this script writes cite the decision by number; they must not be written while
+# it is still pending.
 VETO_ENTRY = 69
 
 

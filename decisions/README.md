@@ -10,6 +10,21 @@ Append-only ledger of autonomous actions taken by Claude Code on the marketing/d
 {"id": 1, "ts": "2026-05-10T22:38:06-0700", "tier": 1, "status": "executed", "action": "wired GA4 Key Events for outbound Gumroad clicks", "reasoning": "GA4 baseline showed 0 key events; cannot measure conversions without instrumentation", "files": ["layouts/partials/extend_head.html"], "veto_window_close": null, "stephen_reviewed": false}
 ```
 
+`status` is one of `executed` · `in_progress` · `planned` · `approved` · `pending_veto` · `vetoed`. Write every row with `scripts/ledger.py`'s `append()` — it allocates the id under a lock, stamps the time and enforces the schema.
+
+### Answering an earlier decision: `approves` / `vetoes`
+
+Two optional fields, **written only when present**, let a LATER entry answer an earlier T2 veto window by id — the only way to do it in an append-only file:
+
+```json
+{"id": 85, "ts": "2026-09-15T20:34:34-0700", "tier": 0, "status": "executed", "action": "Stephen re-confirmed his approval of #69 … and #70 …", "reasoning": "…", "files": ["scripts/ledger.py"], "veto_window_close": null, "stephen_reviewed": false, "approves": [69, 70]}
+```
+
+- **`approves: [69, 70]`** — Stephen said yes. The gate (`veto_gate` / `t2_window_open` in `scripts/ledger.py`, used by `publish.py`, `schedule_week.py` and `send_reengage.py`) then treats those ids as open **without waiting for `veto_window_close` to elapse**. Only accepted on a row whose status is `approved` or `executed`: it records an approval that happened, not a plan to ask for one.
+- **`vetoes: [69]`** — he said no. Closes those ids again **even if the window has already elapsed**.
+- **The last answering entry in the file wins**, because in an append-only log "later in the file" is the only record of "said more recently". An approval can be taken back by a veto written after it, and that veto reversed by a fresh approval after that.
+- Write them through `ledger.append(..., approves=[...], vetoes=[...])`, never by hand. **Prose does not move the gate:** entry #81 recorded the same approval in words and nothing unlocked, which is why #85 exists.
+
 ## Tiers
 
 - **T0** — Auto-execute, log only. Site copy tweaks, SEO meta edits, queue refills, A/B title rotations.
