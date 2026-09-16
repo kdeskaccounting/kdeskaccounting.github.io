@@ -438,7 +438,7 @@ def test_the_ambient_environment_is_hidden_from_every_test():
     assert leaked == [], f"credential-named variables visible to tests: {leaked}"
 
 
-# ============================ ElevenLabs narration key =====================
+# ============================ ElevenLabs narration key ============================
 
 
 # --- The ElevenLabs key lives in a token FILE beside MailerLite's and Bing's
@@ -464,7 +464,6 @@ def test_known_secrets_includes_the_elevenlabs_key_file(tmp_path, monkeypatch):
 
 def test_the_elevenlabs_environment_variable_is_swept_as_a_credential():
     assert session.is_credential_name("ELEVENLABS_API_KEY")
-=======
 # --- fail_card wrote every card into publish-queue/manual/ regardless of the driver, so a
 # publisher that advertises its own queue dir was pointing at a directory nothing arrived in.
 # The subdir is now the caller's, defaulting to "manual" for the login/canary cards.
