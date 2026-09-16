@@ -26,6 +26,17 @@ Output is identical for both providers: 24 kHz mono WAVs plus durations.json, so
 and make_short.py never learn which provider spoke. ElevenLabs returns MP3, which ffmpeg
 converts; both paths then get the same silence trim and 0.3 s lead-in.
 
+Every synthesized scene also writes `scene_NN.words.json` beside its WAV — the word timings
+burned-in captions need (scripts/video/captions.py), in seconds against the FINISHED WAV, i.e.
+after that trim and lead-in, because that is the audio make_short concatenates. ElevenLabs
+supplies them from the /with-timestamps endpoint, which returns the alignment alongside the
+audio it describes, so there is no second billed request and no transcript that can disagree
+with the voice. Kokoro supplies them from its own MTokens, which carry start_ts/end_ts only
+when the English G2P ran — a non-English voice writes `null` and that scene renders
+uncaptioned, with one line saying so. The words file is part of the cache: a scene cached
+before captions existed re-synthesizes once (free on Kokoro, one request on ElevenLabs) so a
+cache hit always yields words.
+
 Caches by a hash of (provider, voice, model, voice_settings, text) for ElevenLabs — speed rides
 inside voice_settings there, so the key only moves when the request body would — and of
 (voice, speed, text) for Kokoro. Switching provider re-synthesizes; unchanged text is never
@@ -41,6 +52,7 @@ library alone and tests/test_narrate.py can drive it.
 from __future__ import annotations
 
 import argparse
+import base64
 import dataclasses
 import hashlib
 import json
@@ -55,9 +67,14 @@ REPO = HERE.parents[1]
 # spaCy (inside Kokoro's G2P) auto-installs its English model via `uv pip`; it needs the venv.
 os.environ.setdefault("VIRTUAL_ENV", str(HERE / ".venv-tts"))
 sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(HERE))
 from browser import session  # noqa: E402  (scripts/browser/session.py — the one scrubber)
+import captions  # noqa: E402  (scripts/video/captions.py — stdlib only, words.json lives there)
 
 SR = 24000
+#: Silence prepended to every scene by finish(), both providers. Word timings are written
+#: against the finished WAV, so they carry it.
+LEAD_IN_S = 0.3
 KOKORO = "kokoro"
 ELEVENLABS = "elevenlabs"
 PROVIDERS = (KOKORO, ELEVENLABS)
@@ -70,6 +87,10 @@ DEFAULT_VOICE_SETTINGS = {"stability": 0.5, "similarity_boost": 0.75}
 OPTIONAL_VOICE_SETTINGS = ("style", "use_speaker_boost", "speed")
 
 API_BASE = "https://api.elevenlabs.io/v1"
+#: Synthesis goes through /with-timestamps, so the character alignment burned-in captions need
+#: arrives with the audio it describes — one billed request, and a transcript that cannot
+#: disagree with the voice. The response is JSON carrying base64 MP3, not raw audio.
+TIMESTAMPS_PATH = "with-timestamps"
 OUTPUT_FORMAT = "mp3_44100_128"
 KEY_ENV = "ELEVENLABS_API_KEY"
 KEY_FILE = pathlib.Path.home() / "kdesk-analytics" / "elevenlabs-api-key.txt"
@@ -261,10 +282,14 @@ def request_body(cfg: TTSConfig, text: str) -> dict:
 
 def _post_tts(voice_id: str, key: str, body: dict,
               *, output_format: str = OUTPUT_FORMAT) -> tuple[int, bytes]:
-    """The one synthesis network seam. Returns (status, body bytes). Tests monkeypatch this."""
+    """The one synthesis network seam. Returns (status, body bytes). Tests monkeypatch this.
+
+    The body bytes are the /with-timestamps JSON envelope — `audio_base64` plus `alignment` —
+    not raw MP3. parse_timestamped_response() takes it apart.
+    """
     import requests  # lazy: absent outside the TTS venv
-    resp = requests.post(f"{API_BASE}/text-to-speech/{voice_id}",
-                         headers={"xi-api-key": key, "accept": "audio/mpeg",
+    resp = requests.post(f"{API_BASE}/text-to-speech/{voice_id}/{TIMESTAMPS_PATH}",
+                         headers={"xi-api-key": key, "accept": "application/json",
                                   "content-type": "application/json"},
                          params={"output_format": output_format},
                          json=body, timeout=TTS_TIMEOUT_S)
@@ -309,6 +334,127 @@ def http_error_message(status: int, body, key: str | None = None, limit: int = 3
     return f"ElevenLabs: {hint}. {safe}".strip()
 
 
+# --------------------------------------------------------------------------------- word timings
+#
+# Both providers hand back timings against the RAW synthesised audio. finish() then trims the
+# silence either side and prepends LEAD_IN_S, and it is that WAV make_short concatenates — so
+# every timing is moved by `words_offset(trim_start)` before it is written. Getting this wrong
+# does not fail anything; it just makes the captions drift against the voice.
+
+def parse_timestamped_response(content, key: str | None = None) -> tuple[bytes, dict | None]:
+    """The /with-timestamps envelope -> (mp3 bytes, alignment). Raises TTSError if unusable.
+
+    A missing `alignment` is not an error: the audio is still good, and the scene simply
+    renders without captions. A missing or undecodable `audio_base64` is, because there is
+    then no scene at all.
+    """
+    raw = content.decode("utf-8", "replace") if isinstance(content, (bytes, bytearray)) \
+        else str(content or "")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        raise TTSError(f"ElevenLabs: /{TIMESTAMPS_PATH} returned a body that is not JSON. "
+                       f"{redact(raw, key)[:300]}") from None
+    if not isinstance(payload, dict) or not payload.get("audio_base64"):
+        raise TTSError(f"ElevenLabs: /{TIMESTAMPS_PATH} returned no audio "
+                       f"(no `audio_base64` in the response). "
+                       f"{redact(raw, key)[:300]}")
+    try:
+        audio = base64.b64decode(payload["audio_base64"], validate=True)
+    except Exception:  # noqa: BLE001 — binascii.Error and anything else it may raise
+        raise TTSError(f"ElevenLabs: the `audio_base64` in the /{TIMESTAMPS_PATH} response "
+                       f"could not be decoded as base64") from None
+    alignment = payload.get("alignment") or None
+    return audio, (alignment if isinstance(alignment, dict) else None)
+
+
+def fold_alignment(alignment) -> list | None:
+    """ElevenLabs' per-CHARACTER alignment -> per-word timings.
+
+    Split on whitespace only, so punctuation stays attached to the word it follows — a cue
+    reading "stop" where the voice said "stop!" loses the line's whole shape.
+    """
+    if not isinstance(alignment, dict):
+        return None
+    chars = alignment.get("characters")
+    starts = alignment.get("character_start_times_seconds")
+    ends = alignment.get("character_end_times_seconds")
+    if not isinstance(chars, list) or not isinstance(starts, list) or not isinstance(ends, list):
+        return None
+    if not chars or not (len(chars) == len(starts) == len(ends)):
+        return None
+    words, text, start, end = [], "", None, None
+    for char, char_start, char_end in zip(chars, starts, ends):
+        char = str(char)
+        if not char.strip():
+            if text:
+                words.append({"text": text, "start": start, "end": end})
+            text, start, end = "", None, None
+            continue
+        try:
+            char_start, char_end = float(char_start), float(char_end)
+        except (TypeError, ValueError):
+            continue
+        if start is None:
+            start = char_start
+        end = char_end
+        text += char
+    if text:
+        words.append({"text": text, "start": start, "end": end})
+    return words
+
+
+def fold_kokoro_tokens(groups) -> list | None:
+    """Kokoro's MTokens -> per-word timings. `groups` is [(tokens, chunk offset in seconds)].
+
+    KPipeline yields one Result per chunk, each timed from its own zero, so the chunk offset
+    is the audio already emitted before it. A token carries `whitespace` when it ENDS a word,
+    which is what keeps misaki's separate punctuation tokens ("Magic" + ".") on the word they
+    belong to. Timestamps exist only when the English G2P ran — `None` means this scene gets
+    no captions rather than invented ones.
+    """
+    words, saw_timing = [], False
+    for tokens, offset in (groups or []):
+        text, start, end = "", None, None
+        for token in (tokens or []):
+            token_start = getattr(token, "start_ts", None)
+            token_end = getattr(token, "end_ts", None)
+            if token_start is not None:
+                saw_timing = True
+                if start is None:
+                    start = float(offset) + float(token_start)
+            if token_end is not None:
+                end = float(offset) + float(token_end)
+            text += str(getattr(token, "text", "") or "")
+            if str(getattr(token, "whitespace", "") or ""):
+                if text.strip() and start is not None and end is not None:
+                    words.append({"text": text.strip(), "start": start, "end": end})
+                text, start, end = "", None, None
+        if text.strip() and start is not None and end is not None:
+            words.append({"text": text.strip(), "start": start, "end": end})
+    return words if saw_timing else None
+
+
+def words_offset(trim_start_samples: int) -> float:
+    """Seconds to add to a raw timing so it lines up with the finished WAV.
+
+    finish() drops `trim_start_samples` from the front and prepends LEAD_IN_S of silence.
+    """
+    return LEAD_IN_S - (int(trim_start_samples) / SR)
+
+
+def shift_words(words, offset: float):
+    """Move every timing by `offset`, clamped at zero. `None` in, `None` out."""
+    if words is None:
+        return None
+    out = []
+    for word in words:
+        start = max(0.0, float(word["start"]) + offset)
+        end = max(start, float(word["end"]) + offset)
+        out.append({"text": word["text"], "start": round(start, 3), "end": round(end, 3)})
+    return out
+
+
 # ------------------------------------------------------------------------------- audio plumbing
 
 def run(cmd: list) -> None:
@@ -325,6 +471,15 @@ def ffmpeg_cmd(mp3: pathlib.Path, wav: pathlib.Path) -> list:
             "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", "-f", "wav", str(wav)]
 
 
+def trim_bounds(audio) -> tuple[int, int]:
+    """The [start, stop) samples finish() keeps. Pulled out so word timings can follow it."""
+    import numpy as np  # lazy: absent outside the TTS venv
+    idx = np.where(np.abs(audio) > 0.01)[0]
+    if not len(idx):
+        return 0, len(audio)
+    return max(0, int(idx[0]) - int(0.1 * SR)), int(idx[-1]) + int(0.25 * SR)
+
+
 def finish(audio):
     """Trim the silence either side and prepend 0.3 s — what the Kokoro path has always done.
 
@@ -333,10 +488,17 @@ def finish(audio):
     """
     import numpy as np  # lazy: absent outside the TTS venv
     audio = np.asarray(audio, dtype=np.float32)
-    idx = np.where(np.abs(audio) > 0.01)[0]
-    if len(idx):
-        audio = audio[max(0, idx[0] - int(0.1 * SR)): idx[-1] + int(0.25 * SR)]
-    return np.concatenate([np.zeros(int(0.3 * SR), dtype=np.float32), audio])
+    start, stop = trim_bounds(audio)
+    audio = audio[start:stop]
+    return np.concatenate([np.zeros(int(LEAD_IN_S * SR), dtype=np.float32), audio])
+
+
+def finish_with_words(audio, words):
+    """finish(), plus the same scene's word timings moved onto the WAV it produced."""
+    import numpy as np  # lazy: absent outside the TTS venv
+    audio = np.asarray(audio, dtype=np.float32)
+    start, _stop = trim_bounds(audio)
+    return finish(audio), shift_words(words, words_offset(start))
 
 
 def write_wav(path: pathlib.Path, audio) -> None:
@@ -348,8 +510,9 @@ def write_wav(path: pathlib.Path, audio) -> None:
     os.replace(tmp, path)
 
 
-def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path) -> float:
-    """MP3 bytes -> a finished scene WAV. Returns its length in seconds."""
+def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path,
+                  alignment: dict | None = None) -> tuple[float, list | None]:
+    """MP3 bytes -> a finished scene WAV. Returns (seconds, word timings or None)."""
     import soundfile as sf  # lazy: absent outside the TTS venv
     wav_path = pathlib.Path(wav_path)
     mp3 = wav_path.with_suffix(".mp3")
@@ -362,9 +525,9 @@ def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path) -> float:
             raise TTSError(f"ffmpeg produced {sr} Hz audio, expected {SR} Hz")
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
-        audio = finish(audio)
+        audio, words = finish_with_words(audio, fold_alignment(alignment))
         write_wav(wav_path, audio)
-        return len(audio) / SR
+        return len(audio) / SR, words
     finally:
         for scratch in (mp3, raw):
             try:
@@ -386,13 +549,27 @@ def _kokoro_pipeline():
     return _KOKORO_PIPE
 
 
-def synth_kokoro(cfg: TTSConfig, text: str, wav_path: pathlib.Path) -> float:
+def synth_kokoro(cfg: TTSConfig, text: str, wav_path: pathlib.Path) -> tuple[float, list | None]:
+    """One scene through the local model. Returns (seconds, word timings or None).
+
+    KPipeline yields one Result per chunk; each carries its own audio and, when the English
+    G2P ran, MTokens with start_ts/end_ts timed from that chunk's zero. The running sample
+    count is therefore the offset each chunk's timings need.
+    """
     import numpy as np  # lazy: absent outside the TTS venv
     pipe = _kokoro_pipeline()
-    chunks = [audio for _, _, audio in pipe(text, voice=cfg.voice, speed=cfg.speed)]
-    audio = finish(np.concatenate(chunks).astype(np.float32))
+    chunks, groups, emitted = [], [], 0
+    for result in pipe(text, voice=cfg.voice, speed=cfg.speed):
+        chunk = getattr(result, "audio", None)
+        if chunk is None:
+            chunk = result[2]
+        groups.append((getattr(result, "tokens", None), emitted / SR))
+        chunks.append(chunk)
+        emitted += len(chunk)
+    audio, words = finish_with_words(np.concatenate(chunks).astype(np.float32),
+                                     fold_kokoro_tokens(groups))
     write_wav(wav_path, audio)
-    return len(audio) / SR
+    return len(audio) / SR, words
 
 
 def transport_message(exc: BaseException, key: str | None = None, limit: int = 300) -> str:
@@ -409,7 +586,8 @@ def transport_message(exc: BaseException, key: str | None = None, limit: int = 3
     return f"ElevenLabs: could not reach {API_BASE} — {safe}"
 
 
-def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path, key: str) -> float:
+def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
+                     key: str) -> tuple[float, list | None]:
     try:
         status, content = _post_tts(cfg.voice, key, request_body(cfg, text))
     except TTSError:
@@ -422,12 +600,13 @@ def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path, key: str
         raise TTSError(http_error_message(status, content, key))
     if not content:
         raise TTSError("ElevenLabs: HTTP 200 with an empty body — no audio to decode")
-    return decode_to_wav(content, wav_path)
+    audio, alignment = parse_timestamped_response(content, key)
+    return decode_to_wav(audio, wav_path, alignment)
 
 
 def synth_scene(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
-                key: str | None = None) -> float:
-    """One scene, whichever provider the config names. Returns its length in seconds."""
+                key: str | None = None) -> tuple[float, list | None]:
+    """One scene, whichever provider the config names. Returns (seconds, word timings)."""
     if cfg.provider == ELEVENLABS:
         return synth_elevenlabs(cfg, text, wav_path, key)
     return synth_kokoro(cfg, text, wav_path)
@@ -533,7 +712,11 @@ def main(argv: list | None = None) -> int:
         if not text:
             durations[i] = 0.0
             continue
-        if wav.exists() and meta.exists():
+        # The words file is part of the cache: a hit that yielded no timings would make the
+        # first captioned render of an old build come out silently uncaptioned. A scene
+        # cached before captions existed therefore re-synthesizes once — free on Kokoro,
+        # one billed request on ElevenLabs — and is a hit forever after.
+        if wav.exists() and meta.exists() and captions.words_path(wav).exists():
             try:
                 stored = json.loads(meta.read_text())
             except (OSError, ValueError):
@@ -552,7 +735,7 @@ def main(argv: list | None = None) -> int:
         except OSError:
             pass
         try:
-            seconds = synth_scene(scene_cfg, text, wav, key)
+            seconds, words = synth_scene(scene_cfg, text, wav, key)
         except TTSError as exc:
             print(f"scene {i:02d}: {exc}", file=sys.stderr, flush=True)
             if not (scene_cfg.provider == ELEVENLABS and a.allow_fallback):
@@ -565,12 +748,19 @@ def main(argv: list | None = None) -> int:
             print(f"scene {i:02d}: --allow-fallback — narrating with kokoro "
                   f"({scene_cfg.voice})", file=sys.stderr, flush=True)
             try:
-                seconds = synth_scene(scene_cfg, text, wav, None)
+                seconds, words = synth_scene(scene_cfg, text, wav, None)
             except TTSError as retry_exc:
                 print(f"scene {i:02d}: the Kokoro fallback failed too: {retry_exc}",
                       file=sys.stderr, flush=True)
                 return 2
         durations[i] = seconds
+        # Written BEFORE the meta, for the same reason the meta is dropped before synthesis:
+        # the meta is what says this scene is cached, so nothing may claim a hit until every
+        # file a hit promises is on disk.
+        captions.write_words(wav, words)
+        if words is None:
+            print(f"scene {i:02d}: {scene_cfg.provider} returned no word timings — captions "
+                  f"will be skipped for this scene", file=sys.stderr, flush=True)
         meta.write_text(json.dumps({"hash": cache_hash(scene_cfg, text), "seconds": seconds,
                                     "voice": scene_cfg.voice,
                                     "provider_used": scene_cfg.provider,

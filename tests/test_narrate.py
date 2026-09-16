@@ -235,18 +235,24 @@ class _Resp:
 
 
 def test_post_tts_sends_the_documented_request(monkeypatch):
+    """The synthesis call is the /with-timestamps one: same body, JSON back instead of MP3.
+
+    The word timings burned-in captions need come from the same request that makes the audio,
+    so there is never a second billed call and never a transcript that disagrees with it.
+    """
     seen = {}
 
     def post(url, headers=None, params=None, json=None, timeout=None):
         seen.update(url=url, headers=headers, params=params, body=json, timeout=timeout)
-        return _Resp(200, b"ID3fake")
+        return _Resp(200, b'{"audio_base64":""}')
 
     monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(post=post))
     status, content = N._post_tts(VOICE_ID, FAKE_KEY, {"text": "hi", "model_id": "m"})
-    assert (status, content) == (200, b"ID3fake")
-    assert seen["url"] == f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
+    assert (status, content) == (200, b'{"audio_base64":""}')
+    assert seen["url"] == \
+        f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/with-timestamps"
     assert seen["headers"]["xi-api-key"] == FAKE_KEY
-    assert seen["headers"]["accept"] == "audio/mpeg"
+    assert seen["headers"]["accept"] == "application/json"
     assert seen["params"] == {"output_format": "mp3_44100_128"}
     assert seen["body"] == {"text": "hi", "model_id": "m"}
     assert seen["timeout"] == N.TTS_TIMEOUT_S
@@ -359,11 +365,12 @@ def test_an_empty_200_body_is_a_failure_not_a_silent_scene(tmp_path, monkeypatch
 
 def test_a_2xx_decodes_the_mp3_it_was_handed(tmp_path, monkeypatch):
     seen = {}
-    monkeypatch.setattr(N, "_post_tts", lambda v, k, b, **kw: (200, b"ID3audio"))
+    monkeypatch.setattr(N, "_post_tts", lambda v, k, b, **kw: (200, _timestamped()))
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path: seen.update(content=content, path=path) or 3.25)
+                        lambda content, path, alignment=None:
+                        seen.update(content=content, path=path) or (3.25, None))
     cfg = N.tts_config(spec_with(tts=EL))
-    assert N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY) == 3.25
+    assert N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY) == (3.25, None)
     assert seen["content"] == b"ID3audio"
 
 
@@ -377,7 +384,8 @@ MAIN_SPEC_SCENES = [{"narration": "First scene."}, {"narration": ""},
 def drive(tmp_path, monkeypatch):
     """Run main() with yaml stubbed, no key on the machine, and synth_scene recorded."""
     holder = types.SimpleNamespace(spec=spec_with(scenes=[dict(s) for s in MAIN_SPEC_SCENES]),
-                                   calls=[], out=tmp_path / "audio", seconds=2.5, fail_on=None)
+                                   calls=[], out=tmp_path / "audio", seconds=2.5, fail_on=None,
+                                   words=[{"text": "First", "start": 0.3, "end": 0.7}])
     monkeypatch.setitem(sys.modules, "yaml",
                         types.SimpleNamespace(safe_load=lambda fh: holder.spec))
     spec_path = tmp_path / "scenes.yaml"
@@ -388,7 +396,7 @@ def drive(tmp_path, monkeypatch):
         if holder.fail_on is not None and text == holder.fail_on and cfg.provider == N.ELEVENLABS:
             raise N.TTSError("ElevenLabs: rate limited (429) — re-run")
         pathlib.Path(wav_path).write_bytes(b"RIFFfake")
-        return holder.seconds
+        return holder.seconds, holder.words
 
     real_synth_scene = N.synth_scene
     monkeypatch.setattr(N, "synth_scene", fake_synth)
@@ -403,7 +411,7 @@ def drive(tmp_path, monkeypatch):
         """
         monkeypatch.setattr(N, "synth_scene", real_synth_scene)
         monkeypatch.setattr(N, "synth_kokoro", lambda cfg, text, wav: (
-            pathlib.Path(wav).write_bytes(b"RIFFkokoro"), holder.seconds)[1])
+            pathlib.Path(wav).write_bytes(b"RIFFkokoro"), (holder.seconds, holder.words))[1])
 
     holder.use_real_synth = use_real_synth
     holder.run = lambda *extra: N.main(["--spec", str(spec_path), "--out", str(holder.out),
@@ -682,11 +690,12 @@ def test_a_transport_error_falls_back_per_scene_when_allowed(drive, monkeypatch)
         calls.append(body["text"])
         if body["text"] == "First scene.":
             raise ConnectionError("connection reset by peer")
-        return 200, b"ID3audio"
+        return 200, _timestamped()
 
     monkeypatch.setattr(N, "_post_tts", flaky)
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path: (pathlib.Path(path).write_bytes(b"RIFF"), 3.0)[1])
+                        lambda content, path, alignment=None:
+                        (pathlib.Path(path).write_bytes(b"RIFF"), (3.0, None))[1])
     assert drive.run("--allow-fallback") == 0
     assert calls == ["First scene.", "Third scene."]
     assert drive.meta(0)["provider_used"] == "kokoro"
@@ -794,3 +803,223 @@ def test_require_provider_does_not_stop_a_per_scene_allow_fallback(drive):
     drive.fail_on = "First scene."
     assert drive.run("--require-provider", "elevenlabs", "--allow-fallback") == 0
     assert drive.meta(0)["provider_used"] == "kokoro"
+
+
+# ======================= word timings for burned-in captions (2026-09-15) =======================
+#
+# Every synthesized scene writes `<scene>.words.json` beside its WAV, in seconds against the
+# audio that is actually concatenated — i.e. AFTER finish()'s silence trim and 0.3 s lead-in.
+# Getting that offset wrong is the one failure mode that cannot be seen in a unit test of the
+# renderer: the captions would simply drift against the voice.
+
+def _alignment(text, step=0.05):
+    """An ElevenLabs character alignment for `text`, one step per character."""
+    chars = list(text)
+    return {"characters": chars,
+            "character_start_times_seconds": [round(i * step, 3) for i in range(len(chars))],
+            "character_end_times_seconds": [round((i + 1) * step, 3) for i in range(len(chars))]}
+
+
+def _tok(text, whitespace="", start_ts=None, end_ts=None):
+    return types.SimpleNamespace(text=text, whitespace=whitespace,
+                                 start_ts=start_ts, end_ts=end_ts)
+
+
+# --- folding characters into words --------------------------------------------------------
+
+def test_the_character_alignment_folds_into_words_on_whitespace():
+    words = N.fold_alignment(_alignment("Magic Kingdom, now."))
+    assert [w["text"] for w in words] == ["Magic", "Kingdom,", "now."]
+    assert words[0]["start"] == pytest.approx(0.0)
+    assert words[0]["end"] == pytest.approx(0.25)
+    assert words[1]["start"] == pytest.approx(0.30)
+    assert words[2]["end"] == pytest.approx(0.95)
+
+
+def test_punctuation_stays_attached_to_the_word_it_follows():
+    words = N.fold_alignment(_alignment('He said "stop!" — twice.'))
+    assert [w["text"] for w in words] == ["He", "said", '"stop!"', "—", "twice."]
+
+
+def test_runs_of_whitespace_never_produce_an_empty_word():
+    words = N.fold_alignment(_alignment("two  \n spaced"))
+    assert [w["text"] for w in words] == ["two", "spaced"]
+
+
+def test_an_alignment_that_is_missing_or_ragged_yields_no_words_rather_than_nonsense():
+    assert N.fold_alignment(None) is None
+    assert N.fold_alignment({}) is None
+    ragged = _alignment("abc")
+    ragged["character_end_times_seconds"] = ragged["character_end_times_seconds"][:-1]
+    assert N.fold_alignment(ragged) is None
+
+
+def test_an_alignment_of_pure_whitespace_yields_an_empty_list_not_none():
+    assert N.fold_alignment(_alignment("   ")) == []
+
+
+# --- folding Kokoro's tokens into words ----------------------------------------------------
+
+def test_kokoro_tokens_fold_into_words_with_punctuation_attached():
+    """misaki emits punctuation as its own token, with no phonemes and so no timestamps."""
+    tokens = [_tok("Magic", "", 0.10, 0.45), _tok("Kingdom", "", 0.50, 1.10),
+              _tok(".", " "), _tok("Now", "", 1.30, 1.60), _tok("!", "")]
+    words = N.fold_kokoro_tokens([(tokens, 0.0)])
+    assert [w["text"] for w in words] == ["MagicKingdom.", "Now!"]
+    assert words[0]["start"] == pytest.approx(0.10)
+    assert words[0]["end"] == pytest.approx(1.10)
+
+
+def test_a_word_boundary_is_the_token_that_carries_whitespace():
+    tokens = [_tok("one", " ", 0.0, 0.4), _tok("two", " ", 0.5, 0.9), _tok("three", "", 1.0, 1.4)]
+    assert [w["text"] for w in N.fold_kokoro_tokens([(tokens, 0.0)])] == ["one", "two", "three"]
+
+
+def test_each_kokoro_chunk_is_offset_by_the_audio_before_it():
+    """The pipeline yields one Result per chunk, each timed from its own zero."""
+    first = [_tok("one", "", 0.0, 0.4)]
+    second = [_tok("two", "", 0.0, 0.4)]
+    words = N.fold_kokoro_tokens([(first, 0.0), (second, 2.5)])
+    assert [w["start"] for w in words] == [pytest.approx(0.0), pytest.approx(2.5)]
+
+
+def test_kokoro_tokens_with_no_timestamps_at_all_yield_none():
+    """Non-English G2P produces no start_ts; captions are skipped rather than faked."""
+    assert N.fold_kokoro_tokens([([_tok("bonjour", " "), _tok("monde", "")], 0.0)]) is None
+    assert N.fold_kokoro_tokens([(None, 0.0)]) is None
+    assert N.fold_kokoro_tokens([]) is None
+
+
+# --- the offset against the audio that is actually concatenated ----------------------------
+
+def test_the_word_offset_is_the_lead_in_minus_whatever_the_trim_removed():
+    assert N.words_offset(0) == pytest.approx(N.LEAD_IN_S)
+    assert N.words_offset(N.SR // 2) == pytest.approx(N.LEAD_IN_S - 0.5)
+    assert N.LEAD_IN_S == 0.3
+
+
+def test_shifting_words_moves_them_onto_the_finished_wav():
+    words = [{"text": "a", "start": 1.0, "end": 1.4}]
+    assert N.shift_words(words, 0.3) == [{"text": "a", "start": 1.3, "end": 1.7}]
+
+
+def test_a_word_the_trim_ate_into_is_clamped_to_zero_not_left_negative():
+    words = [{"text": "a", "start": 0.05, "end": 0.40}]
+    shifted = N.shift_words(words, -0.2)
+    assert shifted[0]["start"] == 0.0
+    assert shifted[0]["end"] == pytest.approx(0.2)
+
+
+def test_shifting_nothing_stays_nothing():
+    assert N.shift_words(None, 0.3) is None
+
+
+# --- the with-timestamps request and response ----------------------------------------------
+
+def test_post_tts_asks_for_timestamps_and_json(monkeypatch):
+    seen = {}
+
+    def post(url, headers=None, params=None, json=None, timeout=None):
+        seen.update(url=url, headers=headers, params=params, body=json)
+        return _Resp(200, b"{}")
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(post=post))
+    assert N._post_tts(VOICE_ID, FAKE_KEY, {"text": "hi", "model_id": "m"}) == (200, b"{}")
+    assert seen["url"] == \
+        f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}/with-timestamps"
+    assert seen["headers"]["accept"] == "application/json"
+    assert seen["headers"]["xi-api-key"] == FAKE_KEY
+    assert seen["params"] == {"output_format": "mp3_44100_128"}
+    assert seen["body"] == {"text": "hi", "model_id": "m"}
+
+
+def _timestamped(audio=b"ID3audio", text="Magic now."):
+    import base64
+    return json.dumps({"audio_base64": base64.b64encode(audio).decode(),
+                       "alignment": _alignment(text)}).encode()
+
+
+def test_the_timestamped_response_yields_the_mp3_and_its_alignment():
+    audio, alignment = N.parse_timestamped_response(_timestamped())
+    assert audio == b"ID3audio"
+    assert alignment["characters"][:5] == list("Magic")
+
+
+def test_a_response_with_no_alignment_still_yields_audio():
+    import base64
+    body = json.dumps({"audio_base64": base64.b64encode(b"ID3x").decode()}).encode()
+    assert N.parse_timestamped_response(body) == (b"ID3x", None)
+
+
+@pytest.mark.parametrize("body,needle", [
+    (b"<html>not json</html>", "not JSON"),
+    (b'{"alignment": {}}', "no audio"),
+    (b'{"audio_base64": ""}', "no audio"),
+    (b'{"audio_base64": "!!!not base64!!!"}', "could not be decoded"),
+])
+def test_an_unusable_timestamped_response_is_a_named_failure(body, needle):
+    with pytest.raises(N.TTSError) as exc:
+        N.parse_timestamped_response(body)
+    assert needle in str(exc.value)
+
+
+def test_an_unusable_response_body_is_redacted_before_it_is_reported():
+    body = f'{{"detail": "bad key {FAKE_KEY}"'.encode()
+    with pytest.raises(N.TTSError) as exc:
+        N.parse_timestamped_response(body, FAKE_KEY)
+    assert FAKE_KEY not in str(exc.value)
+
+
+def test_synth_elevenlabs_returns_the_seconds_and_the_words(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
+    monkeypatch.setattr(N, "decode_to_wav", lambda content, path, alignment=None: (
+        seen.update(content=content, alignment=alignment) or (3.25, [{"text": "Magic"}])))
+    cfg = N.tts_config(spec_with(tts=EL))
+    assert N.synth_elevenlabs(cfg, "Magic now.", tmp_path / "scene_00.wav", FAKE_KEY) == \
+        (3.25, [{"text": "Magic"}])
+    assert seen["content"] == b"ID3audio"
+    assert seen["alignment"]["characters"][0] == "M"
+
+
+# --- main(): the words file is part of the cache -------------------------------------------
+
+def test_every_synthesized_scene_writes_its_word_timings_beside_the_wav(drive):
+    import captions as C
+    assert drive.run() == 0
+    assert C.read_words(drive.out / "scene_00.wav") == drive.words
+    assert C.read_words(drive.out / "scene_02.wav") == drive.words
+    assert not C.words_path(drive.out / "scene_01.wav").exists(), \
+        "a scene with no narration has no audio and no words"
+
+
+def test_a_provider_that_gave_no_timings_writes_null_and_says_captions_are_skipped(drive,
+                                                                                   capsys):
+    drive.words = None
+    assert drive.run() == 0
+    import captions as C
+    assert C.words_path(drive.out / "scene_00.wav").read_text() == "null"
+    assert C.read_words(drive.out / "scene_00.wav") is None
+    err = capsys.readouterr().err
+    assert "scene 00" in err and "captions" in err
+
+
+def test_a_cached_scene_with_no_words_file_is_re_synthesized(drive):
+    """A cache hit has to yield words too, or the first captioned render finds none."""
+    import captions as C
+    assert drive.run() == 0
+    C.words_path(drive.out / "scene_00.wav").unlink()
+    drive.calls.clear()
+    assert drive.run() == 0
+    assert [c.text for c in drive.calls] == ["First scene."]
+    assert C.read_words(drive.out / "scene_00.wav") == drive.words
+
+
+def test_a_cache_hit_leaves_the_words_file_untouched(drive):
+    import captions as C
+    drive.run()
+    stamp = C.words_path(drive.out / "scene_00.wav").read_text()
+    drive.calls.clear()
+    assert drive.run() == 0
+    assert drive.calls == []
+    assert C.words_path(drive.out / "scene_00.wav").read_text() == stamp
