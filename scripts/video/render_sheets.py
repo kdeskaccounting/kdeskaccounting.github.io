@@ -238,10 +238,20 @@ ul{{font-size:46px;line-height:1.55;margin:10px 0 30px;padding-left:46px;color:#
     hp.write_text(doc); screenshot(hp, out_png)
     return {"fx": 0.5, "fy": 0.5, "static": True}
 
-def render_card_scene(out_png, template, data, brand, width=W, height=H, html_dir=None):
-    """Render a `kind: card` scene to PNG. Returns the same focus shape as render_card()."""
+def render_card_scene(out_png, template, data, brand, width=W, height=H, html_dir=None,
+                      box=None):
+    """Render a `kind: card` scene to PNG. Returns the same focus shape as render_card().
+
+    `box` is cards.card_html's own `(left, top, w, h)`: the card lives inside that rectangle
+    of the canvas and sizes its type to it, instead of filling the frame. make_short passes
+    one when captions are on, so the card sits BELOW the caption band rather than under it.
+    None — the default — is the full-frame card, unchanged byte for byte.
+    """
     import cards
-    doc = cards.card_html(template, data, cards.brand_tokens(brand), width, height)
+    # `fill`: a card SCENE is the whole canvas it is given, boxed or not — unlike the media
+    # overlay plate, which hugs its rows so the footage above it stays visible.
+    doc = cards.card_html(template, data, cards.brand_tokens(brand), width, height,
+                          box=box, fill=box is not None)
     hp = pathlib.Path(html_dir or pathlib.Path(out_png).parent) / (pathlib.Path(out_png).stem + ".html")
     hp.write_text(doc, encoding="utf-8")
     screenshot(hp, out_png, width, height)

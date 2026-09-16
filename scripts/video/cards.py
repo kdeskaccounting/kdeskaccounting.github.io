@@ -193,8 +193,8 @@ def spec_credits(spec: dict) -> str:
 
 def card_html(template: str, data: dict, brand: dict, width: int = 1296,
               height: int = 2304, *, transparent: bool = False,
-              box: tuple[int, int, int, int] | None = None) -> str:
-    """The 9:16 card. `box` and `transparent` are what the `media` overlay adds.
+              box: tuple[int, int, int, int] | None = None, fill: bool = False) -> str:
+    """The 9:16 card. `box`, `fill` and `transparent` are what the other scene kinds add.
 
     `box` is `(left, top, w, h)`: the card lives inside that rectangle of the page instead
     of over the whole canvas, and sizes its type to the rectangle's height — the same rule
@@ -203,7 +203,13 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     that matters (it is what clears the attribution watermark) while its top is a ceiling:
     a three-row overlay should leave the footage above it alone, not pad itself out with
     dead plate. `transparent` drops the background gradient and turns the card into a
-    semi-opaque plate. Both default off, and the default output is unchanged.
+    semi-opaque plate. All three default off, and the default output is unchanged.
+
+    `fill` is for the other kind of boxed card: a card SCENE with captions on, whose box is
+    the whole frame below the caption band. There the box is not a ceiling but the canvas —
+    hugging the rows would leave a slab of dead background between the captions and the card
+    — so the card takes the box's full height and centres its rows in the leftovers, exactly
+    as a full-frame card does.
     """
     if template not in TEMPLATES:
         raise ValueError(f"unknown card template {template!r}; known: {', '.join(TEMPLATES)}")
@@ -231,7 +237,11 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
         body = f'<ul class="rows">\n      {_rows_ranked(template, items)}\n    </ul>'
     sub = f'<p class="sub">{_e(subheading)}</p>' if subheading else ""
 
-    if box is not None:
+    if box is not None and fill:
+        # The box IS the canvas: take all of it, top-anchored, rows centred in the leftovers.
+        place = f"position:absolute;left:{box_x}px;top:{box_y}px;"
+        size = f"width:{box_w}px;height:{box_h}px;"
+    elif box is not None:
         # Anchored to the box's bottom edge, growing upward no further than its top.
         place = (f"position:absolute;left:{box_x}px;bottom:{height - box_y - box_h}px;"
                  f"max-height:{box_h}px;")
@@ -241,8 +251,8 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
         place = "position:relative;" if transparent else ""
         size = f"width:{box_w}px;height:{box_h}px;"
     # An auto-height card has no free space to hand a `flex:1` body, so the body is sized
-    # by its rows instead of by the leftovers.
-    boxed = "" if box is None else "\n.body{flex:0 0 auto}"
+    # by its rows instead of by the leftovers. A filled box has height, so it keeps flex:1.
+    boxed = "" if box is None or fill else "\n.body{flex:0 0 auto}"
     page_bg = ("transparent" if transparent else
                f"radial-gradient(120% 60% at 18% 6%, {brand['bg_alt']} 0%, "
                f"{brand['bg']} 58%, {brand['bg']} 100%)")

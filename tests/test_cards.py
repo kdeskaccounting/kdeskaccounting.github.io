@@ -448,3 +448,34 @@ def test_spec_credits_renders_a_disclaimer_with_no_credits_at_all():
 def test_spec_credits_of_a_spec_that_claims_nothing_is_empty():
     assert cards.spec_credits({"slug": "x", "scenes": [{"kind": "card"}]}) == ""
     assert cards.spec_credits({}) == ""
+
+
+# --- a boxed card that FILLS its box (a card SCENE, not an overlay plate) -----------------
+
+BOXED = (71, 737, 1154, 1567)
+
+
+def test_fill_is_off_by_default_so_the_media_overlay_plate_is_unchanged():
+    """The overlay hugs its rows so a three-row card leaves the footage above it alone."""
+    assert cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), box=BOXED) == \
+        cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), box=BOXED, fill=False)
+
+
+def test_a_boxed_card_can_fill_its_box_instead_of_hugging_its_content():
+    """A card SCENE is the frame minus the caption band; dead space under it reads as a bug."""
+    doc = cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), box=BOXED, fill=True)
+    left, top, width, height = BOXED
+    assert f"left:{left}px;top:{top}px" in doc
+    assert f"width:{width}px;height:{height}px" in doc
+    assert ".body{flex:0 0 auto}" not in doc, "a filled card centres its rows in the leftovers"
+
+
+def test_a_hugging_box_is_still_anchored_to_its_bottom_edge():
+    doc = cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), box=BOXED)
+    assert "bottom:" in doc and "height:auto" in doc
+    assert ".body{flex:0 0 auto}" in doc
+
+
+def test_fill_without_a_box_changes_nothing_because_the_card_already_fills_the_frame():
+    assert cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None), fill=True) == \
+        cards.card_html("countdown", COUNTDOWN, cards.brand_tokens(None))

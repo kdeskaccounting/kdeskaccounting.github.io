@@ -75,13 +75,28 @@ def _spec(captions_block=None):
     return spec
 
 
+def _card(heading):
+    return {"kind": "card", "template": "countdown",
+            "data": {"heading": heading, "items": [], "footer": "x"}, "narration": heading}
+
+
 def _with_card_scene(captions_block=None):
-    """The same Short with a full-frame `kind: card` in the middle — it owns the whole frame."""
+    """The same Short with a full-frame `kind: card` in the middle."""
     spec = _spec(captions_block)
-    spec["scenes"][1] = {"kind": "card", "template": "countdown",
-                         "data": {"heading": "Two", "items": [], "footer": "x"},
-                         "narration": "two"}
+    spec["scenes"][1] = _card("Two")
     return spec
+
+
+def _card_only(captions_block=None):
+    """A card-only data Short: no imagery at all. The case captions help most."""
+    spec = _spec(captions_block)
+    spec["scenes"] = [_card("One"), _card("Two"), _card("Three")]
+    return spec
+
+
+def _legacy_scene():
+    """The pre-card walkthrough layout: a spreadsheet range under the Short's hook band."""
+    return {"sheet": "Lease", "caption": "a legacy walkthrough scene", "narration": "legacy"}
 
 
 @pytest.fixture
@@ -109,11 +124,12 @@ def stub(tmp_path, monkeypatch):
                         else PART_SECONDS)
     monkeypatch.setattr(M, "subprocess", types.SimpleNamespace(
         run=lambda *a, **k: types.SimpleNamespace(stdout="")))
-    shots, cmds = [], []
+    shots, cmds, drawn = [], [], []
     monkeypatch.setattr(M.R, "screenshot", lambda *a, **k: shots.append((a, k)))
+    monkeypatch.setattr(M.R, "render_card_scene", lambda *a, **k: drawn.append((a, k)))
     monkeypatch.setattr(M, "run", cmds.append)
     monkeypatch.setattr(sys, "argv", ["make_short.py", "--spec", str(spec_path)])
-    holder.build, holder.shots, holder.cmds = build, shots, cmds
+    holder.build, holder.shots, holder.cmds, holder.cards = build, shots, cmds, drawn
     holder.work = build / "short"
     holder.audio = audio
 
@@ -300,33 +316,114 @@ def test_a_media_scenes_card_is_the_only_thing_that_constrains_the_band():
     assert M.scene_card_top({"kind": "media", "src": "x.mp4"}) is None
 
 
-@pytest.mark.parametrize("scene", [
-    {"kind": "card", "template": "countdown", "data": {}},        # the card IS the frame
-    {"sheet": "Lease", "caption": "a legacy walkthrough scene"},  # hook band at the very top
-])
-def test_a_scene_that_owns_the_top_of_the_frame_reports_a_card_at_zero(scene):
-    assert M.scene_card_top(scene) == 0
+def test_a_legacy_sheet_scene_still_owns_the_top_of_the_frame():
+    """Its hook band starts at y=0 and there is nowhere else for it to go."""
+    assert M.scene_card_top(_legacy_scene()) == 0
 
 
-def test_a_full_frame_card_scene_is_dropped_from_the_caption_pass_not_overprinted(stub, capsys):
-    """Its heading sits exactly where a caption would: text over text is worse than neither."""
+def test_a_card_scene_reports_the_box_it_will_be_moved_into():
+    """A card scene is not skipped: the CARD moves below the band, so it constrains nothing."""
+    card_top = M.scene_card_top(_card("One"))
+    assert card_top == M.card_box_under_captions(M.OUT_W, M.OUT_H)[1]
+    assert card_top > captions.caption_box(M.OUT_W, M.OUT_H)[3]
+
+
+def test_the_card_box_starts_below_the_caption_band_with_clearance():
+    for width, height in ((M.OUT_W, M.OUT_H), (M.RW, M.RH)):
+        band = captions.caption_box(width, height)
+        left, top, box_w, box_h = M.card_box_under_captions(width, height)
+        assert top >= band[3] + round(height * captions.CLEARANCE_FRAC)
+        assert not media.boxes_overlap(band, (left, top, left + box_w, top + box_h))
+        assert top + box_h == height, "the card still runs to the bottom of the frame"
+        assert left == round(width * media.SAFE_X_FRAC) and left + box_w == width - left
+
+
+def test_a_card_scene_no_longer_constrains_the_band(stub):
     stub.spec = _with_card_scene({"enabled": True})
     box, skipped = M.caption_plan(stub.spec, stub.spec["short"])
+    assert skipped == set()
+    assert box == captions.caption_box(M.OUT_W, M.OUT_H,
+                                       media.overlay_box(M.OUT_W, M.OUT_H)[1])
+
+
+def test_a_card_scene_is_drawn_into_that_box_when_captions_are_on(stub):
+    stub.spec = _with_card_scene({"enabled": True})
+    stub.go()
+    assert len(stub.cards) == 1
+    _args, kwargs = stub.cards[0]
+    assert kwargs["box"] == M.card_box_under_captions(M.RW, M.RH)
+
+
+def test_a_card_scene_is_drawn_full_frame_when_captions_are_off(stub):
+    """The captions-off path has to stay byte-identical: the goldens depend on it."""
+    stub.spec = _with_card_scene()
+    stub.go()
+    assert stub.cards[0][1].get("box") is None
+
+
+def test_every_scene_of_a_card_only_short_is_captioned(stub):
+    """A card-only data Short is the case captions help most; none of it may be skipped."""
+    stub.spec = _card_only({"enabled": True})
+    assert M.caption_plan(stub.spec, stub.spec["short"])[1] == set()
+    stub.go()
+    assert len(_caption_pngs(stub)) == sum(len(w) for w in WORDS.values())
+    assert all(k["box"] == M.card_box_under_captions(M.RW, M.RH) for _a, k in stub.cards)
+
+
+def test_a_card_scene_is_captioned_alongside_the_media_scenes(stub):
+    stub.spec = _with_card_scene({"enabled": True})
+    stub.go()
+    wins = _windows(_final(stub))
+    assert len(wins) == sum(len(w) for w in WORDS.values())
+    assert any(PART_SECONDS <= start < 2 * PART_SECONDS for start, _e in wins)
+
+
+# --- render_sheets passes the box through -------------------------------------------------------
+
+def test_render_card_scene_hands_its_box_to_the_card_renderer(tmp_path, monkeypatch):
+    """cards.card_html has taken a `box` since the media overlay landed; nothing passed one."""
+    import render_sheets as R
+    monkeypatch.setattr(R, "screenshot", lambda *a, **k: None)
+    box = M.card_box_under_captions(M.RW, M.RH)
+    data = {"heading": "Two", "items": [], "footer": "x"}
+    R.render_card_scene(tmp_path / "scene_0.png", "countdown", data, BRAND,
+                        M.RW, M.RH, html_dir=tmp_path, box=box)
+    # A card scene FILLS its box; only the media overlay plate hugs its rows.
+    assert (tmp_path / "scene_0.html").read_text(encoding="utf-8") == \
+        cards.card_html("countdown", data, cards.brand_tokens(BRAND), M.RW, M.RH,
+                        box=box, fill=True)
+
+
+def test_render_card_scene_without_a_box_is_the_full_frame_card_it_always_was(tmp_path,
+                                                                              monkeypatch):
+    """The captions-off path, byte for byte — every existing card Short depends on it."""
+    import render_sheets as R
+    monkeypatch.setattr(R, "screenshot", lambda *a, **k: None)
+    data = {"heading": "Two", "items": [], "footer": "x"}
+    R.render_card_scene(tmp_path / "scene_0.png", "countdown", data, BRAND,
+                        M.RW, M.RH, html_dir=tmp_path)
+    assert (tmp_path / "scene_0.html").read_text(encoding="utf-8") == \
+        cards.card_html("countdown", data, cards.brand_tokens(BRAND), M.RW, M.RH)
+
+
+# --- the scenes that genuinely cannot be captioned ----------------------------------------------
+
+def test_caption_plan_skips_a_scene_whose_own_layout_owns_the_top_of_the_frame():
+    spec = _spec({"enabled": True})
+    spec["scenes"][1] = _legacy_scene()
+    box, skipped = M.caption_plan(spec, spec["short"])
     assert skipped == {1}
     assert box == captions.caption_box(M.OUT_W, M.OUT_H,
                                        media.overlay_box(M.OUT_W, M.OUT_H)[1])
-    stub.go()
+
+
+def test_caption_cues_says_out_loud_which_scenes_it_skipped(tmp_path, capsys):
+    captions.write_words(tmp_path / "scene_00.wav", WORDS[0])
+    captions.write_words(tmp_path / "scene_01.wav", WORDS[1])
+    cues = M.caption_cues([(0, 0.0, 6.0), (1, 6.0, 12.0)], tmp_path, skipped={1})
     out = capsys.readouterr().out
     assert "scene 01" in out and "captions skipped" in out
-    wins = _windows(_final(stub))
-    assert not any(PART_SECONDS <= start < 2 * PART_SECONDS for start, _e in wins)
-    assert len(wins) == len(WORDS[0]) + len(WORDS[2])
-
-
-def test_the_scenes_that_can_be_captioned_still_are(stub):
-    stub.spec = _with_card_scene({"enabled": True})
-    stub.go()
-    assert len(_caption_pngs(stub)) == len(WORDS[0]) + len(WORDS[2])
+    assert cues and all(c.start < 6.0 for c in cues)
 
 
 def test_the_caption_pngs_are_the_band_not_the_whole_frame(stub):

@@ -134,18 +134,38 @@ def media_layers(scene, brand, work, k):
     return layers
 
 
+def card_box_under_captions(width=RW, height=RH):
+    """(left, top, w, h) for a `kind: card` scene when captions are on: the frame below the band.
+
+    A card scene IS the frame, so by default its heading lands exactly where a caption goes.
+    Rather than drop the captions — a card-only data Short is the case they help most — the
+    CARD moves: cards.card_html already sizes its type to whatever box it is handed, so the
+    card simply becomes a shorter card. The side margin is media.SAFE_X_FRAC, the one a media
+    scene's plate already uses, so the two scene kinds inset their text alike.
+
+    Derived from the UNCONSTRAINED band, which is what keeps this from being circular: the box
+    it returns always sits below that band, so a card scene never pushes the band anywhere.
+    """
+    top = captions.caption_box(width, height)[3] + round(height * captions.CLEARANCE_FRAC)
+    x = round(width * media.SAFE_X_FRAC)
+    return (x, top, int(width) - 2 * x, int(height) - top)
+
+
 def scene_card_top(scene, width=OUT_W, height=OUT_H):
     """The top edge of whatever this scene draws where a caption wants to go, or None.
 
     A `media` scene is imagery: the top of the frame is free unless it carries a card overlay,
     and then the constraint is media.overlay_box, the same rectangle every media scene uses.
-    EVERYTHING else owns the top of the frame from y=0 — a full-frame `kind: card` puts its
-    heading there, and the legacy sheet/pan layout puts the Short's hook there — so a caption
-    over one of those is text printed on text.
+    A `kind: card` scene is moved below the band instead (card_box_under_captions), so it
+    reports that box's top and constrains nothing. EVERYTHING else owns the top of the frame
+    from y=0 — the legacy sheet/pan layout puts the Short's hook there — and a caption over
+    one of those is text printed on text.
     """
     scene = scene or {}
     if media.is_media(scene):
         return media.overlay_box(width, height)[1] if scene.get("overlay") else None
+    if cards.is_card(scene):
+        return card_box_under_captions(width, height)[1]
     return 0
 
 
@@ -361,9 +381,12 @@ def main():
             continue
         if cards.is_card(sc):
             # A card is already 9:16 — use it as the whole frame, no top/bottom banding.
+            # With captions on it is boxed below the band instead: a card scene is all text,
+            # so a caption over it prints text on text, and the card is the thing that moves.
             png = work / f"scene_{k}.png"
             R.render_card_scene(png, sc["template"], sc.get("data", {}), spec.get("brand"),
-                                RW, RH, html_dir=work)
+                                RW, RH, html_dir=work,
+                                box=card_box_under_captions(RW, RH) if cap.enabled else None)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
             out = encode_scene(png, wav, dur, a.crf)
