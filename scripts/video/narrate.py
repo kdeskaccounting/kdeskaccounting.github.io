@@ -26,9 +26,10 @@ Output is identical for both providers: 24 kHz mono WAVs plus durations.json, so
 and make_short.py never learn which provider spoke. ElevenLabs returns MP3, which ffmpeg
 converts; both paths then get the same silence trim and 0.3 s lead-in.
 
-Caches by a hash of (provider, voice, model, voice_settings, speed, text): switching provider
-re-synthesizes, and unchanged text is never re-billed. Pre-existing Kokoro caches keyed by the
-old (voice, speed, text) shape are still hits.
+Caches by a hash of (provider, voice, model, voice_settings, text) for ElevenLabs — speed rides
+inside voice_settings there, so the key only moves when the request body would — and of
+(voice, speed, text) for Kokoro. Switching provider re-synthesizes; unchanged text is never
+re-billed. Pre-existing Kokoro caches keyed by the old (voice, speed, text) shape are still hits.
 
 Key: ELEVENLABS_API_KEY, else ~/kdesk-analytics/elevenlabs-api-key.txt (0600). It is never
 printed: every error string goes through scripts/browser/session.redact_secrets first.
