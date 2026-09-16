@@ -184,7 +184,10 @@ def main():
     # --slug also builds a path, so it is validated before it is used to open anything.
     slug = safe_slug(a.slug) if a.slug else None
     spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
-    spec = yaml.safe_load(open(spec_path)); slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
+    spec = yaml.safe_load(open(spec_path))
+    # Preflight: every media scene is checked here, before a single frame is rendered.
+    media.validate_spec(spec, spec_path)
+    slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
@@ -204,10 +207,9 @@ def main():
         sc = spec["scenes"][idx]; mode = "cover"; fx = fy = 0.5; pan = None
         if media.is_media(sc):
             # Footage or a still as the whole frame, with the card (if any) as an overlay.
+            # Already validated by media.validate_spec() before any rendering began.
             src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
-            media.check_credit(kind, sc.get("credit"))
             motion = sc.get("motion") or media.default_motion(kind)
-            media.check_motion(kind, motion)
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6

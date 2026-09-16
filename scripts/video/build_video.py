@@ -10,6 +10,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import render_sheets as R
+import media
 from short_variants import needs_workbook, safe_slug
 
 SOFFICE = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
@@ -32,10 +33,12 @@ def main():
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
     a = ap.parse_args()
-    spec = yaml.safe_load(open(a.spec)); slug = safe_slug(spec["slug"])
+    spec = yaml.safe_load(open(a.spec))
+    # Preflight: every media scene is checked here, before a single frame is rendered.
+    media.validate_spec(spec, a.spec)
+    slug = safe_slug(spec["slug"])
     build = HERE / "build" / slug; frames = build / "frames"; frames.mkdir(parents=True, exist_ok=True)
     import cards
-    import media
     wbv = wbf = None
     wbname = spec.get("workbook_name", "")
     if needs_workbook(spec):

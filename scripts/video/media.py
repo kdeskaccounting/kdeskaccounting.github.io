@@ -194,6 +194,34 @@ def media_kind(path) -> str:
         f"video: {', '.join(VIDEO_SUFFIXES)} · images: {', '.join(IMAGE_SUFFIXES)}")
 
 
+def validate_spec(spec: dict, spec_path) -> None:
+    """Check every `media` scene in a spec before anything at all is rendered.
+
+    Validating inside the render loop means scene 3's typo surfaces after scenes 0-2 have been
+    narrated, screenshotted and encoded — minutes of work thrown away, and on a bad pairing
+    (see check_motion) a wedged ffmpeg rather than an error. This is the preflight: one pass
+    over the whole spec, failing on the first bad scene and naming its index.
+
+    It checks every media scene, including ones no `short:` block selects — the spec is the
+    contract, and a scene that is broken today is broken for the variant that picks it up
+    tomorrow.
+    """
+    for index, scene in enumerate(spec.get("scenes") or []):
+        if not is_media(scene or {}):
+            continue
+        where = f"scene {index} (kind: media)"
+        src = scene.get("src")
+        if not src:
+            raise ValueError(f"{where} has no `src:` — a media scene needs a file to show")
+        try:
+            path = resolve_src(spec_path, src)
+            kind = media_kind(path)
+            check_credit(kind, scene.get("credit"))
+            check_motion(kind, scene.get("motion") or default_motion(kind))
+        except (ValueError, FileNotFoundError) as exc:
+            raise type(exc)(f"{where}: {exc}") from exc
+
+
 def check_credit(kind: str, credit: str | None) -> None:
     """A still is licensed on attribution and cannot credit itself on screen."""
     if kind == "image" and not (credit or "").strip():

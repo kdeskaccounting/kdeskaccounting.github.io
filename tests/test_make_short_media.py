@@ -258,12 +258,45 @@ def test_an_image_with_motion_clip_is_refused_before_any_ffmpeg_runs(stub_main):
     assert not stub_main.shots, "no Chrome screenshot either"
 
 
-def test_a_video_with_motion_kenburns_is_refused(stub_main):
-    """It would silently encode a freeze frame, which no one notices until the Short ships."""
+def test_a_video_with_motion_kenburns_is_refused_before_any_ffmpeg_runs(stub_main):
+    """It would silently encode a freeze frame, which no one notices until the Short ships.
+
+    Scene 1, not scene 0: the preflight has to reject it before scene 0 is rendered, or the
+    typo costs a narration, two screenshots and an encode before anyone hears about it.
+    """
     stub_main.spec["scenes"][1]["motion"] = "kenburns"
     with pytest.raises(ValueError) as e:
         M.main()
     assert "kenburns" in str(e.value) and "video" in str(e.value)
+    assert "scene 1" in str(e.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_an_unknown_motion_on_a_later_scene_stops_the_run_before_the_first_one(stub_main):
+    """The unknown-motion error used to fire inside encode_media_scene — after Chrome, after
+    narration, after every earlier scene had already been encoded."""
+    stub_main.spec["scenes"][1]["motion"] = "wiggle"
+    with pytest.raises(ValueError) as e:
+        M.main()
+    assert "wiggle" in str(e.value) and "scene 1" in str(e.value)
+    assert not stub_main.cmds, "nothing may be encoded before the spec is known to be valid"
+    assert not stub_main.shots, "and nothing may be screenshotted either"
+
+
+def test_a_missing_src_on_a_later_scene_also_stops_the_run_first(stub_main):
+    stub_main.spec["scenes"][1]["src"] = "assets/gone.mp4"
+    with pytest.raises(FileNotFoundError) as e:
+        M.main()
+    assert "scene 1" in str(e.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_the_preflight_runs_even_when_the_short_selects_no_media_scene(stub_main):
+    """A broken scene the current variant skips is still broken for the next one."""
+    stub_main.spec["scenes"][1]["motion"] = "wiggle"
+    stub_main.spec["short"]["scenes"] = [0]
+    with pytest.raises(ValueError):
+        M.main()
 
 
 def test_run_bounds_every_ffmpeg_call_with_a_timeout(monkeypatch):

@@ -218,6 +218,85 @@ def test_the_default_motion_is_always_an_allowed_pairing():
         assert media.check_motion(kind, media.default_motion(kind)) is None
 
 
+# --- validate_spec (the preflight) ----------------------------------------------------
+
+def _media_spec(tmp_path, **overrides):
+    root = tmp_path / "parksheet"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".git").mkdir(exist_ok=True)
+    (root / "media").mkdir(exist_ok=True)
+    (root / "media" / "shot.png").write_bytes(b"\0")
+    (root / "media" / "clip.mp4").write_bytes(b"\0")
+    spec_path = root / "scenes.yaml"
+    spec_path.write_text("slug: x\n")
+    scene = {"kind": "media", "src": "media/shot.png", "credit": CREDIT}
+    scene.update(overrides)
+    spec = {"scenes": [{"kind": "card", "template": "ranked_list"},
+                       {"kind": "media", "src": "media/clip.mp4"},
+                       scene]}
+    return spec, spec_path
+
+
+def test_validate_spec_passes_a_good_spec(tmp_path):
+    spec, spec_path = _media_spec(tmp_path)
+    assert media.validate_spec(spec, spec_path) is None
+
+
+def test_validate_spec_ignores_scenes_that_are_not_media(tmp_path):
+    """A card or sheet scene has no src, credit or motion to check."""
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("slug: x\n")
+    assert media.validate_spec({"scenes": [{"kind": "card"}, {"sheet": "Inputs"}]},
+                               spec_path) is None
+    assert media.validate_spec({}, spec_path) is None
+
+
+@pytest.mark.parametrize("override,needle", [
+    ({"motion": "wiggle"}, "wiggle"),
+    ({"motion": "clip"}, "clip"),                       # clip on a still
+    ({"credit": None}, "credit"),                       # a still with no credit
+    ({"src": "media/gone.png"}, "gone.png"),
+    ({"src": "media/notes.txt"}, ".txt"),
+])
+def test_validate_spec_catches_every_per_scene_error(tmp_path, override, needle):
+    spec, spec_path = _media_spec(tmp_path, **override)
+    with pytest.raises((ValueError, FileNotFoundError)) as e:
+        media.validate_spec(spec, spec_path)
+    assert needle in str(e.value)
+
+
+def test_validate_spec_names_the_scene_index_that_is_wrong(tmp_path):
+    """The bad scene is the third one; the message has to say so, not just what is wrong."""
+    spec, spec_path = _media_spec(tmp_path, motion="wiggle")
+    with pytest.raises(ValueError) as e:
+        media.validate_spec(spec, spec_path)
+    assert "scene 2" in str(e.value)
+
+
+def test_validate_spec_rejects_a_media_scene_with_no_src(tmp_path):
+    spec, spec_path = _media_spec(tmp_path)
+    spec["scenes"][2].pop("src")
+    with pytest.raises(ValueError) as e:
+        media.validate_spec(spec, spec_path)
+    assert "src" in str(e.value) and "scene 2" in str(e.value)
+
+
+def test_validate_spec_checks_a_kenburns_video_too(tmp_path):
+    spec, spec_path = _media_spec(tmp_path)
+    spec["scenes"][1]["motion"] = "kenburns"
+    with pytest.raises(ValueError) as e:
+        media.validate_spec(spec, spec_path)
+    assert "scene 1" in str(e.value) and "kenburns" in str(e.value)
+
+
+def test_validate_spec_checks_scenes_the_short_does_not_even_use(tmp_path):
+    """The spec is the contract; a scene nobody selected is still a scene that must be valid."""
+    spec, spec_path = _media_spec(tmp_path, motion="wiggle")
+    spec["short"] = {"hook": "h", "scenes": [0], "cta": "c"}
+    with pytest.raises(ValueError):
+        media.validate_spec(spec, spec_path)
+
+
 # --- the attribution exclusion zone ---------------------------------------------------
 
 def test_the_watermark_zone_is_the_bottom_right_twenty_by_eight_percent():

@@ -197,11 +197,15 @@ def test_build_video_renders_a_media_spec_that_lives_outside_the_repo(tmp_path):
     (root / "video").mkdir()
     (root / "media").mkdir()
     shutil.copy(ASSETS / "placeholder-still.jpg", root / "media" / "shot.jpg")
+    shutil.copy(ASSETS / "placeholder-clip.mp4", root / "media" / "clip.mp4")
     spec = root / "video" / "scenes.yaml"
+    # Both srcs are rewritten, not just the one this run renders: the preflight validates
+    # every media scene in the spec, which is the point of it being a preflight.
     spec.write_text(
         SPEC.read_text(encoding="utf-8")
         .replace("slug: media-demo", "slug: media-demo-external")
-        .replace("marketing/video/media-demo/assets/placeholder-still.jpg", "media/shot.jpg"),
+        .replace("marketing/video/media-demo/assets/placeholder-still.jpg", "media/shot.jpg")
+        .replace("marketing/video/media-demo/assets/placeholder-clip.mp4", "media/clip.mp4"),
         encoding="utf-8")
     build = REPO / "scripts" / "video" / "build" / "media-demo-external"
     shutil.rmtree(build, ignore_errors=True)
