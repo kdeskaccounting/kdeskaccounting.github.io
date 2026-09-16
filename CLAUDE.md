@@ -163,16 +163,24 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # committed; marketing/video/media-demo/assets/generate.py remakes them.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
 
-# NEVER DRAW IN THE BOTTOM-RIGHT 20% x 8% OF A FRAME. That is where Google Earth Studio burns
-# its attribution watermark ("Google · Maxar Technologies"), and the imagery terms require it
-# to stay visible — covering it is a licence breach, not a layout preference. The rule is
-# media.WATERMARK_W_FRAC / WATERMARK_H_FRAC: the credit plate is anchored bottom-LEFT and
-# stops short of that zone horizontally, the card overlay's bottom edge stops short of it
-# vertically. tests/test_media.py checks the boxes never intersect it, and
-# tests/test_media_scene_e2e.py checks the PNGs Chrome actually drew are transparent there —
-# so a CSS tweak that dodges the constants still fails. A still must carry a `credit:`
-# (footage can credit itself on screen; a still cannot) and build_video/make_short refuse the
-# render without one.
+# NEVER DRAW IN THE BOTTOM-RIGHT 55% x 12% OF A FRAME (x >= 0.45, y >= 0.88). That is where
+# Google Earth Studio burns its attribution watermark ("Google Earth" plus a data-provider
+# line), and the imagery terms require it to stay visible — covering it is a licence breach,
+# not a layout preference. MEASURED 2026-09-16 on the first real Earth Studio portrait render
+# (1080x1920, cloud video, Attribution Position bottom-right at its maximum offsets): the
+# "Google Earth" wordmark sits at x 0.495-0.815, y 0.909-0.933, and the provider line under it
+# reaches y 0.955. Earth Studio will not push it further right or lower on a portrait canvas.
+# The mark is anchored bottom-right but is NOT in the corner — it starts at mid-width and stops
+# 4.5% of the height above the bottom edge — so the old 20% x 8% corner zone (x >= 0.80,
+# y >= 0.92) covered the corner and almost none of the mark. The rule is
+# media.WATERMARK_W_FRAC / WATERMARK_H_FRAC and everything derives from it: the credit plate is
+# anchored bottom-LEFT and now stops at x 0.438 (~0.38w wide, so a real credit wraps to two
+# lines — that is fine and tested), the card overlay's bottom edge stops at y 0.868, leaving
+# the card ~47% of the frame. tests/test_media.py checks the boxes never intersect the zone or
+# the measured mark, and tests/test_media_scene_e2e.py checks the PNGs Chrome actually drew are
+# transparent there and that the narrowed credit plate stays inside its box — so a CSS tweak
+# that dodges the constants still fails. A still must carry a `credit:` (footage can credit
+# itself on screen; a still cannot) and build_video/make_short refuse the render without one.
 
 # Word-timed ("karaoke") burned-in captions — per spec (2026-09-15). OFF unless a spec asks,
 # so every existing Short and every golden is unchanged. Only marketing/video/media-demo turns

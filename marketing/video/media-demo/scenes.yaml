@@ -14,9 +14,12 @@
 #   overlay:  optional; the `kind: card` data contract unchanged (template + heading /
 #             subheading / items / footer), drawn as a semi-opaque plate on the lower ~60%.
 #
-# NOTHING is ever drawn in the bottom-right 20% x 8% of the frame: that is where Google Earth
-# Studio burns its attribution watermark, and covering it breaks the imagery terms. The rule
-# is media.WATERMARK_W_FRAC / WATERMARK_H_FRAC, guarded by tests/test_media.py.
+# NOTHING is ever drawn in the bottom-right 55% x 12% of the frame (x >= 0.45, y >= 0.88):
+# that is where Google Earth Studio burns its attribution watermark, and covering it breaks
+# the imagery terms. Measured on a real 1080x1920 Earth Studio render the "Google Earth" mark
+# runs x 0.495-0.815, y 0.909-0.955 — anchored bottom-right but nowhere near the corner, which
+# is why the zone reaches so far in. The rule is media.WATERMARK_W_FRAC / WATERMARK_H_FRAC,
+# guarded by tests/test_media.py.
 #
 # The two assets here are ffmpeg's own synthetic sources (see assets/generate.py), committed
 # so this renders on a clean checkout. Both are 16:9 on purpose — a media scene has to

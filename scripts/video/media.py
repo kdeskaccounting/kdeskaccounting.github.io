@@ -17,12 +17,14 @@ data Short look like a video instead of a slide deck.
 Three rules are worth stating out loud, because each one is a licence or a legibility
 question rather than a style preference.
 
-**The bottom-right corner is not ours.** Google Earth Studio burns its attribution watermark
-("Google · Maxar Technologies") into the bottom-right of every frame it exports, and the terms
-require it to stay visible. `WATERMARK_*` fences off that rectangle: the credit plate is
-anchored bottom-LEFT and stops short of it horizontally, and the overlay's bottom edge stops
-short of it vertically. `boxes_overlap()` plus the tests in tests/test_media.py are what keep
-a later layout tweak from sliding a plate over it.
+**The lower-right half of the bottom strip is not ours.** Google Earth Studio burns its
+attribution watermark ("Google Earth", with a data-provider line under it) into every frame it
+exports, and the terms require it to stay visible. It is anchored bottom-right but it is not
+in the corner: measured on a real 1080x1920 portrait render it occupies x 0.495-0.815,
+y 0.909-0.955. `WATERMARK_*` fences off x >= 0.45, y >= 0.88, which contains that with room on
+every side. The credit plate is anchored bottom-LEFT and stops short of the zone horizontally,
+and the overlay's bottom edge stops short of it vertically. `boxes_overlap()` plus the tests in
+tests/test_media.py are what keep a later layout tweak from sliding a plate over it.
 
 **A still must be credited.** Footage may carry its own on-screen attribution; a still frame
 never does, so `check_credit()` refuses an image scene with no `credit:`.
@@ -69,8 +71,22 @@ KENBURNS_ZOOM = 1.08
 # the 1080x1920 delivered Short and build_video's 2400x1350 still.
 
 #: Earth Studio's attribution watermark. NOTHING may be drawn inside this rectangle.
-WATERMARK_W_FRAC = 0.20
-WATERMARK_H_FRAC = 0.08
+#:
+#: MEASURED off the first real Earth Studio portrait render (1080x1920, cloud video,
+#: Attribution Position bottom-right at its maximum offsets), not guessed from the corner it
+#: is nominally anchored to: the "Google Earth" wordmark occupies x 0.495-0.815 and
+#: y 0.909-0.933 of the frame, and the smaller data-provider line beneath it reaches about
+#: y 0.955. Earth Studio will not place the mark further right or lower than that on a
+#: portrait canvas, so those are its extremes.
+#:
+#: The mark is therefore NOT in the bottom-right corner — it starts at the middle of the
+#: width and stops a clear 4.5% of the height above the bottom edge. The zone that preceded
+#: this one (0.20 x 0.08: x >= 0.80, y >= 0.92) covered the corner the mark is anchored to
+#: and almost none of the mark itself. 0.55 x 0.12 (x >= 0.45, y >= 0.88) contains all of it
+#: with room either side, and every box below is derived from these two numbers, so this is
+#: the only place to edit if a future Earth Studio release moves the mark again.
+WATERMARK_W_FRAC = 0.55
+WATERMARK_H_FRAC = 0.12
 
 #: Side margin. A 9:16 frame loses its edges to platform chrome; text lives inside this.
 SAFE_X_FRAC = 0.055
@@ -79,16 +95,28 @@ SAFE_X_FRAC = 0.055
 #: also looks like "not crowding".
 CLEARANCE_FRAC = 0.012
 
-#: The overlay plate starts here and runs to just above the watermark — the lower ~60%.
+#: The overlay plate starts here and runs to just above the watermark zone. That leaves it
+#: 0.40 -> 0.868 of the height, ~47% of the frame: the zone taking 12% of the height instead
+#: of 8% comes straight off the bottom of the card, and 40% is the floor below which a
+#: ranked_list stops being a card and becomes a strip (tests/test_media.py asserts it).
 OVERLAY_TOP_FRAC = 0.40
 
 #: The credit plate's gap from the bottom edge, and its nominal height (it grows upward when
 #: a long credit wraps, which is why nothing clips it).
+#:
+#: The plate STAYS bottom-left rather than moving above the zone, even though the zone's left
+#: edge at 0.45w now cuts its width to ~0.38w. Above the zone there is nowhere to put it: the
+#: overlay's bottom edge is already at 0.868 and the zone starts at 0.88, a 0.012 gap, so the
+#: plate would have to push the card up and spend card height on a credit line. Below and to
+#: the left of the mark is empty frame that costs nothing, and a realistic credit fits there
+#: in two lines — measured, in tests/test_media_scene_e2e.py.
 CREDIT_BOTTOM_FRAC = 0.022
 CREDIT_PLATE_H_FRAC = 0.032
 
 #: Credit type size, in canvas units (height/100): small, but never below the 24px floor a
-#: phone needs — 1.35 units is 31px on the 1296x2304 composite, 26px delivered.
+#: phone needs — 1.35 units is 31px on the 1296x2304 composite, 26px delivered. Held at 1.35
+#: when the plate narrowed: shrinking the type to keep the credit on one line would have put
+#: it under that floor, and an illegible credit is not attribution. It wraps instead.
 CREDIT_FS_UNITS = 1.35
 
 #: `clip` loops a source shorter than the narration by repeating the demuxer. The `loop`
@@ -239,20 +267,30 @@ def boxes_overlap(a, b) -> bool:
 
 
 def watermark_box(width: int, height: int) -> tuple[int, int, int, int]:
-    """Earth Studio's attribution zone: the bottom-right corner. Keep everything out of it."""
+    """Earth Studio's attribution zone. Keep everything out of it.
+
+    Anchored to the bottom-right corner but far larger than one: the mark itself starts at
+    mid-width and 0.909 of the height, so the zone reaches x >= 0.45, y >= 0.88.
+    """
     return (round(width * (1 - WATERMARK_W_FRAC)), round(height * (1 - WATERMARK_H_FRAC)),
             int(width), int(height))
 
 
 def overlay_box(width: int, height: int) -> tuple[int, int, int, int]:
-    """The card plate: the lower ~60%, inside the side margins, stopping above the watermark."""
+    """The card plate: OVERLAY_TOP_FRAC down, inside the side margins, stopping a visible
+    CLEARANCE_FRAC above the watermark zone."""
     x = round(width * SAFE_X_FRAC)
     return (x, round(height * OVERLAY_TOP_FRAC), int(width) - x,
             round(height * (1 - WATERMARK_H_FRAC - CLEARANCE_FRAC)))
 
 
 def credit_box(width: int, height: int) -> tuple[int, int, int, int]:
-    """The credit plate: bottom-LEFT, stopping short of the watermark's left edge."""
+    """The credit plate: bottom-LEFT, stopping short of the watermark zone's left edge.
+
+    The bottom and right edges are the load-bearing ones. The nominal top is where a
+    single-line plate starts; a wrapped credit grows upward past it into empty frame, which
+    is deliberate — see credit_plate_html.
+    """
     x = round(width * SAFE_X_FRAC)
     right = round(width * (1 - WATERMARK_W_FRAC)) - round(width * CLEARANCE_FRAC)
     bottom = int(height) - round(height * CREDIT_BOTTOM_FRAC)

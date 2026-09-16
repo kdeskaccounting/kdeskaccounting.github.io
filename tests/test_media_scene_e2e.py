@@ -4,7 +4,8 @@ Three layers of guard, each skipping on what it actually needs:
 
   * the demo's committed assets — stdlib only, always runs;
   * the composite — needs ffmpeg and a headless Chrome, and proves against real pixels that
-    nothing we draw covers the attribution zone in the bottom-right corner;
+    nothing we draw covers the attribution zone, or the Google Earth mark measured inside
+    it;
   * `build_video.py --frames-only` — needs the render venv (playwright/yaml/openpyxl), so it
     skips in a bare pytest environment and on CI runners, exactly like the card e2e.
 
@@ -97,13 +98,48 @@ def _alpha_bytes(png, box):
     return proc.stdout[3::4]
 
 
+_NONZERO = bytes(0 if v == 0 else 1 for v in range(256))
+
+
+def _alpha_bbox(png, w, h):
+    """The tight (left, top, right, bottom) box of everything `png` actually painted.
+
+    The same Chrome -> PNG -> ffmpeg path the transparency tests use, read the other way
+    round: instead of "is this region empty", "where did the ink land". None when the page
+    drew nothing at all.
+    """
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(png), "-f", "rawvideo", "-pix_fmt", "rgba", "-"],
+        capture_output=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr.decode()[-2000:]
+    alpha = proc.stdout[3::4]
+    assert len(alpha) == w * h, f"expected a {w}x{h} frame, got {len(alpha)} alpha samples"
+    top = bottom = left = right = None
+    for y in range(h):
+        row = alpha[y * w:(y + 1) * w].translate(_NONZERO)
+        first = row.find(b"\x01")
+        if first < 0:
+            continue
+        last = row.rfind(b"\x01")
+        top = y if top is None else top
+        bottom = y
+        left = first if left is None else min(left, first)
+        right = last if right is None else max(right, last)
+    return None if top is None else (left, top, right + 1, bottom + 1)
+
+
 @needs_chrome
 @needs_ffmpeg
 @pytest.mark.parametrize("layer", ["overlay", "credit"])
 def test_the_layer_pngs_are_fully_transparent_over_the_attribution_zone(tmp_path, layer):
-    """The claim the boxes make, checked against the pixels Chrome actually drew."""
+    """The claim the boxes make, checked against the pixels Chrome actually drew.
+
+    Both the zone and the measured mark inside it: the zone is the rule the code enforces,
+    the mark is the thing on the real Earth Studio frame that the rule exists for.
+    """
     import cards
     import make_short as M
+    import test_media as TM
     scene = {"overlay": {"template": "ranked_list",
                          "data": {"heading": "A card over real imagery",
                                   "subheading": "The same data block, drawn on a plate",
@@ -114,11 +150,80 @@ def test_the_layer_pngs_are_fully_transparent_over_the_attribution_zone(tmp_path
     only = {layer: scene[layer]}
     pngs = M.media_layers(only, cards.brand_tokens(None), tmp_path, 0)
     assert len(pngs) == 1
-    alpha = _alpha_bytes(pngs[0], media.watermark_box(M.RW, M.RH))
-    assert alpha, "the crop produced no pixels"
-    assert max(alpha) == 0, (
-        f"the {layer} layer paints {sum(1 for a in alpha if a)} pixels inside the Earth "
-        f"Studio attribution zone — nothing may be drawn there")
+    for what, box in (("attribution zone", media.watermark_box(M.RW, M.RH)),
+                      ("measured Google Earth mark", TM.mark_box(M.RW, M.RH))):
+        alpha = _alpha_bytes(pngs[0], box)
+        assert alpha, "the crop produced no pixels"
+        assert max(alpha) == 0, (
+            f"the {layer} layer paints {sum(1 for a in alpha if a)} pixels inside the "
+            f"{what} {box} — nothing may be drawn there")
+
+
+@needs_chrome
+@needs_ffmpeg
+@pytest.mark.parametrize("credit", [
+    "Imagery: Google Earth, Maxar Technologies",          # the Earth Studio line
+    "Photo: Some Photographer Name / CC BY 2.0",          # the longest realistic Commons line
+])
+def test_the_narrowed_credit_plate_fits_a_real_credit_in_two_lines(tmp_path, credit):
+    """The plate lost a third of its width when the zone widened to x >= 0.45. Does it fit?
+
+    media.credit_box says where the plate MAY go; only Chrome knows where the text actually
+    went, and a credit that overflows its box or spills toward the mark is a licence problem
+    rather than a layout one. So this measures the ink: it must stay inside the box
+    horizontally, sit on the box's bottom edge, and wrap to at most two lines — beyond that
+    the plate is climbing the frame one word at a time and CREDIT_FS_UNITS is too large.
+
+    Growing UPWARD past the box's nominal top is allowed and tested for separately below:
+    the box is a floor and a right edge, not a clip rectangle. Attribution that is cut off
+    is not attribution.
+    """
+    import cards
+    import render_sheets as R2
+    brand = cards.brand_tokens(None)
+    w, h = 1296, 2304
+    html = tmp_path / "credit.html"
+    html.write_text(media.credit_plate_html(credit, brand, w, h), encoding="utf-8")
+    png = tmp_path / "credit.png"
+    R2.screenshot(html, png, w, h, transparent=True)
+
+    drawn = _alpha_bbox(png, w, h)
+    assert drawn is not None, "the credit plate drew nothing at all"
+    box_left, _box_top, box_right, box_bottom = media.credit_box(w, h)
+    assert drawn[0] >= box_left, f"the plate {drawn} starts left of its box"
+    assert drawn[2] <= box_right, (
+        f"the plate {drawn} overflows credit_box's right edge {box_right} and is heading for "
+        f"the attribution zone at x={media.watermark_box(w, h)[0]}")
+    assert abs(drawn[3] - box_bottom) <= 2, "the plate is anchored to the box's bottom edge"
+    assert not media.boxes_overlap(drawn, media.watermark_box(w, h))
+
+    font_px = media.CREDIT_FS_UNITS * h / 100.0
+    lines = round((drawn[3] - drawn[1] - 2 * 0.55 * font_px) / (1.24 * font_px))
+    assert lines <= 2, (
+        f"{credit!r} wraps to {lines} lines in a {box_right - box_left}px plate; widen the "
+        f"plate or drop CREDIT_FS_UNITS")
+
+
+@needs_chrome
+@needs_ffmpeg
+def test_a_credit_too_long_for_the_plate_grows_upward_into_free_frame(tmp_path):
+    """The escape valve: a three-provider credit wraps further UP, and still clears the card."""
+    import cards
+    brand = cards.brand_tokens(None)
+    import render_sheets as R2
+    w, h = 1296, 2304
+    credit = "Imagery: Google Earth, Landsat / Copernicus, Maxar Technologies"
+    html = tmp_path / "long.html"
+    html.write_text(media.credit_plate_html(credit, brand, w, h), encoding="utf-8")
+    png = tmp_path / "long.png"
+    R2.screenshot(html, png, w, h, transparent=True)
+
+    drawn = _alpha_bbox(png, w, h)
+    assert drawn is not None
+    assert drawn[1] < media.credit_box(w, h)[1], "a long credit is supposed to grow upward"
+    assert drawn[1] > media.overlay_box(w, h)[3], "it grew into the card overlay's box"
+    assert drawn[2] <= media.credit_box(w, h)[2]
+    assert not media.boxes_overlap(drawn, media.watermark_box(w, h))
 
 
 @needs_chrome
