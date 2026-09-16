@@ -143,11 +143,16 @@ def test_the_provider_alone_changes_the_cache_key():
     assert N.cache_hash(a, "Words.") != N.cache_hash(b, "Words.")
 
 
-def test_the_cache_key_changes_with_speed_and_with_text():
+def test_the_cache_key_changes_with_text():
     cfg = N.tts_config(spec_with(tts=EL))
-    fast = N.tts_config(spec_with(tts=EL), speed=1.2)
-    assert N.cache_hash(cfg, "Words.") != N.cache_hash(fast, "Words.")
     assert N.cache_hash(cfg, "Words.") != N.cache_hash(cfg, "Other words.")
+
+
+def test_speed_is_part_of_the_kokoro_cache_key():
+    """Kokoro really does resample on --speed, so the audio differs and the key must too."""
+    cfg = N.tts_config(spec_with(voice="am_michael"))
+    fast = N.tts_config(spec_with(voice="am_michael"), speed=1.2)
+    assert N.cache_hash(cfg, "Words.") != N.cache_hash(fast, "Words.")
 
 
 def test_the_cache_key_is_stable_across_runs_so_unchanged_text_is_never_re_billed():
@@ -385,9 +390,22 @@ def drive(tmp_path, monkeypatch):
         pathlib.Path(wav_path).write_bytes(b"RIFFfake")
         return holder.seconds
 
+    real_synth_scene = N.synth_scene
     monkeypatch.setattr(N, "synth_scene", fake_synth)
     monkeypatch.setattr(N, "api_key", lambda: holder.key)
     holder.key = None
+
+    def use_real_synth():
+        """Restore the real dispatch, so a test can reach synth_elevenlabs' own handling.
+
+        Kokoro is stubbed at synth_kokoro instead — the model is not installed here — which
+        leaves the ElevenLabs half genuine all the way down to the _post_tts seam.
+        """
+        monkeypatch.setattr(N, "synth_scene", real_synth_scene)
+        monkeypatch.setattr(N, "synth_kokoro", lambda cfg, text, wav: (
+            pathlib.Path(wav).write_bytes(b"RIFFkokoro"), holder.seconds)[1])
+
+    holder.use_real_synth = use_real_synth
     holder.run = lambda *extra: N.main(["--spec", str(spec_path), "--out", str(holder.out),
                                         *extra])
     holder.meta = lambda i: json.loads((holder.out / f"scene_{i:02d}.json").read_text())
@@ -607,3 +625,172 @@ def test_synthesis_without_an_out_directory_is_an_argparse_error(drive):
     with pytest.raises(SystemExit) as e:
         N.main(["--spec", str(spec_path)])
     assert e.value.code == 2
+
+
+# ============================ fix round: review "Needs fixes" ============================
+
+# --- 1. A transport error on the PAID path escaped as a traceback. tts_check already wrapped
+# _get_voices; the synthesis call site did not, so a dropped connection mid-batch produced a
+# raw requests exception — whose str() carries the full request URL — instead of exit 2.
+
+def test_a_transport_error_on_the_paid_path_becomes_a_redacted_one_line_error(tmp_path,
+                                                                              monkeypatch):
+    def boom(*a, **k):
+        raise ConnectionError(f"HTTPSConnectionPool: refused\nwhile sending key={FAKE_KEY}")
+
+    monkeypatch.setattr(N, "_post_tts", boom)
+    monkeypatch.setattr(N, "decode_to_wav", lambda *a, **k: pytest.fail("must not decode"))
+    cfg = N.tts_config(spec_with(tts=EL))
+    with pytest.raises(N.TTSError) as e:
+        N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY)
+    message = str(e.value)
+    assert FAKE_KEY not in message
+    assert "\n" not in message, "a queue card and a build log both want one line"
+    assert "ConnectionError" in message and "could not reach" in message
+
+
+def test_a_transport_error_does_not_chain_the_raw_exception(tmp_path, monkeypatch):
+    """__cause__/__context__ are printed by an uncaught traceback — and they are not redacted."""
+    monkeypatch.setattr(N, "_post_tts",
+                        lambda *a, **k: (_ for _ in ()).throw(ConnectionError(FAKE_KEY)))
+    cfg = N.tts_config(spec_with(tts=EL))
+    with pytest.raises(N.TTSError) as e:
+        N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY)
+    assert e.value.__cause__ is None and e.value.__suppress_context__
+
+
+def test_a_transport_error_exits_2_and_leaves_the_cache_consistent(drive, monkeypatch, capsys):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.use_real_synth()
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (_ for _ in ()).throw(
+        ConnectionError("connection reset by peer")))
+    assert drive.run() == 2
+    assert not (drive.out / "scene_00.json").exists()
+    assert not (drive.out / "durations.json").exists()
+    err = capsys.readouterr().err
+    assert "could not reach" in err and "--allow-fallback" in err
+
+
+def test_a_transport_error_falls_back_per_scene_when_allowed(drive, monkeypatch):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.use_real_synth()
+    calls = []
+
+    def flaky(voice, key, body, **kw):
+        calls.append(body["text"])
+        if body["text"] == "First scene.":
+            raise ConnectionError("connection reset by peer")
+        return 200, b"ID3audio"
+
+    monkeypatch.setattr(N, "_post_tts", flaky)
+    monkeypatch.setattr(N, "decode_to_wav",
+                        lambda content, path: (pathlib.Path(path).write_bytes(b"RIFF"), 3.0)[1])
+    assert drive.run("--allow-fallback") == 0
+    assert calls == ["First scene.", "Third scene."]
+    assert drive.meta(0)["provider_used"] == "kokoro"
+    assert drive.meta(2)["provider_used"] == "elevenlabs"
+
+
+def test_a_failure_of_the_fallback_retry_itself_exits_2_rather_than_crashing(drive,
+                                                                            monkeypatch):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.use_real_synth()
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (_ for _ in ()).throw(
+        ConnectionError("down")))
+    monkeypatch.setattr(N, "synth_kokoro", lambda *a, **k: (_ for _ in ()).throw(
+        N.TTSError("kokoro model is not installed")))
+    assert drive.run("--allow-fallback") == 2
+    assert not (drive.out / "scene_00.json").exists()
+
+
+# --- 2. --speed is a Kokoro control. It sat in the ElevenLabs cache key while never reaching
+# the API, so `--speed 1.2` re-billed a whole spec for byte-identical audio.
+
+def test_a_stray_speed_flag_on_an_elevenlabs_spec_is_refused(capsys):
+    with pytest.raises(SystemExit) as e:
+        N.tts_config(spec_with(tts=EL), speed=1.2)
+    message = str(e.value)
+    assert "--speed" in message and "tts.speed" in message
+
+
+def test_speed_one_needs_no_spec_entry_because_it_changes_nothing():
+    assert N.tts_config(spec_with(tts=EL), speed=1.0).provider == N.ELEVENLABS
+
+
+def test_a_matching_tts_speed_makes_the_flag_legal_and_lands_in_voice_settings():
+    cfg = N.tts_config(spec_with(tts=dict(EL, speed=1.2)), speed=1.2)
+    assert cfg.voice_settings()["speed"] == 1.2
+    assert cfg.speed == 1.2
+
+
+def test_a_speed_flag_that_disagrees_with_the_spec_is_refused():
+    with pytest.raises(SystemExit) as e:
+        N.tts_config(spec_with(tts=dict(EL, speed=1.1)), speed=1.2)
+    assert "1.1" in str(e.value)
+
+
+def test_speed_is_not_part_of_the_elevenlabs_cache_key():
+    """It is not sent, so it cannot change the audio — and must not re-bill for it."""
+    slow = N.TTSConfig(provider=N.ELEVENLABS, voice=VOICE_ID, speed=1.0,
+                       model=N.DEFAULT_EL_MODEL)
+    fast = N.TTSConfig(provider=N.ELEVENLABS, voice=VOICE_ID, speed=1.9,
+                       model=N.DEFAULT_EL_MODEL)
+    assert N.cache_hash(slow, "Words.") == N.cache_hash(fast, "Words.")
+
+
+def test_a_spec_speed_still_changes_the_key_because_it_rides_in_voice_settings():
+    plain = N.tts_config(spec_with(tts=EL))
+    spoken_faster = N.tts_config(spec_with(tts=dict(EL, speed=1.2)), speed=1.2)
+    assert N.cache_hash(plain, "Words.") != N.cache_hash(spoken_faster, "Words.")
+
+
+def test_the_kokoro_fallback_speaks_at_the_rate_the_spec_asked_for():
+    cfg = N.tts_config(spec_with(tts=dict(EL, speed=1.2), voice="af_heart"), speed=1.2)
+    assert cfg.fallback().speed == 1.2
+
+
+# --- 3. The no-key fallback is automatic, which is right for a local render but wrong for a
+# paid batch: a deleted key file would render the whole Saturday run in Kokoro and succeed.
+
+def test_require_provider_exits_2_when_the_no_key_fallback_took_over(drive, capsys):
+    drive.spec["tts"] = dict(EL)
+    drive.key = None
+    assert drive.run("--require-provider", "elevenlabs") == 2
+    assert drive.calls == [], "nothing may be synthesized"
+    assert not drive.out.exists(), "not even the output directory"
+    err = capsys.readouterr().err
+    assert "--require-provider elevenlabs" in err and "kokoro" in err
+
+
+def test_require_provider_is_satisfied_by_the_resolved_provider(drive):
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    assert drive.run("--require-provider", "elevenlabs") == 0
+    assert [c.cfg.provider for c in drive.calls] == [N.ELEVENLABS, N.ELEVENLABS]
+
+
+def test_require_provider_kokoro_is_satisfied_by_a_kokoro_spec(drive):
+    assert drive.run("--require-provider", "kokoro") == 0
+    assert len(drive.calls) == 2
+
+
+def test_require_provider_rejects_a_name_that_is_not_a_provider(drive):
+    with pytest.raises(SystemExit) as e:
+        drive.run("--require-provider", "openai")
+    assert e.value.code == 2
+
+
+def test_require_provider_does_not_stop_a_per_scene_allow_fallback(drive):
+    """--require-provider guards the batch-wide decision, not a single scene's retry.
+
+    The two flags are contradictory by nature; --allow-fallback is the explicit per-scene
+    opt-in and stays the more specific instruction.
+    """
+    drive.spec["tts"] = dict(EL)
+    drive.key = FAKE_KEY
+    drive.fail_on = "First scene."
+    assert drive.run("--require-provider", "elevenlabs", "--allow-fallback") == 0
+    assert drive.meta(0)["provider_used"] == "kokoro"

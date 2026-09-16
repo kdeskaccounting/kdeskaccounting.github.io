@@ -15,6 +15,12 @@ still means Kokoro, unchanged.
   scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec … --out …
   …/narrate.py --spec … --tts-check          # GET /v1/voices, prove the voice_id, exit 0/2
   …/narrate.py --spec … --dry-run            # character counts + credit estimate, no network
+  …/narrate.py --spec … --out … --require-provider elevenlabs   # fail instead of falling back
+
+--speed is a Kokoro control. ElevenLabs takes a rate only inside voice_settings, so on an
+elevenlabs spec `--speed` other than 1.0 is refused unless the spec carries a matching
+`tts.speed` — a stray flag would otherwise change the cache key and re-bill for identical
+audio. For the same reason the top-level speed is not part of the ElevenLabs cache key.
 
 Output is identical for both providers: 24 kHz mono WAVs plus durations.json, so assemble.py
 and make_short.py never learn which provider spoke. ElevenLabs returns MP3, which ffmpeg
@@ -136,6 +142,17 @@ def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSC
         raise SystemExit("tts.provider is elevenlabs but no tts.voice was given. Set the "
                          "ElevenLabs voice_id in the spec (or pass --voice); a guessed id "
                          "is a billed request in somebody else's voice.")
+    # --speed is a Kokoro control: this API takes a rate only inside voice_settings. A stray
+    # --speed therefore used to change the cache key while changing nothing about the audio,
+    # which re-bills a whole spec for bytes it already has. Make the spec say it or say no.
+    spec_speed = block.get("speed")
+    if float(speed) != 1.0 and (spec_speed is None or float(spec_speed) != float(speed)):
+        raise SystemExit(
+            f"--speed {float(speed):g} is a Kokoro control. ElevenLabs is sent a rate only "
+            f"inside voice_settings, so this flag would change the cache key and re-bill for "
+            f"byte-identical audio. The spec says tts.speed: {spec_speed!r}. Either set "
+            f"`tts.speed: {float(speed):g}` in the spec to mean it, or drop --speed.")
+    speed = float(spec_speed) if spec_speed is not None else float(speed)
     settings = dict(DEFAULT_VOICE_SETTINGS)
     for name in tuple(DEFAULT_VOICE_SETTINGS) + OPTIONAL_VOICE_SETTINGS:
         if name in block:
@@ -155,11 +172,15 @@ def narration_text(scene: dict) -> str:
 
 def cache_hash(cfg: TTSConfig, text: str) -> str:
     """Every parameter that changes the audio (or the bill), in one stable digest."""
-    payload = json.dumps({"provider": cfg.provider, "voice": cfg.voice, "model": cfg.model,
-                          "voice_settings": cfg.voice_settings(), "speed": float(cfg.speed),
-                          "text": text},
-                         sort_keys=True, separators=(",", ":"))
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+    payload = {"provider": cfg.provider, "voice": cfg.voice, "model": cfg.model,
+               "voice_settings": cfg.voice_settings(), "text": text}
+    if cfg.provider == KOKORO:
+        # Kokoro resamples on speed, so the audio really does differ. ElevenLabs is never sent
+        # the top-level speed — only voice_settings["speed"], which is already in the payload —
+        # so including it here would invalidate the cache and re-bill for identical bytes.
+        payload["speed"] = float(cfg.speed)
+    return hashlib.sha1(json.dumps(payload, sort_keys=True,
+                                   separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def legacy_kokoro_hash(voice: str, speed: float, text: str) -> str:
@@ -373,8 +394,29 @@ def synth_kokoro(cfg: TTSConfig, text: str, wav_path: pathlib.Path) -> float:
     return len(audio) / SR
 
 
+def transport_message(exc: BaseException, key: str | None = None, limit: int = 300) -> str:
+    """A dropped connection as one redacted line, not a traceback.
+
+    requests raises ConnectionError/Timeout/SSLError whose str() embeds the full request URL,
+    and urllib3's chained context can carry headers. Collapsed to a single line because this
+    ends up in a build log and, one day, a queue card. Redacted before it is truncated.
+    """
+    detail = " ".join(f"{type(exc).__name__}: {exc}".split())
+    safe = redact(detail, key)
+    if len(safe) > limit:
+        safe = safe[:limit] + " […truncated]"
+    return f"ElevenLabs: could not reach {API_BASE} — {safe}"
+
+
 def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path, key: str) -> float:
-    status, content = _post_tts(cfg.voice, key, request_body(cfg, text))
+    try:
+        status, content = _post_tts(cfg.voice, key, request_body(cfg, text))
+    except TTSError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — a dead network is a failed scene, not a crash
+        # `from None`: an uncaught traceback prints __cause__/__context__, and those carry the
+        # raw exception text this function exists to redact.
+        raise TTSError(transport_message(exc, key)) from None
     if status >= 300:
         raise TTSError(http_error_message(status, content, key))
     if not content:
@@ -443,6 +485,10 @@ def main(argv: list | None = None) -> int:
     ap.add_argument("--allow-fallback", action="store_true",
                     help="on an ElevenLabs failure, narrate that scene with Kokoro instead "
                          "of failing the build (mixes voices — off by default)")
+    ap.add_argument("--require-provider", choices=PROVIDERS, default=None,
+                    help="refuse to synthesize anything unless narration resolves to this "
+                         "provider. Turns the silent no-key fallback into a failed build, "
+                         "which is what a paid batch wants")
     a = ap.parse_args(argv)
 
     import yaml  # lazy: absent outside the TTS venv
@@ -468,6 +514,14 @@ def main(argv: list | None = None) -> int:
               f"ElevenLabs one. Run with --tts-check to diagnose.",
               file=sys.stderr, flush=True)
         cfg = cfg.fallback()
+
+    # After the fallback decision, before anything is written: a Saturday batch that silently
+    # rendered in Kokoro because a key file went missing is exactly what this flag prevents.
+    if a.require_provider and cfg.provider != a.require_provider:
+        print(f"--require-provider {a.require_provider}, but narration resolved to "
+              f"{cfg.provider}. Nothing was synthesized and nothing was written.",
+              file=sys.stderr, flush=True)
+        return 2
 
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -509,7 +563,12 @@ def main(argv: list | None = None) -> int:
             scene_cfg = scene_cfg.fallback()
             print(f"scene {i:02d}: --allow-fallback — narrating with kokoro "
                   f"({scene_cfg.voice})", file=sys.stderr, flush=True)
-            seconds = synth_scene(scene_cfg, text, wav, None)
+            try:
+                seconds = synth_scene(scene_cfg, text, wav, None)
+            except TTSError as retry_exc:
+                print(f"scene {i:02d}: the Kokoro fallback failed too: {retry_exc}",
+                      file=sys.stderr, flush=True)
+                return 2
         durations[i] = seconds
         meta.write_text(json.dumps({"hash": cache_hash(scene_cfg, text), "seconds": seconds,
                                     "voice": scene_cfg.voice,

@@ -108,6 +108,12 @@ python3 scripts/digest.py --dry-run                                # compose onl
 python3 scripts/digest.py --send --vault                           # Mac only: Gmail 07:30 + vault daily note
 
 # ── 8. Venture (repo ~/parksheet) ─────────────────────────────────────────────
+# The Saturday ParkSheet render batch is the one PAID narration path, so it passes
+# --require-provider elevenlabs: if the key is ever missing, the batch fails loudly instead of
+# quietly shipping a week of Shorts in the Kokoro voice. --tts-check first, --dry-run to price it.
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py \
+  --spec ~/parksheet/video/<slug>/scenes.yaml --out scripts/video/build/<slug>/audio \
+  --require-provider elevenlabs
 python3 scripts/update_sheet.py --week 2026-W39 --dry-run          # diff vs live sheet, writes nothing
 python3 scripts/membership_sync.py --dry-run                       # (Phase 4) Drive grant/revoke it would do
 
@@ -202,7 +208,10 @@ secret costs one legible line, not a stack trace from inside a Google token refr
   a `tts:` block picks `elevenlabs` (paid, needs `ELEVENLABS_API_KEY` or `~/kdesk-analytics/elevenlabs-api-key.txt`)
   or `kokoro` (local, the default and the automatic fallback when no key is present — one loud stderr line,
   never a failed build). Run `narrate.py --spec <spec> --tts-check` before a paid batch and `--dry-run` for the
-  credit estimate; an ElevenLabs HTTP failure exits 2 rather than shipping half a video in each voice.**
+  credit estimate; an ElevenLabs HTTP or transport failure exits 2 rather than shipping half a video in each
+  voice. A paid batch — the Saturday ParkSheet run — adds **`--require-provider elevenlabs`**, which turns that
+  convenient no-key fallback back into a failed build, because a week of Shorts silently rendered in the free
+  voice is the expensive kind of success.**
 - **Every Chrome driver** (`scripts/browser/`, the two Gumroad UI scripts) — spec Chrome rule 1: Chrome is
   never on the recurring path.
 

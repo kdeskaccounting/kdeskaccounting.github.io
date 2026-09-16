@@ -144,11 +144,23 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # every error string goes through session.redact_secrets first. NO KEY = one loud stderr line and
 # Kokoro narrates instead, so dry runs and CI keep working; each scene's meta JSON records
 # `provider_used`. An ElevenLabs HTTP failure (401/402/429/5xx) exits 2 rather than mixing voices
-# in one video — pass --allow-fallback to narrate only the failed scenes locally. The cache key
-# covers provider/voice/model/voice_settings/speed/text, so unchanged text is never re-billed.
+# in one video — pass --allow-fallback to narrate only the failed scenes locally, and a transport
+# error (dropped connection, timeout) is handled the same way. The cache key covers provider/
+# voice/model/voice_settings/text, so unchanged text is never re-billed.
+# `--speed` is a KOKORO control: ElevenLabs takes a rate only inside voice_settings, so on an
+# elevenlabs spec any --speed but 1.0 is refused unless the spec carries a matching `tts.speed`
+# (otherwise a stray flag re-bills a whole spec for byte-identical audio), and the top-level
+# speed is not part of the ElevenLabs cache key.
 
 # Prove the ElevenLabs path BEFORE spending credits: does the configured voice_id exist? (exit 0/2)
 scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --tts-check
+
+# Refuse to render at all unless narration resolves to the named provider — exit 2 before any
+# synthesis, before the output directory is even created. Use it on every PAID batch: without
+# it a deleted key file renders the whole run in Kokoro and exits 0, and the only trace is one
+# stderr line nobody reads in a scheduled job. --allow-fallback still wins per scene.
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --out <dir> \
+  --require-provider elevenlabs
 
 # What a render would cost: per-scene character counts, the total, the credit estimate. No network.
 scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec <spec> --dry-run
