@@ -932,3 +932,41 @@ def test_the_mp4_lands_beside_the_card_in_that_same_dir(pub, asset, monkeypatch)
     monkeypatch.setattr(pub, "drive", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("x")))
     pub.publish(asset, META, dry_run=False)
     assert (pathlib.Path(pub.capabilities()["queue_dir"]) / "day-1.mp4").exists()
+
+
+# MINOR 8. A deterministic failure produces the same failure twice. Retrying a bad schedule
+# or a picker that will not take its value just doubles the time to the card, and doubles the
+# time a browser sits on the page during a supervised Saturday run.
+
+@pytest.mark.parametrize("exc", [
+    tw.ScheduleError("schedule_at 'next tuesday' is not an ISO-8601 timestamp"),
+    tw.ScheduleFieldError("the date field would not take '2026-09-21'"),
+])
+def test_a_deterministic_failure_is_attempted_once(pub, asset, monkeypatch, exc):
+    attempts = []
+
+    def boom(*_a, **_k):
+        attempts.append(1)
+        raise exc
+
+    monkeypatch.setattr(pub, "drive", boom)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
+    assert pub.publish(asset, META, dry_run=False).ok is False
+    assert len(attempts) == 1
+
+
+def test_a_racy_read_of_the_list_is_still_retried(pub, asset, monkeypatch):
+    """ScrapeError can be a raced render, and retrying it uploads nothing."""
+    attempts = []
+
+    def flaky(page, a, m):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise tw.ScrapeError("matched 4 rows, none with text")
+        return tw.PublishResult(platform=tw.PLATFORM, ok=True, url=S.CONTENT_URL,
+                                queued_path=None, detail="scheduled")
+
+    monkeypatch.setattr(pub, "drive", flaky)
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(_Page()))
+    assert pub.publish(asset, META, dry_run=False).ok is True
+    assert len(attempts) == 2

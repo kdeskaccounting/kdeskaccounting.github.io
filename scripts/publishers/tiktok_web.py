@@ -454,7 +454,11 @@ class TikTokWebPublisher(Publisher):
             self._page = page
             try:
                 return self.drive(page, asset, meta)
-            except VerificationFailed:
+            except (VerificationFailed, ScheduleError, ScheduleFieldError):
+                # VerificationFailed: may already be live, see above. The other two are
+                # deterministic — a malformed schedule and a picker that will not take its
+                # value both fail the same way twice, so a retry only doubles the time to
+                # the card, and the time a browser sits on the page mid-Saturday.
                 raise
             except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
                 if self._submitted:
