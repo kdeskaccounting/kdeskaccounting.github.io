@@ -195,20 +195,38 @@ def find_scheduled(rows, key: str, when: dt.datetime | None):
     return next((r for r in rows if row_matches(r, key, when)), None)
 
 
-def check_rows_sane(rows):
-    """Pass the scraped rows through, or refuse when every one of them is nameless."""
-    rows = list(rows or [])
-    if rows and not any(_norm(r.get("caption") or r.get("text")) for r in rows):
+def check_rows_sane(payload):
+    """Unwrap {count, rows}, or refuse when the selector matched rows that carry no text.
+
+    `count` is what the row selector matched; `rows` is the subset that had text. The two are
+    reported separately for one reason: the reader used to end `.filter(r => r.text)`, so
+    textless rows were gone before this guard could see them and a page of skeletons read as
+    "nothing is scheduled" — which schedules a duplicate of every post in the batch.
+
+    count > 0 with rows empty is therefore the ambiguous case, and it fails closed.
+    """
+    if isinstance(payload, dict):
+        count, rows = int(payload.get("count") or 0), list(payload.get("rows") or [])
+    else:                       # a bare list: every element carried text by construction
+        rows = list(payload or [])
+        count = len(rows)
+    rows = [r for r in rows if _norm(r.get("caption") or r.get("text"))]
+    if count and not rows:
         raise ScrapeError(
-            f"read {len(rows)} rows from the TikTok Studio content list but every one had an "
-            f"empty caption, so no scheduled post can be recognised. The list markup has "
-            f"changed: fix selectors_tiktok.POST_ROW. Refusing to continue, because treating "
-            f"this as 'nothing is scheduled' would schedule a duplicate of every post.")
+            f"the TikTok Studio content list matched {count} row(s) but not one of them "
+            f"carried any text, so no scheduled post can be recognised. Either the list "
+            f"markup has changed (fix selectors_tiktok.POST_ROW) or the read raced the "
+            f"render. Refusing to continue, because treating this as 'nothing is scheduled' "
+            f"would schedule a duplicate of every post in the batch.")
     return rows
 
 
 def scheduled_rows_js() -> str:
-    """JS: [{caption, text, url}] for every row of the content list.
+    """JS: {count, rows} — what the row selector matched, and the ones carrying text.
+
+    Both numbers, never just the survivors: `check_rows_sane` needs to know that rows existed
+    but read empty, which is the difference between "nothing is scheduled" and "the markup
+    moved". Filtering first made that guard unreachable.
 
     Built by concatenating repr()d constants rather than an f-string — the 2026-09-14 Gumroad
     outage was an f-string segment spliced onto a plain one, where `}}` stayed two literal
@@ -216,25 +234,30 @@ def scheduled_rows_js() -> str:
     wins; joining them with a comma would silently mix a table with a card grid.
     """
     sels = "[" + repr(S.POST_ROW) + "," + repr(S.POST_ROW_FALLBACK) + "]"
-    return ("() => { let rows = []; for (const s of " + sels + ") {"
-            " rows = [...document.querySelectorAll(s)]; if (rows.length) break; }"
-            " return rows.map(r => { const t = (r.innerText || '');"
+    return ("() => { let els = []; for (const s of " + sels + ") {"
+            " els = [...document.querySelectorAll(s)]; if (els.length) break; }"
+            " const rows = els.map(r => { const t = (r.innerText || '');"
             " const a = r.querySelector('a[href]');"
             " return {caption: (t.split('\\n').map(x => x.trim()).filter(Boolean)[0] || ''),"
             " text: t.replace(/\\s+/g, ' ').trim().slice(0, 400),"
-            " url: (a ? a.href : '')}; }).filter(r => r.text); }")
+            " url: (a ? a.href : '')}; }).filter(r => r.text);"
+            " return {count: els.length, rows: rows}; }")
 
 
 def scheduled_ready_js() -> str:
-    """JS predicate: has the list settled — either rows, or the empty-state copy?
+    """JS predicate: has the list settled — a row WITH TEXT, or the empty-state copy?
 
-    This is the distinction that decides whether a skip is safe. "No rows yet" during hydration
-    and "no scheduled posts" look identical in a single read, and only one of them means it is
-    safe to upload. When neither appears the wait times out, which queues a card.
+    This is the distinction that decides whether a skip is safe. "No rows yet" during
+    hydration and "no scheduled posts" look identical in a single read, and only one of them
+    means it is safe to upload. A bare element count is not the test: a header row and a
+    skeleton row both match the row selector while the real rows are still loading, so
+    `if (querySelectorAll(s).length) return true` declared the page settled a beat before it
+    was. When neither condition appears the wait times out, which queues a card.
     """
     sels = "[" + repr(S.POST_ROW) + "," + repr(S.POST_ROW_FALLBACK) + "]"
     return ("() => { for (const s of " + sels + ")"
-            " if (document.querySelectorAll(s).length) return true;"
+            " for (const r of document.querySelectorAll(s))"
+            " if (((r.innerText || '').trim()).length) return true;"
             " const t = ((document.body && document.body.innerText) || '').toLowerCase();"
             " return t.includes(" + repr(S.SCHEDULED_EMPTY_TEXT) + "); }")
 

@@ -116,7 +116,10 @@ class _Page:
 
     def evaluate(self, js, *a):
         self.calls.append("evaluate")
-        return self.rows_reads.pop(0) if self.rows_reads else []
+        value = self.rows_reads.pop(0) if self.rows_reads else []
+        # The row reader returns {count, rows}: `count` is what the selector matched,
+        # `rows` only those with text. A bare list in a test means "all of them had text".
+        return value if isinstance(value, dict) else {"count": len(value), "rows": value}
 
     # locators --------------------------------------------------------------
     def locator(self, sel):
@@ -731,3 +734,63 @@ def test_the_submitted_flag_does_not_leak_between_days_of_a_batch(pub, asset, mo
     page2 = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
     monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page2))
     assert pub.publish(asset, META, dry_run=False).ok is True
+
+
+# CRITICAL 2. The ambiguity guard was unreachable. The row reader ended `.filter(r => r.text)`,
+# so textless rows vanished before check_rows_sane could see them, and the ready predicate
+# returned true the moment ANY [role='row'] existed — a header or a skeleton row. The
+# sequence header renders → ready → rows [] → no match → upload is a duplicate, arrived at
+# through two "safe" checks that both said yes.
+
+def test_a_skeleton_or_header_row_with_no_text_is_refused_not_read_as_empty():
+    with pytest.raises(tw.ScrapeError) as e:
+        tw.check_rows_sane({"count": 3, "rows": []})
+    assert "3" in str(e.value)
+    assert "duplicate" in str(e.value).lower()
+
+
+def test_a_genuinely_empty_list_passes_through():
+    assert tw.check_rows_sane({"count": 0, "rows": []}) == []
+
+
+def test_rows_with_text_pass_through_unchanged():
+    rows = [_row("Epcot wait times fell 22% last week. #parks #data")]
+    assert tw.check_rows_sane({"count": 1, "rows": rows}) == rows
+
+
+def test_the_reader_reports_what_the_selector_matched_not_only_what_had_text():
+    js = tw.scheduled_rows_js()
+    assert "count:" in js and "rows:" in js
+    assert not js.rstrip().endswith(".filter(r => r.text); }"), \
+        "filtering before the count is what made the guard unreachable"
+    assert _balanced(js, "{", "}") and _balanced(js, "(", ")") and _balanced(js, "[", "]")
+
+
+def test_the_ready_predicate_needs_a_row_with_text_not_merely_a_row():
+    js = tw.scheduled_ready_js()
+    assert "innerText" in js and "trim()" in js
+    # The anti-pattern is the bare element count: a header or skeleton row matches the row
+    # selector while the real rows are still loading.
+    assert "querySelectorAll(s).length) return true" not in js, \
+        "a textless row must not count as 'settled'"
+    assert S.SCHEDULED_EMPTY_TEXT in js, "the empty-state copy is the other way to settle"
+
+
+def test_the_ready_predicate_still_accepts_the_empty_state_copy():
+    js = tw.scheduled_ready_js()
+    assert "includes(" + repr(S.SCHEDULED_EMPTY_TEXT) + ")" in js
+
+
+def test_a_skeleton_list_raises_before_anything_is_uploaded(pub, asset, monkeypatch):
+    page = _Page(rows_reads=[{"count": 4, "rows": []}])
+    with pytest.raises(tw.ScrapeError):
+        pub.drive(page, asset, META)
+    assert not _uploads(page), "an unreadable list must never lead to an upload"
+
+
+def test_a_skeleton_list_is_not_retried_into_an_upload(pub, asset, monkeypatch):
+    page = _Page(rows_reads=[{"count": 4, "rows": []}, {"count": 4, "rows": []}])
+    monkeypatch.setattr(tw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    assert result.ok is False
+    assert not _uploads(page)
