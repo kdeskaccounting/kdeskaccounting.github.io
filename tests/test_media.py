@@ -16,6 +16,7 @@ import pathlib
 
 import pytest
 
+import captions
 import cards
 import media
 
@@ -298,16 +299,59 @@ def test_validate_spec_checks_scenes_the_short_does_not_even_use(tmp_path):
 
 
 # --- the attribution exclusion zone ---------------------------------------------------
+#
+# The zone is MEASURED, not guessed, and it is not really a corner. On the first real Earth
+# Studio portrait render (1080x1920, cloud video, Attribution Position bottom-right at its
+# maximum offsets) the "Google Earth" wordmark lands at x 0.495-0.815 and y 0.909-0.933 of
+# the frame, with the smaller data-provider line under it reaching about y 0.955. Earth
+# Studio will not push it further right or lower on a portrait canvas, so that rectangle is
+# the worst case the zone has to contain — and it sits well left of, and well above, the
+# bottom-right corner, which is why the old 20% x 8% corner zone missed the mark completely.
+#
+# EARTH_MARK_FRAC rounds that measurement outward. Every test below is written against it or
+# against the boxes, never against the constants, so re-measuring is a one-line change here.
+EARTH_MARK_FRAC = (0.49, 0.90, 0.82, 0.96)
 
-def test_the_watermark_zone_is_the_bottom_right_twenty_by_eight_percent():
-    assert (media.WATERMARK_W_FRAC, media.WATERMARK_H_FRAC) == (0.20, 0.08)
+
+def mark_box(w, h):
+    """The measured Google Earth mark as (left, top, right, bottom) pixels on a w x h frame."""
+    left, top, right, bottom = EARTH_MARK_FRAC
+    return (round(w * left), round(h * top), round(w * right), round(h * bottom))
+
+
+@pytest.mark.parametrize("w,h", CANVASES)
+def test_the_exclusion_zone_contains_the_measured_google_earth_mark(w, h):
+    """This is what pins the constants: the zone is sized FROM the render, not from a guess."""
+    zone_left, zone_top, zone_right, zone_bottom = media.watermark_box(w, h)
+    left, top, right, bottom = mark_box(w, h)
+    assert zone_left <= left, "the mark starts left of the zone; widen WATERMARK_W_FRAC"
+    assert zone_top <= top, "the mark starts above the zone; grow WATERMARK_H_FRAC"
+    assert zone_right >= right and zone_bottom >= bottom
 
 
 @pytest.mark.parametrize("w,h", CANVASES)
 def test_the_watermark_box_is_anchored_to_the_bottom_right_corner(w, h):
     left, top, right, bottom = media.watermark_box(w, h)
     assert (right, bottom) == (w, h)
-    assert left == round(w * 0.80) and top == round(h * 0.92)
+    assert left == round(w * (1 - media.WATERMARK_W_FRAC))
+    assert top == round(h * (1 - media.WATERMARK_H_FRAC))
+
+
+@pytest.mark.parametrize("w,h", CANVASES)
+def test_nothing_the_renderer_draws_touches_the_measured_mark(w, h):
+    """The whole rule in one assertion, against the measurement rather than the constants.
+
+    Three plates can reach the lower frame: the card overlay, the credit plate, and the
+    caption band (which is placed by captions.py but fenced by this zone). None of them may
+    put a pixel where Earth Studio printed its attribution.
+    """
+    mark = mark_box(w, h)
+    band = captions.caption_box(w, h)
+    squeezed = captions.caption_box(w, h, card_top=media.overlay_box(w, h)[1])
+    for name, box in (("overlay", media.overlay_box(w, h)),
+                      ("credit", media.credit_box(w, h)),
+                      ("caption band", band), ("squeezed band", squeezed)):
+        assert not media.boxes_overlap(box, mark), f"the {name} box covers the Earth mark"
 
 
 @pytest.mark.parametrize("w,h", CANVASES)
@@ -318,8 +362,22 @@ def test_the_credit_plate_never_reaches_the_attribution_watermark(w, h):
 @pytest.mark.parametrize("w,h", CANVASES)
 def test_the_credit_plate_sits_in_the_lower_left(w, h):
     left, top, right, bottom = media.credit_box(w, h)
-    assert left < w / 2 and right < w      # left-anchored, clear of the right edge
+    assert left < w / 2                    # left-anchored
+    assert right <= media.watermark_box(w, h)[0]   # stops at the zone's left edge
     assert top > h / 2                     # lower half
+
+
+@pytest.mark.parametrize("w,h", CANVASES)
+def test_the_credit_plate_is_still_wide_enough_to_read(w, h):
+    """The zone's left edge moved in to 45% of the width, so the plate lost a third of it.
+
+    A plate narrower than a handful of em is one word a line, which is the point at which
+    "the credit wraps" stops being acceptable attribution. The Chrome-measured check that it
+    really does fit a full credit in two lines is in tests/test_media_scene_e2e.py.
+    """
+    left, _top, right, _bottom = media.credit_box(w, h)
+    font_px = media.CREDIT_FS_UNITS * h / 100.0
+    assert (right - left) / font_px >= 10
 
 
 @pytest.mark.parametrize("w,h", CANVASES)
@@ -329,10 +387,16 @@ def test_the_overlay_bottom_edge_stays_above_the_attribution_watermark(w, h):
 
 
 @pytest.mark.parametrize("w,h", CANVASES)
-def test_the_overlay_owns_roughly_the_lower_sixty_percent(w, h):
+def test_the_overlay_keeps_at_least_forty_percent_of_the_frame_for_the_card(w, h):
+    """The zone got 4 points taller, which comes straight off the bottom of the card plate.
+
+    Below roughly 40% of the frame a ranked_list stops being a card and becomes a strip, so
+    this is the floor that says whether CLEARANCE_FRAC or OVERLAY_TOP_FRAC has to give.
+    """
     left, top, right, bottom = media.overlay_box(w, h)
-    assert 0.55 <= (h - top) / h <= 0.65
+    assert (bottom - top) / h >= 0.40
     assert left > 0 and right < w          # inside the side safe margins
+    assert top > captions.caption_box(w, h)[3]     # and clear below the caption band
 
 
 @pytest.mark.parametrize("w,h", CANVASES)
