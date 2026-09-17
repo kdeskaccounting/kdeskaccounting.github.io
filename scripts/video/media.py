@@ -418,9 +418,10 @@ def ffmpeg_video_filter(motion: str, dur: float, w: int, h: int, fps: int = FPS)
 def wants_blur_fill(src_w: int | None, src_h: int | None) -> bool:
     """Is this source too wide to crop to 9:16 — i.e. does it need the blurred backdrop?
 
-    True for anything at or past BLUR_FILL_RATIO; False for a portrait source, and False
-    when the size is unknown (probing failed), which keeps the old cover-and-crop as the
-    fallback rather than changing the picture on a guess.
+    True for anything WIDER than BLUR_FILL_RATIO; the ratio itself, and everything more
+    portrait than it, still crops. False too when the size is unknown (probing failed),
+    which keeps the old cover-and-crop as the fallback rather than changing the picture on
+    a guess.
     """
     if not src_w or not src_h:
         return False
