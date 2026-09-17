@@ -128,7 +128,7 @@ def test_media_branch_encodes_each_scene_against_its_narrated_wav(stub_main):
     assert len(cmds) == 2
     for k, idx in enumerate(stub_main.spec["short"]["scenes"]):
         wav = stub_main.build / "audio" / f"scene_{idx:02d}.wav"
-        dur = DURATIONS[str(idx)] + 0.6
+        dur = DURATIONS[str(idx)] + M.SCENE_PAD
         assert str(wav) in cmds[k]
         assert cmds[k][cmds[k].index("-t") + 1] == f"{dur:.3f}"
         assert str(stub_main.work / f"scene_{k}.mp4") == cmds[k][-1]
@@ -177,9 +177,25 @@ def test_each_scene_uses_the_filter_chain_its_motion_names(stub_main):
     M.main()
     cmds = _media_cmds(stub_main)
     for k, motion in enumerate(("kenburns", "clip")):
-        dur = DURATIONS[str(k)] + 0.6
+        dur = DURATIONS[str(k)] + M.SCENE_PAD
         chain = cmds[k][cmds[k].index("-filter_complex") + 1]
         assert media.ffmpeg_video_filter(motion, dur, M.RW, M.RH) in chain
+
+
+# --- the pad at every join ------------------------------------------------------------------
+
+def test_the_scene_pad_and_narrates_lead_in_fit_inside_the_join_budget():
+    """The silence a viewer hears at a cut is this scene's pad plus the next one's lead-in."""
+    import narrate
+    assert M.SCENE_PAD + narrate.LEAD_IN_S <= 0.6
+    assert M.SCENE_PAD > 0, "some pad has to survive, or the last word is cut off"
+
+
+def test_every_scene_kind_is_padded_by_the_same_constant(stub_main):
+    """Media, card and legacy sheet scenes all read SCENE_PAD — one place to change it."""
+    src = pathlib.Path(M.__file__).read_text(encoding="utf-8")
+    assert src.count("dur = adur + SCENE_PAD") == 3
+    assert "dur = adur + 0.6" not in src
 
 
 def test_a_scene_with_neither_overlay_nor_credit_encodes_the_footage_alone(stub_main,

@@ -45,6 +45,20 @@ RUN_TIMEOUT = 600
 #: writes the flag unconditionally, and it survives the copy.
 RANGE_BSF = "h264_metadata=video_full_range_flag=0"
 
+#: Frames held after the narration finishes, in every scene part.
+#:
+#: narrate.py trims the silence off both ends of each WAV and prepends narrate.LEAD_IN_S
+#: (0.3 s), so the silence a viewer hears at a cut is this pad plus that lead-in. At the 0.6 s
+#: this used to be, that is 0.9 s of dead air between the last word of one scene and the first
+#: of the next — long enough that silencedetect flags it and the narration audibly "cuts out"
+#: at every join. 0.25 + 0.3 = 0.55 s: a breath, not a gap.
+#:
+#: Applied to EVERY scene kind, not only `kind: media`. The arithmetic is identical — the only
+#: other thing the pad covers is encode_scene's 0.3 s fade-out, which now begins 0.05 s before
+#: the last word ends instead of 0.3 s after it — and a mixed Short that kept 0.6 s on its card
+#: scenes would still have 0.9 s of dead air at every card-led join, which is the defect.
+SCENE_PAD = 0.25
+
 #: Input options for the concat in the CAPTIONED final pass, which is the only pass that runs
 #: the parts through a filter graph.
 #:
@@ -443,7 +457,7 @@ def main():
             motion = sc.get("motion") or media.default_motion(kind)
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
-            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4")
             add_part(out, idx)
@@ -458,7 +472,7 @@ def main():
                                 RW, RH, html_dir=work,
                                 box=card_box_under_captions(RW, RH) if cap.enabled else None)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
-            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
             out = encode_scene(png, wav, dur, a.crf)
             add_part(out, idx); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue
@@ -493,7 +507,7 @@ def main():
             f = focus.get(str(idx), {}); fx = min(0.72, max(0.30, float(f.get("fx", 0.5)))); fy = min(0.60, max(0.20, float(f.get("fy", 0.5)) * src.height / crop.height))
         hp = work / f"scene_{k}.html"; hp.write_text(scene_html(sh["hook"], sc.get("caption", ""), cropped.resolve(), fx, fy, mode, pan))
         png = work / f"scene_{k}.png"; R.screenshot(hp, png, RW, RH)
-        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + 0.6
+        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
         out = encode_scene(png, wav, dur, a.crf)
         add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None

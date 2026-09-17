@@ -274,6 +274,82 @@ def test_a_media_scene_composites_into_a_short_ready_mp4(tmp_path):
     assert abs(float(info["format"]["duration"]) - 4.0) < 0.15
 
 
+# --- the joins, on the rendered demo ---------------------------------------------------------
+
+DEMO_BUILD = REPO / "scripts" / "video" / "build" / "media-demo"
+DEMO_SHORT = DEMO_BUILD / "media-demo-short.mp4"
+DEMO_CONCAT = DEMO_BUILD / "short" / "concat.txt"
+
+#: The silence a viewer may hear at a cut: make_short.SCENE_PAD after the last word of one
+#: scene plus narrate.LEAD_IN_S before the first of the next. Anything longer and the
+#: narration audibly "cuts out" between clips, which is what this number exists to stop.
+MAX_JOIN_GAP = 0.6
+
+
+def _part_spans():
+    """(name, start, end) of every part of the rendered demo, from the concat list it used."""
+    import make_short as M
+    spans, at = [], 0.0
+    for line in DEMO_CONCAT.read_text(encoding="utf-8").splitlines():
+        if line.startswith("file "):
+            part = pathlib.Path(line[5:].strip().strip("'"))
+            seconds = M.dur_of(part)
+            spans.append((part.name, at, at + seconds))
+            at += seconds
+    return spans
+
+
+def _silences(video, floor="-45dB", minimum=0.15):
+    """(start, end) of every stretch silencedetect calls silence, in order."""
+    import make_short as M
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "info", "-i", str(video), "-af",
+         f"silencedetect=noise={floor}:d={minimum}", "-f", "null", "-"],
+        capture_output=True, text=True, timeout=600)
+    out, start = [], None
+    for line in proc.stderr.splitlines():
+        if "silence_start:" in line:
+            start = float(line.split("silence_start:")[1].split()[0])
+        elif "silence_end:" in line and start is not None:
+            out.append((start, float(line.split("silence_end:")[1].split()[0])))
+            start = None
+    if start is not None:
+        out.append((start, M.dur_of(video)))
+    return out
+
+
+def test_the_pad_and_the_lead_in_add_up_to_the_join_budget():
+    """Arithmetic, before any render: this is why the gap fits."""
+    import make_short as M
+    import narrate
+    assert M.SCENE_PAD + narrate.LEAD_IN_S <= MAX_JOIN_GAP
+
+
+@needs_ffmpeg
+@pytest.mark.skipif(not DEMO_CONCAT.exists(),
+                    reason=f"{DEMO_SHORT} has not been rendered in this checkout")
+def test_the_rendered_demo_has_no_dead_air_at_a_scene_join():
+    """The defect: ~1.2 s of silence at every cut, because each part was narration + 0.6 s."""
+    spans = _part_spans()
+    assert len(spans) >= 2, "a one-part Short has no joins to measure"
+    quiet = _silences(DEMO_SHORT)
+    measured = 0
+    for (name, _lo, boundary), (next_name, _nlo, _nhi) in zip(spans, spans[1:]):
+        if next_name == "end.mp4":
+            continue                    # the closing plate is 1.5 s of deliberate silence
+        covering = [(s, e) for s, e in quiet if s <= boundary <= e]
+        measured += 1
+        if not covering:
+            continue                    # no silence detected across the cut at all: ideal
+        start, end = covering[0]
+        gap = end - start
+        assert gap <= MAX_JOIN_GAP + 0.05, (
+            f"{gap:.2f}s of silence across the join at {boundary:.2f}s "
+            f"({name} -> {next_name}); the budget is {MAX_JOIN_GAP}s — make_short.SCENE_PAD "
+            f"plus narrate.LEAD_IN_S")
+    assert measured, "every join was the end-card plate; nothing was actually checked"
+
+
 # --- the driver --------------------------------------------------------------------------
 
 @needs_venv

@@ -119,7 +119,7 @@ def test_card_branch_encodes_its_own_png_against_the_narrated_wav(stub_main):
     M.main()
     work = stub_main.build / "short"
     for k, idx in enumerate(SPEC["short"]["scenes"]):
-        dur = DURATIONS[str(idx)] + 0.6
+        dur = DURATIONS[str(idx)] + M.SCENE_PAD
         assert stub_main.cmds[k] == _expected_encode_cmd(
             work / f"scene_{k}.png", stub_main.build / "audio" / f"scene_{idx:02d}.wav",
             work / f"scene_{k}.mp4", dur)
