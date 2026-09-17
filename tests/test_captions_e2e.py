@@ -149,6 +149,74 @@ def test_the_accent_is_on_screen_during_a_word_window_and_gone_outside_every_cue
 
 @needs_chrome
 @needs_ffmpeg
+def test_a_caption_in_the_second_part_of_the_concat_survives_the_part_boundary(tmp_path):
+    """The regression this file exists for now: captions that stopped at the first cut.
+
+    The parts of a Short are encoded one at a time and do NOT come out with the same colour
+    description — a JPEG-sourced media part is untagged, a card part bt470bg, a PNG-sourced
+    one bt709. At the first boundary ffmpeg says "Reconfiguring filter graph because video
+    parameters changed" and rebuilds every overlay; each caption PNG is a single-frame input
+    that hit EOF in the first fortieth of a second, so the rebuilt overlays have no second
+    input at all. Every caption from scene 2 onwards silently disappeared, with ffmpeg
+    exiting 0.
+
+    So: two parts that differ exactly the way real parts differ, one caption in each. Both
+    have to be on screen. Without make_short.CONCAT_INPUT_ARGS the second one is not.
+    """
+    box = captions.caption_box(M.OUT_W, M.OUT_H)
+    brand = cards.brand_tokens(None)
+    # A cue in part 1 (0.4-1.4 s) and a cue in part 2 (2.4-3.4 s); each part is 2 s long.
+    cues = [captions.Cue(text="first part", start=0.4, end=1.4,
+                         words=(captions.Word("first", 0.4, 0.9),
+                                captions.Word("part", 0.9, 1.4))),
+            captions.Cue(text="second part", start=2.4, end=3.4,
+                         words=(captions.Word("second", 2.4, 2.9),
+                                captions.Word("part", 2.9, 3.4)))]
+    overlays = M.render_captions(cues, captions.CaptionConfig(True, ACCENT, "top"),
+                                 brand, tmp_path, box)
+    assert len(overlays) == 4
+
+    parts = []
+    for name, tags in (("part0", []),
+                       ("part1", ["-colorspace", "bt709", "-color_primaries", "bt709",
+                                  "-color_trc", "bt709"])):
+        path = tmp_path / f"{name}.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                        "-i", f"color=c=0x203040:s={M.OUT_W}x{M.OUT_H}:r={M.FPS}:d=2",
+                        *tags, "-c:v", "libx264", "-preset", "ultrafast",
+                        "-pix_fmt", "yuv420p", str(path)],
+                       check=True, capture_output=True, timeout=300)
+        parts.append(path)
+    # The premise: the two parts really do disagree, which is what makes ffmpeg rebuild.
+    spaces = {subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                              "-show_entries", "stream=color_space", "-of", "csv=p=0",
+                              str(p)], capture_output=True, text=True,
+                             timeout=120).stdout.strip() for p in parts}
+    assert len(spaces) == 2, f"the two parts were tagged the same ({spaces}); no rebuild"
+
+    lst = tmp_path / "concat.txt"
+    lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
+    out = tmp_path / "joined.mp4"
+    args = [*M.CONCAT_INPUT_ARGS, "-f", "concat", "-safe", "0", "-i", str(lst)]
+    for png, _s, _e in overlays:
+        args += ["-i", str(png)]
+    steps = M.caption_filter(overlays, box[1])
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *args, "-filter_complex", ";".join(steps),
+                    "-map", "[vout]", "-c:v", "libx264", "-preset", "ultrafast",
+                    "-pix_fmt", "yuv420p", "-r", str(M.FPS), str(out)],
+                   check=True, capture_output=True, timeout=300)
+
+    # The whole point: a window on each side of the cut, not only the first one.
+    for at, where in ((0.6, "the first part"), (1.2, "the first part"),
+                      (2.6, "the SECOND part"), (3.2, "the SECOND part")):
+        assert _accent_pixels(_rgb(out, at, box)) > 300, \
+            f"no caption at t={at} — {where}, past the boundary the graph is rebuilt at"
+    # and the join did not silently swallow the tail of the video
+    assert M.dur_of(out) == pytest.approx(4.0, abs=0.2)
+
+
+@needs_chrome
+@needs_ffmpeg
 def test_nothing_is_ever_drawn_below_the_safe_zone_or_in_the_attribution_corner(tmp_path):
     """The band's own claim, against the pixels — not just against the constants."""
     box = captions.caption_box(M.OUT_W, M.OUT_H)
@@ -197,6 +265,69 @@ def test_the_rendered_demo_short_carries_the_highlight_only_while_a_cue_is_up():
             f"accent pixels at t={at:.2f}, which no cue covers"
     assert json.loads((DEMO_SHORT.parent / "audio" / "scene_00.words.json").read_text()), \
         "the demo's word timings went missing"
+
+
+def _demo_part_seconds():
+    """Where each encoded part of the rendered demo starts and ends, from its own concat list.
+
+    The parts are what the caption pass joins, so the LAST part is the last scene — and the
+    boundary between part 1 and part 2 is where captions used to stop dead.
+    """
+    lst = (DEMO_SHORT.parent / "short" / "concat.txt").read_text(encoding="utf-8")
+    spans, at = [], 0.0
+    for line in lst.splitlines():
+        if not line.startswith("file "):
+            continue
+        seconds = M.dur_of(pathlib.Path(line[5:].strip().strip("'")))
+        spans.append((at, at + seconds))
+        at += seconds
+    return spans
+
+
+@needs_ffmpeg
+@pytest.mark.skipif(not DEMO_PLAN.exists(),
+                    reason=f"{DEMO_SHORT} has not been rendered in this checkout")
+def test_the_rendered_demo_still_has_captions_in_its_LAST_scene():
+    """The defect, on the real render: every window after the first cut used to be gone.
+
+    Not "some caption late in the file" — a window that belongs to the final narrated scene,
+    which is the far side of every part boundary in the Short.
+    """
+    import json
+    plan = json.loads(DEMO_PLAN.read_text(encoding="utf-8"))
+    box, windows = tuple(plan["band"]), plan["windows"]
+    spans = _demo_part_seconds()
+    assert len(spans) >= 2, "a one-part Short cannot show this"
+    # The last part is the end-card plate when the spec has a `cta:`; the last NARRATED scene
+    # is the last part any caption window falls inside.
+    last_spoken = max(i for i, (lo, hi) in enumerate(spans)
+                      if any(lo <= row["start"] < hi for row in windows))
+    lo, hi = spans[last_spoken]
+    late = [row for row in windows if lo <= row["start"] < hi]
+    assert late, f"no caption window at all in the last scene ({lo:.1f}-{hi:.1f}s)"
+    for row in (late[0], late[len(late) // 2], late[-1]):
+        mid = (row["start"] + row["end"]) / 2
+        assert _accent_pixels(_rgb(DEMO_SHORT, mid, box)) > 300, (
+            f"no highlight at t={mid:.2f}, mid-window on {row['lit']!r} in the last scene "
+            f"(part {last_spoken}, {lo:.1f}-{hi:.1f}s) — captions stopped at a part boundary")
+
+
+@needs_ffmpeg
+@pytest.mark.skipif(not DEMO_PLAN.exists(),
+                    reason=f"{DEMO_SHORT} has not been rendered in this checkout")
+def test_the_rendered_demo_carries_a_caption_in_every_one_of_its_parts():
+    """Belt to the braces above: no part of the Short may be quietly uncaptioned."""
+    import json
+    plan = json.loads(DEMO_PLAN.read_text(encoding="utf-8"))
+    box, windows = tuple(plan["band"]), plan["windows"]
+    for n, (lo, hi) in enumerate(_demo_part_seconds()):
+        inside = [row for row in windows if lo <= row["start"] < hi]
+        if not inside:            # the end-card plate is silent by design
+            continue
+        row = inside[len(inside) // 2]
+        mid = (row["start"] + row["end"]) / 2
+        assert _accent_pixels(_rgb(DEMO_SHORT, mid, box)) > 300, \
+            f"part {n} ({lo:.1f}-{hi:.1f}s) has {len(inside)} windows and none of them drew"
 
 
 @needs_ffmpeg

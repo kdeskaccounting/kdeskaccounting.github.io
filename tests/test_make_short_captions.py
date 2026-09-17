@@ -263,6 +263,34 @@ def test_the_captioned_final_pass_re_encodes_once_with_loudnorm_in_the_same_grap
     assert "[aout]" in cmd
 
 
+# --- the graph has to survive the part boundaries ------------------------------------------
+#
+# The bug this guards: the parts are encoded separately and do NOT agree on the colour
+# description libx264 writes (a JPEG-sourced media part came out untagged, a card part
+# bt470bg, a PNG-sourced one bt709) or on sample aspect ratio. At the FIRST part boundary
+# ffmpeg therefore "reconfigures the filter graph because video parameters changed" and
+# rebuilds every overlay — and by then each caption PNG, a single-frame input, has long since
+# hit EOF, so the rebuilt overlays have no second input at all. Captions stopped dead at the
+# end of scene 1 (86 of 102 word windows lost on a real 5-scene Short) with ffmpeg exiting 0.
+
+def test_the_caption_pass_pins_the_filter_graph_to_the_parameters_it_was_built_for(stub):
+    stub.go()
+    cmd = _final(stub)
+    concat = cmd.index("concat")
+    assert list(M.CONCAT_INPUT_ARGS) == ["-reinit_filter", "0"]
+    reinit = cmd.index("-reinit_filter")
+    assert cmd[reinit + 1] == "0"
+    assert reinit < concat, "-reinit_filter is an INPUT option; after -i it applies to nothing"
+    assert reinit < cmd.index("-i")
+
+
+def test_the_uncaptioned_concat_needs_no_such_thing(stub):
+    """It is a stream copy: there is no filter graph to reconfigure, and no flag to add."""
+    stub.spec = _spec()
+    stub.go()
+    assert "-reinit_filter" not in _final(stub)
+
+
 def test_the_captioned_output_keeps_the_limited_range_tagging_of_every_part(stub):
     stub.go()
     cmd = _final(stub)

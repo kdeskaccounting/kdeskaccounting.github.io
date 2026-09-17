@@ -45,6 +45,25 @@ RUN_TIMEOUT = 600
 #: writes the flag unconditionally, and it survives the copy.
 RANGE_BSF = "h264_metadata=video_full_range_flag=0"
 
+#: Input options for the concat in the CAPTIONED final pass, which is the only pass that runs
+#: the parts through a filter graph.
+#:
+#: The parts are encoded separately and do not agree on the colour description libx264 writes
+#: (a JPEG-sourced media part comes out untagged, a card part bt470bg, a PNG-sourced one
+#: bt709) or on sample aspect ratio, so at the FIRST part boundary ffmpeg says "Reconfiguring
+#: filter graph because video parameters changed" and rebuilds the graph. Every caption PNG is
+#: a single-frame input that has long since hit EOF by then, so the rebuilt overlays have no
+#: second input at all: captions stop dead at the end of scene 1 and never come back, with
+#: ffmpeg exiting 0 and saying nothing. Measured on a real 5-scene Short, that lost 86 of 102
+#: word windows.
+#:
+#: `-reinit_filter 0` pins the graph to the parameters the first part arrived with, which is
+#: exactly what the uncaptioned `-c:v copy` concat does anyway. `-loop 1` on every caption
+#: input fixes the symptom too — an input that never ends is still there after a rebuild — but
+#: it costs a full PNG decode per input per frame: measured on the same Short, the final pass
+#: went from 12 s to over 300 s (still unfinished), so this is the cheap end of the fix.
+CONCAT_INPUT_ARGS = ("-reinit_filter", "0")
+
 def run(cmd):
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=RUN_TIMEOUT)
@@ -497,7 +516,7 @@ def main():
         (work / "captions.json").write_text(
             json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
             encoding="utf-8")
-        args = ["-f", "concat", "-safe", "0", "-i", str(lst)]
+        args = [*CONCAT_INPUT_ARGS, "-f", "concat", "-safe", "0", "-i", str(lst)]
         for png, _s, _e in overlays:
             args += ["-i", str(png)]
         steps = caption_filter(overlays, cap_box[1])
