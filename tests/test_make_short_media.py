@@ -13,6 +13,7 @@ the single place that decides where anything lands.
 """
 import json
 import pathlib
+import re
 import sys
 import types
 
@@ -110,14 +111,24 @@ def test_media_branch_writes_the_html_the_layer_helpers_produced(stub_main):
         media.credit_plate_html(CREDIT, tokens, M.RW, M.RH)
 
 
+def _layer_overlays(chain):
+    """The overlay steps that composite a LAYER PNG — i.e. the ones reading an ffmpeg input.
+
+    The blur fill overlays too, but it overlays one branch of the source onto another, never
+    an input stream, so `[2:v]`/`[3:v]` is what tells the two apart.
+    """
+    return [s for s in chain.split(";") if "overlay=" in s and re.search(r"\[\d+:v\]", s)]
+
+
 def test_the_layers_are_full_frame_pngs_so_the_geometry_lives_in_one_place(stub_main):
     """Laid over the footage at 0,0 — nothing in ffmpeg re-decides where a plate sits."""
     M.main()
     for cmd in _media_cmds(stub_main):
         chain = cmd[cmd.index("-filter_complex") + 1]
-        for step in chain.split(";"):
-            if "overlay=" in step:
-                assert "overlay=x=0:y=0" in step
+        steps = _layer_overlays(chain)
+        assert steps
+        for step in steps:
+            assert "overlay=x=0:y=0" in step
 
 
 # --- the encode -------------------------------------------------------------------------
@@ -180,6 +191,70 @@ def test_each_scene_uses_the_filter_chain_its_motion_names(stub_main):
         dur = DURATIONS[str(k)] + M.SCENE_PAD
         chain = cmds[k][cmds[k].index("-filter_complex") + 1]
         assert media.ffmpeg_video_filter(motion, dur, M.RW, M.RH) in chain
+
+
+# --- how the source fills the frame -------------------------------------------------------
+#
+# A 16:9 source cropped to 9:16 keeps under a third of its width, so whatever the photograph
+# was of, the Short shows whatever sat in the middle column. Above media.BLUR_FILL_RATIO the
+# whole picture is kept, over a blurred copy of itself.
+
+def test_the_scene_probes_its_source_so_the_fill_can_branch_on_its_shape(stub_main,
+                                                                        monkeypatch):
+    probed = []
+    monkeypatch.setattr(M, "probe_size", lambda p: probed.append(pathlib.Path(p).name) or None)
+    M.main()
+    assert probed == ["still.png", "clip.mp4"]
+
+
+def test_a_landscape_source_is_blur_filled_instead_of_cropped(stub_main, monkeypatch):
+    monkeypatch.setattr(M, "probe_size", lambda p: (1920, 1080))
+    M.main()
+    for k, motion in enumerate(("kenburns", "clip")):
+        cmd = _media_cmds(stub_main)[k]
+        chain = cmd[cmd.index("-filter_complex") + 1]
+        dur = DURATIONS[str(k)] + M.SCENE_PAD
+        for step in media.ffmpeg_video_steps(motion, dur, M.RW, M.RH, M.FPS, 1920, 1080):
+            assert step in chain
+
+
+def test_a_portrait_source_is_cropped_exactly_as_it_always_was(stub_main, monkeypatch):
+    monkeypatch.setattr(M, "probe_size", lambda p: (1080, 1920))
+    M.main()
+    chain = _media_cmds(stub_main)[0][_media_cmds(stub_main)[0].index("-filter_complex") + 1]
+    assert "boxblur" not in chain
+    assert chain.startswith(f"[0:v]{media.cover_chain(M.RW, M.RH)}")
+
+
+def test_a_source_ffprobe_cannot_measure_keeps_the_crop(stub_main):
+    """The stubbed ffprobe answers nothing, which is the "unknown size" case."""
+    M.main()
+    for cmd in _media_cmds(stub_main):
+        assert "boxblur" not in cmd[cmd.index("-filter_complex") + 1]
+
+
+def test_the_layers_still_land_at_zero_zero_over_a_blur_filled_scene(stub_main, monkeypatch):
+    """The card, the credit and the caption band must not move because the fill changed."""
+    monkeypatch.setattr(M, "probe_size", lambda p: (1920, 1080))
+    M.main()
+    for cmd in _media_cmds(stub_main):
+        steps = _layer_overlays(cmd[cmd.index("-filter_complex") + 1])
+        assert steps
+        for step in steps:
+            assert "overlay=x=0:y=0" in step
+
+
+def test_probe_size_reads_the_first_video_streams_dimensions(monkeypatch):
+    monkeypatch.setattr(M, "subprocess", types.SimpleNamespace(
+        run=lambda *a, **k: types.SimpleNamespace(stdout="1920x1080\n")))
+    assert M.probe_size("/tmp/x.mp4") == (1920, 1080)
+
+
+@pytest.mark.parametrize("stdout", ["", "\n", "N/Ax1080\n", "0x0\n", "1920\n"])
+def test_probe_size_answers_none_rather_than_guessing(monkeypatch, stdout):
+    monkeypatch.setattr(M, "subprocess", types.SimpleNamespace(
+        run=lambda *a, **k: types.SimpleNamespace(stdout=stdout)))
+    assert M.probe_size("/tmp/x.mp4") is None
 
 
 # --- the pad at every join ------------------------------------------------------------------

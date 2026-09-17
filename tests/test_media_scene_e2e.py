@@ -274,6 +274,128 @@ def test_a_media_scene_composites_into_a_short_ready_mp4(tmp_path):
     assert abs(float(info["format"]["duration"]) - 4.0) < 0.15
 
 
+# --- the fill, against real pixels ---------------------------------------------------------
+#
+# A 16:9 source cropped to 9:16 keeps 607 of its 1920 columns — under a third of the
+# photograph, and whichever third happened to be in the middle. These render a landscape still
+# whose left and right edges are unmistakable and look for them in the finished frame.
+
+def _gray(video, at, box):
+    """One 8-bit grey plane of `box` = (left, top, w, h) at `at` seconds, as raw bytes."""
+    left, top, w, h = box
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(video), "-frames:v", "1",
+         "-vf", f"crop={w}:{h}:{left}:{top}", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+        capture_output=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr.decode()[-2000:]
+    assert len(proc.stdout) == w * h, f"wanted {w}x{h}, got {len(proc.stdout)} samples"
+    return proc.stdout
+
+
+def _detail(video, at, box):
+    """Mean absolute difference between neighbouring pixels: how much detail a region holds.
+
+    A blur is exactly the removal of this. Scale-free enough to compare two regions of the
+    same frame, which is all it is ever asked to do.
+    """
+    _l, _t, w, h = box
+    px = _gray(video, at, box)
+    total = sum(abs(px[y * w + x] - px[y * w + x + 1])
+                for y in range(h) for x in range(w - 1))
+    return total / (h * (w - 1))
+
+
+def _mean_rgb(video, at, box):
+    left, top, w, h = box
+    proc = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", f"{at:.3f}", "-i", str(video), "-frames:v", "1",
+         "-vf", f"crop={w}:{h}:{left}:{top}", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+        capture_output=True, timeout=120)
+    px = proc.stdout
+    n = len(px) // 3
+    return tuple(sum(px[i * 3 + k] for i in range(n)) / n for k in range(3))
+
+
+def _landscape_still(tmp_path):
+    """1920x1080: a red strip, a detailed middle, a blue strip. 16:9, like every stock frame.
+
+    The strips are 320 px wide, so a 9:16 centre crop (607 px of 1920, x 656-1263) cannot
+    contain a single pixel of either one. Their presence in the rendered frame IS the claim
+    that the whole photograph survived.
+    """
+    png = tmp_path / "landscape.png"
+    subprocess.run(
+        ["ffmpeg", "-y", "-v", "error",
+         "-f", "lavfi", "-i", "color=c=0xE00000:s=320x1080",
+         "-f", "lavfi", "-i", "testsrc=s=1280x1080:r=1",
+         "-f", "lavfi", "-i", "color=c=0x0000E0:s=320x1080",
+         "-filter_complex", "[0:v][1:v][2:v]hstack=inputs=3[v]",
+         "-map", "[v]", "-frames:v", "1", str(png)],
+        check=True, capture_output=True, timeout=180)
+    return png
+
+
+#: Where a 1920x1080 source lands inside a 1080x1920 frame once it is fitted, not cropped:
+#: full width, 608 px tall (1080 * 1080/1920, rounded to even), centred.
+FITTED_H = 608
+FITTED_TOP = (1920 - FITTED_H) // 2
+
+
+@needs_ffmpeg
+def test_a_landscape_still_keeps_its_whole_width_over_a_blurred_backdrop(tmp_path):
+    """The fix for "the photo is centre-cropped and looks misaligned", against the pixels."""
+    import make_short as M
+    src = _landscape_still(tmp_path)
+    wav = tmp_path / "narration.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "anullsrc=r=48000:cl=mono", "-t", "2", str(wav)],
+                   check=True, capture_output=True, timeout=120)
+    # No layers: the credit plate and card would put their own ink in the bands being measured.
+    out = M.encode_media_scene(src, "hold", [], wav, 2.0, 26, tmp_path / "fill.mp4")
+    at = 1.0                                   # clear of both 0.3 s fades
+
+    # 1. Nothing was cropped: the source's outermost strips are on screen, in the right order.
+    strip_w, band = 60, 200
+    mid_y = FITTED_TOP + FITTED_H // 2 - band // 2
+    left = _mean_rgb(out, at, (4, mid_y, strip_w, band))
+    right = _mean_rgb(out, at, (1080 - strip_w - 4, mid_y, strip_w, band))
+    assert left[0] > 140 and left[0] > left[2] + 60, \
+        f"the red strip at the left edge of the source is missing: mean rgb {left}"
+    assert right[2] > 140 and right[2] > right[0] + 60, \
+        f"the blue strip at the right edge of the source is missing: mean rgb {right}"
+
+    # 2. The picture really is full width — the strips are AT the frame edge, not inset.
+    assert _mean_rgb(out, at, (0, mid_y, 2, band))[0] > 120, \
+        "there is a bar down the side; the image was letterboxed left/right, not top/bottom"
+
+    # 3. The backdrop is a blur: far less detail above and below than inside the picture.
+    sharp = _detail(out, at, (0, FITTED_TOP + 40, 1080, 240))
+    for name, top in (("above", 60), ("below", FITTED_TOP + FITTED_H + 60)):
+        soft = _detail(out, at, (0, top, 1080, 240))
+        assert soft < sharp / 3, (
+            f"the band {name} the picture holds {soft:.2f} detail against the picture's "
+            f"{sharp:.2f} — that is not a blur")
+        assert soft > 0, f"the band {name} is a flat colour, not a blurred copy of the source"
+
+
+@needs_ffmpeg
+def test_a_portrait_still_is_filled_the_way_it_always_was(tmp_path):
+    """The other half of the branch: a 9:16 source must not grow bars it never had."""
+    import make_short as M
+    png = tmp_path / "portrait.png"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "testsrc=s=1080x1920:r=1", "-frames:v", "1", str(png)],
+                   check=True, capture_output=True, timeout=180)
+    wav = tmp_path / "narration.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "anullsrc=r=48000:cl=mono", "-t", "2", str(wav)],
+                   check=True, capture_output=True, timeout=120)
+    out = M.encode_media_scene(png, "hold", [], wav, 2.0, 26, tmp_path / "portrait.mp4")
+    top = _detail(out, 1.0, (0, 60, 1080, 240))
+    middle = _detail(out, 1.0, (0, 840, 1080, 240))
+    assert top > middle / 3, "a portrait source grew a blurred band; it should fill the frame"
+
+
 # --- the joins, on the rendered demo ---------------------------------------------------------
 
 DEMO_BUILD = REPO / "scripts" / "video" / "build" / "media-demo"

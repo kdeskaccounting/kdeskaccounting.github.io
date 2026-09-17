@@ -87,6 +87,22 @@ def run(cmd):
 def dur_of(p):
     return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(p)], capture_output=True, text=True).stdout.strip() or 0)
 
+def probe_size(p):
+    """(width, height) of a media file's first video stream, or None if ffprobe cannot say.
+
+    None is a real answer, not an error: media.wants_blur_fill() reads it as "keep the
+    cover-and-crop fill", so a source we cannot measure renders the way it always did rather
+    than having its framing changed on a guess.
+    """
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                          "stream=width,height", "-of", "csv=p=0:s=x", str(p)],
+                         capture_output=True, text=True).stdout
+    for line in (out or "").splitlines():
+        parts = line.strip().split("x")
+        if len(parts) == 2 and all(q.isdigit() and int(q) for q in parts):
+            return int(parts[0]), int(parts[1])
+    return None
+
 def encode_scene(png, wav, dur, crf):
     """One still + one narration WAV -> an mp4 beside the PNG. Returns that path.
 
@@ -120,6 +136,11 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
     keeps media.overlay_box / media.credit_box the single place that decides where anything
     sits, and therefore the single place that keeps clear of the attribution watermark.
 
+    How the source fills the frame depends on its shape, which is why it is probed here: a
+    landscape source is letterboxed over a blurred copy of itself instead of being cropped to
+    its middle column (media.ffmpeg_video_steps). Either way the fill ends at RWxRH, so the
+    layer geometry above is unchanged.
+
     The output flags are encode_scene's, byte for byte, because the parts are concatenated
     with `-c:v copy`: a media scene that encoded differently would break the concat.
     """
@@ -127,7 +148,10 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
     args += ["-i", str(src), "-i", str(wav)]
     for layer in layers:
         args += ["-i", str(layer)]
-    steps = [f"[0:v]{media.ffmpeg_video_filter(motion, dur, RW, RH, FPS)}[m0]"]
+    size = probe_size(src)
+    steps = media.ffmpeg_video_steps(motion, dur, RW, RH, FPS,
+                                     src_w=size[0] if size else None,
+                                     src_h=size[1] if size else None)
     stage = "m0"
     for i, _layer in enumerate(layers):
         # eof_action=repeat (the default) holds the single PNG frame over the whole scene.

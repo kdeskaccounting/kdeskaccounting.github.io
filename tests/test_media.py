@@ -13,6 +13,7 @@ tests are what stop a later layout tweak from sliding a plate into it.
 """
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -556,6 +557,113 @@ def test_hold_is_static_and_pads_the_frame_out_to_the_duration():
 def test_every_chain_ends_at_the_requested_canvas_size(motion):
     chain = media.ffmpeg_video_filter(motion, 3.0, 1080, 1920)
     assert "scale=1080:1920" in chain and "crop=1080:1920" in chain
+
+
+# --- the fill: crop a portrait source, blur behind a landscape one ---------------------
+#
+# Cropping a 16:9 photograph to 9:16 keeps under a third of its width. These say which
+# sources get that and which get the whole picture over a blurred backdrop instead.
+
+PORTRAIT = (1080, 1920)          # a phone video: 0.5625
+LANDSCAPE = (1920, 1080)         # 16:9, the Earth Studio / stock-photo case: 1.78
+
+
+def _graph(steps):
+    return ";".join(steps)
+
+
+@pytest.mark.parametrize("motion", ["clip", "kenburns", "hold"])
+def test_a_portrait_source_is_the_single_cover_and_crop_chain_it_always_was(motion):
+    """Nothing about an existing portrait render may move: same one chain, same labels."""
+    steps = media.ffmpeg_video_steps(motion, 5.0, 1296, 2304, 30, *PORTRAIT)
+    assert steps == [f"[0:v]{media.ffmpeg_video_filter(motion, 5.0, 1296, 2304, 30)}[m0]"]
+
+
+def test_a_source_that_could_not_be_measured_keeps_the_crop():
+    """probe_size returns None for anything ffprobe cannot read; that must not reframe it."""
+    assert media.ffmpeg_video_steps("kenburns", 5.0, 1296, 2304, 30, None, None) == \
+        [f"[0:v]{media.ffmpeg_video_filter('kenburns', 5.0, 1296, 2304, 30)}[m0]"]
+    assert media.wants_blur_fill(None, None) is False
+    assert media.wants_blur_fill(0, 0) is False
+
+
+@pytest.mark.parametrize("src_w,src_h,blurred", [
+    (1920, 1080, True),           # 16:9
+    (4000, 3000, True),           # 4:3
+    (1000, 1000, True),           # square
+    (801, 1000, True),            # 0.801 — a hair past the line
+    (1000, 1250, False),          # 0.80 exactly: the line itself still crops
+    (1080, 1440, False),          # 3:4, 0.75: crops to 9:16 without losing the subject
+    (1080, 1920, False),          # 9:16
+])
+def test_the_fill_branches_on_the_sources_aspect_ratio(src_w, src_h, blurred):
+    assert media.wants_blur_fill(src_w, src_h) is blurred
+    graph = _graph(media.ffmpeg_video_steps("hold", 3.0, 1080, 1920, 30, src_w, src_h))
+    assert ("boxblur" in graph) is blurred
+    assert (f"crop=1080:1920" in graph) is True   # the backdrop is still built by covering
+
+
+def test_a_landscape_source_keeps_its_whole_frame_over_a_blurred_copy_of_itself():
+    steps = media.ffmpeg_video_steps("kenburns", 5.0, 1080, 1920, 30, *LANDSCAPE)
+    graph = _graph(steps)
+    # one source, split in two: the backdrop is the SAME footage, not a still of it
+    assert "[0:v]split=2[" in graph
+    # the foreground is fitted INSIDE the frame — nothing is cropped off it
+    assert "scale=1080:1920:force_original_aspect_ratio=decrease" in graph
+    # the backdrop covers, blurs and dims
+    assert f"boxblur={media.BLUR_RADIUS}:{media.BLUR_POWER}" in graph
+    assert f"eq=brightness=-{media.BLUR_DARKEN}" in graph
+    # and the sharp copy lands in the middle of it
+    assert "overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2" in graph
+
+
+def test_the_foreground_of_a_blur_fill_is_never_cropped():
+    """`increase,crop` on the foreground would throw away exactly what this fix keeps."""
+    steps = media.ffmpeg_video_steps("hold", 3.0, 1080, 1920, 30, *LANDSCAPE)
+    fg = [s for s in steps if "force_original_aspect_ratio=decrease" in s]
+    assert len(fg) == 1
+    assert "crop=" not in fg[0] and "increase" not in fg[0]
+
+
+@pytest.mark.parametrize("motion", ["clip", "kenburns", "hold"])
+def test_the_motion_is_applied_to_the_finished_composite(motion):
+    """Ken Burns drifts the photograph AND its backdrop; a clip is trimmed after compositing."""
+    steps = media.ffmpeg_video_steps(motion, 5.0, 1296, 2304, 30, *LANDSCAPE)
+    assert steps[-1].endswith(f"{media.motion_chain(motion, 5.0, 1296, 2304, 30)}[m0]")
+    assert steps[-1].startswith("[m0_fill]")
+
+
+@pytest.mark.parametrize("src", [PORTRAIT, LANDSCAPE])
+@pytest.mark.parametrize("motion", ["clip", "kenburns", "hold"])
+def test_every_graph_is_wired_from_the_named_input_to_the_named_output(motion, src):
+    """Whichever branch runs, it reads [0:v] and writes [m0] — encode_media_scene's contract."""
+    steps = media.ffmpeg_video_steps(motion, 4.0, 1296, 2304, 30, *src)
+    assert steps[0].startswith("[0:v]")
+    assert steps[-1].endswith("[m0]")
+    produced, consumed = [], []
+    for step in steps:
+        head = re.match(r"^(?:\[([A-Za-z0-9_:]+)\])+", step)
+        consumed += re.findall(r"\[([A-Za-z0-9_:]+)\]", head.group(0))
+        tail = re.search(r"(?:\[([A-Za-z0-9_:]+)\])+$", step)
+        produced += re.findall(r"\[([A-Za-z0-9_:]+)\]", tail.group(0))
+    # every label a chain reads was either the input or produced by an earlier chain
+    for label in consumed:
+        assert label == "0:v" or label in produced, f"{label} is never produced"
+    assert len(produced) == len(set(produced)), "a label is written twice"
+
+
+def test_ffmpeg_video_steps_rejects_an_unknown_motion():
+    with pytest.raises(ValueError) as e:
+        media.ffmpeg_video_steps("pan", 5.0, 1296, 2304, 30, *LANDSCAPE)
+    assert "clip" in str(e.value) and "kenburns" in str(e.value)
+
+
+def test_the_blur_fill_still_hands_the_layers_the_frame_they_expect():
+    """The credit plate, the card overlay and the caption band are laid at 0,0 on this."""
+    steps = media.ffmpeg_video_steps("hold", 3.0, 1296, 2304, 30, *LANDSCAPE)
+    graph = _graph(steps)
+    assert "scale=1296:2304" in graph and "crop=1296:2304" in graph
+    assert "1080" not in graph, "the fill is built at render scale, not delivery scale"
 
 
 # --- media_frame_html (the still build_video renders) ---------------------------------
