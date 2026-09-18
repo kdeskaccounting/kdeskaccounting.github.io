@@ -644,3 +644,106 @@ def test_a_long_single_word_is_never_measured_as_half_a_word():
         longest = max(len(word) for word in text.split())
         assert longest * C.FONT_EM_PER_CHAR * size <= usable + 0.5, text
         assert size >= C.MIN_FONT_PX
+
+
+# --- the hook plate ----------------------------------------------------------------------
+
+PLATE = {"text": "HIDDEN MICKEYS", "kicker": "EPCOT", "seconds": 1.4, "position": "center"}
+
+
+def test_a_short_with_no_plate_block_has_no_plate():
+    assert C.plate_settings({"hook": "x", "scenes": [0]}) is None
+
+
+def test_the_plate_block_comes_off_the_short():
+    plate = C.plate_settings({"plate": dict(PLATE)})
+    assert (plate.text, plate.kicker, plate.seconds, plate.position) == (
+        "HIDDEN MICKEYS", "EPCOT", 1.4, "center")
+
+
+def test_a_plate_with_no_text_is_refused_rather_than_rendered_blank():
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "  "}})
+    assert "text" in str(excinfo.value)
+
+
+def test_an_unknown_plate_key_is_refused_by_name():
+    with pytest.raises(KeyError) as excinfo:
+        C.plate_settings({"plate": {"text": "x", "colour": "red"}})
+    assert "colour" in str(excinfo.value)
+
+
+def test_the_plate_is_all_caps_white_over_a_dark_stroke_with_the_kicker_in_the_accent():
+    html = C.plate_html(C.plate_settings({"plate": dict(PLATE)}), "#FFE234", _tokens(),
+                        1080, 1920)
+    assert "HIDDEN MICKEYS" in html and "EPCOT" in html
+    assert "text-transform:uppercase" in html.replace(" ", "")
+    assert "paint-order:strokefill" in html.replace(" ", "")
+    assert "#FFE234" in html
+    assert "background:transparent" in html.replace(" ", "")
+
+
+def test_the_plate_headline_is_the_biggest_type_in_the_pipeline():
+    html = C.plate_html(C.plate_settings({"plate": dict(PLATE)}), "#FFE234", _tokens(),
+                        1080, 1920)
+    assert f"{1920 * C.PLATE_HEADLINE_PX_FRAC:.0f}px" in html      # ~186 px at 1080x1920
+    assert f"{1920 * C.PLATE_KICKER_PX_FRAC:.0f}px" in html        # ~52 px
+
+
+def test_a_plate_with_no_kicker_renders_the_headline_alone():
+    html = C.plate_html(C.plate_settings({"plate": {"text": "HIDDEN MICKEYS"}}), "#FFE234",
+                        _tokens(), 1080, 1920)
+    assert "HIDDEN MICKEYS" in html
+    assert 'class="kicker"' not in html
+
+
+def test_the_plate_text_is_escaped_like_every_other_burned_in_string():
+    html = C.plate_html(C.plate_settings({"plate": {"text": "A <b> & C"}}), "#FFE234",
+                        _tokens(), 1080, 1920)
+    assert "<b>" not in html and "&lt;b&gt;" in html
+
+
+# --- the plate replaces the hook's cues ---------------------------------------------------
+
+def test_a_cue_starting_inside_the_plate_window_is_dropped():
+    cues = C.build_cues([W("WHICH", 0.2, 0.6), W("DISNEY", 0.7, 1.0),
+                         W("CHARACTER", 1.6, 2.1), W("WAS", 2.2, 2.5)])
+    kept = C.drop_inside(cues, 1.4)
+    assert kept
+    assert all(cue.start >= 1.4 for cue in kept)
+
+
+def test_dropping_inside_a_zero_window_keeps_every_cue():
+    cues = C.build_cues([W("WHICH", 0.2, 0.6), W("DISNEY", 0.7, 1.0)])
+    assert C.drop_inside(cues, 0.0) == cues
+
+
+def test_an_unknown_plate_position_is_refused_by_name():
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "x", "position": "middle"}})
+    assert "middle" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("seconds", [0.0, -1.0, 4.1])
+def test_a_plate_window_outside_the_opening_seconds_is_refused(seconds):
+    """A plate is the HOOK. Zero seconds renders an input nothing ever shows, and past four
+    it is no longer covering the opening — it is covering the video."""
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "x", "seconds": seconds}})
+    assert "seconds" in str(excinfo.value)
+
+
+def test_the_plate_stays_clear_of_the_attribution_watermark_zone():
+    """x >= 0.45, y >= 0.88 is Earth Studio's mark, and covering it is a licence breach.
+
+    The plate is centred on BAND_CENTER_FRAC and grows both ways from there, so what has to
+    hold is its HALF height: even three headline lines under a kicker, at the lowest position
+    a spec can ask for, must stop above the zone.
+    """
+    width, height = 1080, 1920
+    zone_top = media.watermark_box(width, height)[1]
+    head_px = height * C.PLATE_HEADLINE_PX_FRAC
+    kicker_px = height * C.PLATE_KICKER_PX_FRAC
+    block = 3 * 1.02 * head_px + 1.4 * kicker_px       # 3 headline lines + kicker + margin
+    lowest = max(C.BAND_CENTER_FRAC[p] for p in C.POSITIONS) * height
+    assert lowest + block / 2 < zone_top

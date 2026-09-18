@@ -594,3 +594,55 @@ def test_a_short_with_no_card_scene_keeps_the_centre_band_it_asked_for(capsys):
 def test_the_top_band_is_never_announced_as_overridden(capsys):
     M.caption_plan(_with_card_scene({"enabled": True}), _spec()["short"])
     assert "overrid" not in capsys.readouterr().out
+
+
+# --- the hook plate ------------------------------------------------------------------------
+
+def test_the_hook_plate_is_the_first_overlay_and_is_gated_to_its_own_window(stub):
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "kicker": "EPCOT",
+                                   "seconds": 1.4}
+    stub.go()
+    cmd = _final(stub)
+    steps = _chain(cmd)
+    assert steps[0] == ("[0:v][1:v]overlay=x=0:y=0:format=auto:"
+                        "enable='between(t,0,1.40)'[p0]")
+    assert steps[1].startswith("[p0][2:v]overlay=")
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert pathlib.Path(inputs[1]).name == "plate.png"
+
+
+def test_the_plate_png_is_a_full_frame_transparent_screenshot(stub):
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.go()
+    shot = next((a, k) for a, k in stub.shots if pathlib.Path(a[1]).name == "plate.png")
+    assert shot[0][2:] == (M.OUT_W, M.OUT_H)
+    assert shot[1]["transparent"] is True
+
+
+def test_every_cue_under_the_plate_is_dropped_so_the_plate_is_the_hook(stub):
+    without = None
+    stub.go()
+    without = len(_windows(_final(stub)))
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.go()
+    windows = _windows(_final(stub))[1:]          # [0] is the plate's own window
+    assert windows
+    assert all(start >= 1.4 for start, _end in windows)
+    assert len(windows) < without
+
+
+def test_a_spec_with_no_plate_builds_exactly_the_graph_it_always_did(stub):
+    stub.go()
+    steps = _chain(_final(stub))
+    assert steps[0].startswith("[0:v][1:v]overlay=")
+    # ... and it is gated to the first WORD window, never to a plate's `0,1.40`.
+    assert "enable='between(t,0.300," in steps[0]
+    assert "[p0]" not in _final(stub)[_final(stub).index("-filter_complex") + 1]
+
+
+def test_a_plate_without_captions_is_refused_rather_than_silently_dropped(stub):
+    stub.spec["captions"] = {"enabled": False}
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS"}
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    assert "captions" in str(excinfo.value)

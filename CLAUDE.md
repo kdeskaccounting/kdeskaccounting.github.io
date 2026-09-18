@@ -248,6 +248,27 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # is lit from its own start until the NEXT word's start. Rules and geometry: scripts/video/
 # captions.py, ported from kdeskgames/word-chain/video/captions.mjs.
 
+# The HOOK PLATE (2026-09-19). The feed judges frame 0, and frame 0 has to carry subject +
+# big text. A separate title scene would cost a scene's worth of a <= 59 s runtime; one
+# transparent full-frame PNG in the pass that is ALREADY overlaying captions costs one extra
+# ffmpeg input and nothing else. OPTIONAL — absent, the graph, the inputs and the output are
+# byte-identical to what they were.
+#   short:
+#     plate:                # optional; needs captions: {enabled: true}
+#       text: HIDDEN MICKEYS
+#       kicker: EPCOT       # optional, in the caption accent, above the headline
+#       seconds: 1.4        # (0, 4.0]; the plate's window, from t=0
+#       position: center    # top | center | lower  (default: center; captions.POSITIONS)
+# The plate is input 1 of the caption pass, overlaid full-frame at (0, 0) and gated to
+# `enable='between(t,0,SECONDS)'`; the word PNGs shift to inputs 2..n
+# (make_short.caption_filter). ALL CAPS like every caption, white headline at 0.097 of the
+# frame height over a 0.027 kicker in the accent, both on a dark stroke with
+# `paint-order: stroke fill` (captions.PLATE_*_FRAC).
+# EVERY CAPTION CUE STARTING INSIDE THE PLATE'S WINDOW IS DROPPED (captions.drop_inside): the
+# plate IS the hook text, and a word-by-word caption running underneath it is two texts on the
+# one frame the viewer reads fastest. A plate on a spec with captions OFF is REFUSED, not
+# silently ignored — the uncaptioned join is a stream copy with nowhere to put an overlay.
+
 # The closing CTA plate is now OPTIONAL. A `short:` block with a `cta:` renders exactly as it
 # always has. A block with `signoff:` and NO `cta:` renders with no terminal plate at all --
 # that is ParkSheet's script v2 (2026-09-16): a <= 6-word sign-off spoken OVER the payoff

@@ -24,6 +24,11 @@ asked for:
 Each window becomes one pre-rendered transparent PNG (this ffmpeg build has no drawtext) that
 make_short composites with `overlay` + `enable='between(t,a,b)'`.
 
+An opt-in `short.plate:` block adds ONE more such PNG — the hook plate (`plate_html`), full
+frame, over the first `seconds` of the Short, so frame 0 carries the subject and big type.
+It rides the same pass as input 1, and every cue starting inside its window is dropped
+(`drop_inside`): the plate IS the hook text, not a second line of it.
+
 `caption_box()` is the single place that decides where a caption sits, exactly as
 `media.overlay_box` is for a card plate. A spec picks one of `POSITIONS` (`top`, the default
 and the original, `center` or `lower`) and one of `SIZES` (`default`, the day-3 geometry, or
@@ -531,6 +536,89 @@ html,body{{width:{int(width)}px;height:{band_h}px;overflow:hidden;background:tra
 </style></head><body>
 <div class="band"><div class="line">{" ".join(spans)}</div></div>
 </body></html>"""
+
+
+# --- the hook plate ---------------------------------------------------------------------------
+
+#: The hook plate: one transparent full-frame PNG over the first seconds of the Short, so
+#: frame 0 carries the subject AND big text — which is what the feed's thumbnail and the
+#: first 400 ms both need. Type sizes as fractions of the frame height, from the verified
+#: plate.png: a 52 px letter-spaced kicker in the accent over a 186 px white headline at
+#: 1080x1920, on a 15 px dark stroke with `paint-order: stroke fill` so the outline sits
+#: behind the glyph instead of eating into it.
+PLATE_KICKER_PX_FRAC = 0.027
+PLATE_HEADLINE_PX_FRAC = 0.097
+PLATE_STROKE_FRAC = 0.08
+DEFAULT_PLATE_S = 1.4
+
+
+@dataclasses.dataclass(frozen=True)
+class Plate:
+    text: str
+    kicker: str = ""
+    seconds: float = DEFAULT_PLATE_S
+    position: str = "center"
+
+
+def plate_settings(short: dict):
+    """The `short.plate:` block, or None. Absent means no plate and no extra input."""
+    block = (short or {}).get("plate")
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise TypeError(f"short.plate must be a mapping, got {type(block).__name__}")
+    known = {f.name for f in dataclasses.fields(Plate)}
+    unknown = set(block) - known
+    if unknown:
+        raise KeyError(f"unknown plate key(s) {', '.join(sorted(unknown))}; "
+                       f"known: {', '.join(sorted(known))}")
+    text = str(block.get("text") or "").strip()
+    if not text:
+        raise ValueError("short.plate.text is empty; a plate with no text is a blank frame "
+                         "over the hook. Drop the block, or name the subject.")
+    position = str(block.get("position", "center"))
+    if position not in POSITIONS:
+        raise ValueError(f"unknown plate position {position!r}; "
+                         f"known: {', '.join(POSITIONS)}")
+    seconds = float(block.get("seconds", DEFAULT_PLATE_S))
+    if not 0.0 < seconds <= 4.0:
+        raise ValueError(f"short.plate.seconds must be in (0, 4.0]; got {seconds!r}")
+    return Plate(text=text, kicker=str(block.get("kicker") or "").strip(),
+                 seconds=seconds, position=position)
+
+
+def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) -> str:
+    """The plate as a full-frame transparent page. ALL CAPS, like every caption."""
+    colour = _checked_accent(accent)
+    kicker_px = height * PLATE_KICKER_PX_FRAC
+    head_px = height * PLATE_HEADLINE_PX_FRAC
+    centre = BAND_CENTER_FRAC[plate.position]
+    kicker = (f'<div class="kicker">{_html.escape(plate.kicker, quote=True)}</div>'
+              if plate.kicker else "")
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
+  background:transparent;font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+.plate{{position:absolute;left:0;top:{round(height * centre)}px;width:{int(width)}px;
+  transform:translateY(-50%);text-align:center;padding:0 {round(width * SAFE_X_FRAC)}px}}
+.kicker{{font-size:{kicker_px:.0f}px;font-weight:700;letter-spacing:.22em;
+  text-transform:uppercase;color:{colour};margin-bottom:{0.4 * kicker_px:.0f}px;
+  -webkit-text-stroke:{PLATE_STROKE_FRAC * kicker_px:.1f}px #0A0E14;paint-order:stroke fill}}
+.head{{font-size:{head_px:.0f}px;font-weight:700;line-height:1.02;letter-spacing:-.01em;
+  text-transform:uppercase;color:#FFFFFF;
+  -webkit-text-stroke:{PLATE_STROKE_FRAC * head_px:.1f}px #0A0E14;paint-order:stroke fill;
+  text-shadow:0 {0.06 * head_px:.1f}px {0.10 * head_px:.1f}px rgba(0,0,0,.72)}}
+</style></head><body>
+<div class="plate">{kicker}<div class="head">{_html.escape(plate.text, quote=True)}</div></div>
+</body></html>"""
+
+
+def drop_inside(cues, seconds: float):
+    """Cues that start at or after `seconds`. The plate IS the hook text, so the word-by-word
+    captions do not also run underneath it — two texts on one frame is too much to read."""
+    if not seconds:
+        return list(cues)
+    return [cue for cue in cues if cue.start >= float(seconds)]
 
 
 # --- the spec surface ------------------------------------------------------------------------

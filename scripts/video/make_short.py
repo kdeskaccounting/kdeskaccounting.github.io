@@ -16,7 +16,9 @@ Word-timed ("karaoke") captions, when a spec asks for them, are burned into the 
 frame in the pass that already joins the parts — that concat was a stream copy, so this is
 the Short's only re-encode, loudnorm and all, rather than a second one. The rules and the
 band's geometry live in scripts/video/captions.py; the per-word timings come from the
-`scene_NN.words.json` narrate.py writes beside each WAV.
+`scene_NN.words.json` narrate.py writes beside each WAV. An opt-in `short.plate:` block puts
+one more transparent PNG — the hook plate — into that same pass as input 1, over the first
+seconds of the Short, and drops the cues it covers.
 """
 import argparse, dataclasses, html, json, math, pathlib, subprocess, sys
 # yaml and PIL are imported inside the functions that use them so this module
@@ -429,15 +431,20 @@ def caption_plan_json(cues, overlays, box, cfg):
     return {"band": list(box), "accent": cfg.accent, "windows": rows}
 
 
-def caption_filter(overlays, y):
+def caption_filter(overlays, y, plate_seconds=None):
     """The filter graph that burns the word PNGs into the concatenated video.
 
-    One `overlay` per word, each gated by `enable='between(t,a,b)'` — this ffmpeg build has no
-    drawtext, so every pixel of text in this pipeline is a pre-rendered PNG. Input n is the
-    nth caption PNG; input 0 is the concat.
+    One `overlay` per word, each gated by `enable='between(t,a,b)'` — this ffmpeg build has
+    no drawtext, so every pixel of text in this pipeline is a pre-rendered PNG. Input 0 is
+    the concat. When a hook plate is present it is input 1 — a full-frame PNG overlaid at
+    (0, 0) and gated to its own opening window — and the captions start at 2.
     """
-    steps, stage = [], "0:v"
-    for n, (_png, start, end) in enumerate(overlays, start=1):
+    steps, stage, first = [], "0:v", 1
+    if plate_seconds is not None:
+        steps.append(f"[0:v][1:v]overlay=x=0:y=0:format=auto:"
+                     f"enable='between(t,0,{plate_seconds:.2f})'[p0]")
+        stage, first = "p0", 2
+    for n, (_png, start, end) in enumerate(overlays, start=first):
         steps.append(f"[{stage}][{n}:v]overlay=x=0:y={y}:format=auto:"
                      f"enable='between(t,{start:.3f},{end:.3f})'[c{n}]")
         stage = f"c{n}"
@@ -555,6 +562,15 @@ def main():
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     tr = transitions(spec)
     pad = scene_pad(sh)
+    # The hook plate rides the caption pass, so it is read HERE, beside the caption settings
+    # and with the end-plate preflight below: a malformed `short.plate:` block must fail
+    # before anything is rendered, not after six scenes have been narrated and encoded.
+    plate = captions.plate_settings(sh)
+    if plate is not None and not cap.enabled:
+        raise SystemExit(
+            "short.plate rides the caption pass, and this spec renders with captions off — "
+            "the final join would be a stream copy with nowhere to put the overlay. Turn "
+            "captions on for this spec, or drop the plate.")
     # Preflight the end plate alongside every other spec check: --end-card on a spec that
     # carries no `cta:` has no copy to put on the plate, and must say so HERE — before a
     # build directory exists, let alone six narrated and encoded scenes. end_html is pure
@@ -671,6 +687,10 @@ def main():
     # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
     cap_cues = (caption_cues(cap_scenes, build / "audio", cap_skip, cap.hook_seconds)
                 if cap.enabled else [])
+    if plate is not None:
+        # The plate IS the hook text. A word-by-word caption running underneath it puts two
+        # texts on one frame, which is more than the opening second can be read at.
+        cap_cues = captions.drop_inside(cap_cues, plate.seconds)
     overlays = render_captions(cap_cues, cap, cards.brand_tokens(spec.get("brand")), work,
                                cap_box) if cap.enabled else []
     if overlays:
@@ -678,9 +698,19 @@ def main():
             json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
             encoding="utf-8")
         args = [*CONCAT_INPUT_ARGS, "-f", "concat", "-safe", "0", "-i", str(lst)]
+        plate_seconds = None
+        if plate is not None:
+            hp = work / "plate.html"
+            hp.write_text(captions.plate_html(plate, cap.accent,
+                                              cards.brand_tokens(spec.get("brand")),
+                                              OUT_W, OUT_H), encoding="utf-8")
+            png = work / "plate.png"
+            R.screenshot(hp, png, OUT_W, OUT_H, transparent=True)
+            args += ["-i", str(png)]
+            plate_seconds = plate.seconds
         for png, _s, _e in overlays:
             args += ["-i", str(png)]
-        steps = caption_filter(overlays, cap_box[1])
+        steps = caption_filter(overlays, cap_box[1], plate_seconds)
         steps.append("[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
              "-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-preset", "medium",
