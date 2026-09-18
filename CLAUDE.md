@@ -227,11 +227,16 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     enabled: true
 #     accent: "#ffe234"     # HEX ONLY — it is interpolated into CSS unescaped, and refused
 #                           # otherwise. The spoken word wears it; the rest of the cue is white.
-#     position: top         # the only position so far
+#     position: center      # top | center | lower   (default: top). The top band sits on the
+#                           # blurred letterbox of a media scene rather than on the picture.
+#     pop: 1.14             # scale the lit word; 1.0 (default) emits no extra CSS at all
+#     hook_seconds: 3.0     # cues starting before this take a 2-word / 14-char cap
 # --captions / --no-captions on make_short.py override the block either way.
 #
 # A cue is a PHRASE, not a sentence: <= 3 words and <= 20 characters, broken at a sentence end
-# always and at a comma once it has two words. A cue holds the screen until the next one starts
+# always and at a comma once it has two words (inside the `hook_seconds` window: 2 words and
+# 14 characters). Type is measured over TWO lines, so a long cue wraps instead of shrinking.
+# A cue holds the screen until the next one starts
 # (capped at 2.2 s of silence) so the top of the frame never flickers, and inside a cue word k
 # is lit from its own start until the NEXT word's start. Rules and geometry: scripts/video/
 # captions.py, ported from kdeskgames/word-chain/video/captions.mjs.

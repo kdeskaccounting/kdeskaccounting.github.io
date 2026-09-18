@@ -330,7 +330,7 @@ def scene_card_top(scene, width=OUT_W, height=OUT_H):
     return 0
 
 
-def caption_plan(spec, short, width=OUT_W, height=OUT_H):
+def caption_plan(spec, short, width=OUT_W, height=OUT_H, position="top"):
     """(the band, the scene indexes it cannot cover) for one Short.
 
     Captions run the length of the Short, so there is ONE band and it cannot move scene by
@@ -343,16 +343,17 @@ def caption_plan(spec, short, width=OUT_W, height=OUT_H):
     for idx in short["scenes"]:
         top = scene_card_top((spec.get("scenes") or [])[idx], width, height)
         try:
-            captions.caption_box(width, height, top)
+            captions.caption_box(width, height, top, position)
         except ValueError:
             skipped.add(idx)
         else:
             tops[idx] = top
     limits = [t for t in tops.values() if t is not None]
-    return captions.caption_box(width, height, min(limits) if limits else None), skipped
+    return captions.caption_box(width, height, min(limits) if limits else None,
+                                position), skipped
 
 
-def caption_cues(scenes, audio_dir, skipped=()):
+def caption_cues(scenes, audio_dir, skipped=(), hook_seconds=0.0):
     """[(scene index, part start, part end)] -> the cues for the whole Short.
 
     `part end` is the limit each scene's captions are clamped to, so a held phrase never
@@ -374,7 +375,8 @@ def caption_cues(scenes, audio_dir, skipped=()):
             print(f"scene {idx:02d}: no word timings — captions skipped for this scene "
                   f"(narrate.py writes scene_{idx:02d}.words.json beside the WAV)", flush=True)
             continue
-        cues.extend(captions.build_cues(words, start, limit=end))
+        cues.extend(captions.build_cues(words, start, limit=end,
+                                        hook_seconds=hook_seconds))
     return cues
 
 
@@ -389,7 +391,8 @@ def render_captions(cues, cfg, brand, work, box):
     band_h = box[3] - box[1]
     out = []
     for n, win in enumerate(captions.word_windows(cues)):
-        doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box)
+        doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box,
+                                    pop=cfg.pop)
         hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
         png = work / f"cap_{n:04d}.png"
         R.screenshot(hp, png, OUT_W, band_h, transparent=True)
@@ -546,7 +549,8 @@ def main():
     # string building, so paying for it twice costs nothing.
     if end_card_wanted(sh, a.end_card):
         end_html(sh.get("cta"))
-    cap_box, cap_skip = caption_plan(spec, sh) if cap.enabled else (None, set())
+    cap_box, cap_skip = (caption_plan(spec, sh, position=cap.position)
+                         if cap.enabled else (None, set()))
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"
     focus = json.load(open(fj)) if fj.exists() else {}
@@ -653,7 +657,8 @@ def main():
     # Captions are burned in HERE, in the pass that was already joining the parts, rather than
     # in a second one: the concat is a stream copy today, so this is the only re-encode the
     # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
-    cap_cues = caption_cues(cap_scenes, build / "audio", cap_skip) if cap.enabled else []
+    cap_cues = (caption_cues(cap_scenes, build / "audio", cap_skip, cap.hook_seconds)
+                if cap.enabled else [])
     overlays = render_captions(cap_cues, cap, cards.brand_tokens(spec.get("brand")), work,
                                cap_box) if cap.enabled else []
     if overlays:

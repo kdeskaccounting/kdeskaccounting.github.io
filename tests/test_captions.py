@@ -227,7 +227,7 @@ SIZES = [(1080, 1920), (1296, 2304)]
 def test_the_band_sits_in_the_top_fifth_of_the_frame(w, h):
     left, top, right, bottom = C.caption_box(w, h)
     centre = (top + bottom) / 2 / h
-    assert centre == pytest.approx(C.BAND_CENTER_FRAC, abs=0.005)
+    assert centre == pytest.approx(C.BAND_CENTER_FRAC["top"], abs=0.005)
     assert top > 0 and bottom < h
 
 
@@ -290,8 +290,10 @@ def _tokens():
     return cards.brand_tokens(BRAND)
 
 
-def _cue():
-    return C.build_cues([W("Magic", 0.0, 0.3), W("Kingdom", 0.4, 0.8)])[0]
+def _cue(*words):
+    """The first cue built from `words`, defaulting to the two the HTML tests below use."""
+    items = [W(w, i * 0.4, i * 0.4 + 0.3) for i, w in enumerate(words or ("Magic", "Kingdom"))]
+    return C.build_cues(items)[0]
 
 
 def test_the_lit_word_carries_the_accent_and_the_others_do_not():
@@ -336,9 +338,11 @@ def test_a_non_hex_accent_is_refused_because_it_lands_in_css_unescaped():
 
 
 def test_a_long_cue_is_typeset_smaller_so_it_stays_on_one_line():
+    """Measured over one line: over two, "Tomorrowland waits" no longer has to shrink at all,
+    which is the whole point of MAX_CUE_LINES (see the two-line tests below)."""
     box = C.caption_box(1080, 1920)
-    short = C.font_size("Go", box)
-    long = C.font_size("Tomorrowland waits", box)
+    short = C.font_size("Go", box, lines=1)
+    long = C.font_size("Tomorrowland waits", box, lines=1)
     assert long < short
     assert C.MIN_FONT_PX <= long
 
@@ -485,3 +489,113 @@ def test_caption_overlays_render_in_all_caps_without_changing_the_cue_text():
     doc = C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, C.caption_box(1080, 1920))
     assert "text-transform:uppercase" in doc
     assert "<span>Kingdom</span>" in doc  # source text untouched; the capitals are CSS
+
+
+# --- the pop -----------------------------------------------------------------------------
+
+
+def test_the_lit_word_is_scaled_and_every_span_keeps_its_word_gap():
+    """scale() needs inline-block, and an inline-block span's scaled glyphs overflow it —
+    without a margin on EVERY span, "WHICH DISNEY" renders as "WHICHDISNEY"."""
+    html = C.caption_html(_cue("WHICH", "DISNEY"), 0, "#FFE234", _tokens(), 1080,
+                          C.caption_box(1080, 1920), pop=1.14)
+    assert "transform:scale(1.14)" in html.replace(" ", "")
+    assert "display:inline-block" in html.replace(" ", "")
+    assert f"margin:0 {C.SPAN_MARGIN_EM}em".replace(" ", "") in html.replace(" ", "")
+    assert C.POP_ORIGIN.replace(" ", "") in html.replace(" ", "")
+
+
+def test_no_pop_leaves_the_caption_css_exactly_as_it_was():
+    """Golden guard: a spec that does not ask for the pop renders the same PNG it did."""
+    html = C.caption_html(_cue("WHICH", "DISNEY"), 0, "#FFE234", _tokens(), 1080,
+                          C.caption_box(1080, 1920))
+    assert "transform:scale" not in html
+    assert "transform-origin" not in html
+    assert "inline-block" not in html
+
+
+def test_the_captions_are_still_all_caps_and_still_the_brand_accent():
+    html = C.caption_html(_cue("WHICH", "DISNEY"), 0, "#FFE234", _tokens(), 1080,
+                          C.caption_box(1080, 1920), pop=1.14)
+    assert "text-transform:uppercase" in html.replace(" ", "")
+    assert "#FFE234" in html
+
+
+# --- type --------------------------------------------------------------------------------
+
+def test_two_lines_of_the_largest_type_still_fit_inside_the_band():
+    box = C.caption_box(1080, 1920, position="center")
+    band_h = box[3] - box[1]
+    size = C.font_size("WHICH DISNEY", box)
+    assert size >= 110, "the point of FONT_BAND_FRAC 0.347 is type you can read in a feed"
+    assert C.MAX_CUE_LINES * 1.06 * size <= band_h
+
+
+def test_a_long_cue_is_measured_over_two_lines_not_one():
+    box = C.caption_box(1080, 1920, position="center")
+    assert C.font_size("BANNED FROM EPCOT", box) > C.font_size("BANNED FROM EPCOT", box,
+                                                               lines=1)
+
+
+# --- position ----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("position", C.POSITIONS)
+@pytest.mark.parametrize("w,h", SIZES)
+def test_a_centre_band_still_clears_the_attribution_watermark(position, w, h):
+    box = C.caption_box(w, h, position=position)
+    assert not media.boxes_overlap(box, media.watermark_box(w, h))
+    assert box[3] <= round(h * C.SAFE_BOTTOM_FRAC)
+    assert box[1] > 0
+
+
+@pytest.mark.parametrize("position", C.POSITIONS)
+def test_each_position_centres_the_band_where_the_table_says(position):
+    box = C.caption_box(1080, 1920, position=position)
+    assert (box[1] + box[3]) / 2 / 1920 == pytest.approx(C.BAND_CENTER_FRAC[position],
+                                                         abs=0.005)
+
+
+def test_an_unknown_position_is_refused_by_name_by_the_box():
+    with pytest.raises(ValueError) as excinfo:
+        C.caption_box(1080, 1920, position="middle")
+    assert "middle" in str(excinfo.value)
+
+
+# --- the hook window ---------------------------------------------------------------------
+
+def test_a_cue_inside_the_hook_window_takes_the_tighter_word_cap():
+    words = [W("WHICH", 0.0, 0.3), W("DISNEY", 0.4, 0.7), W("CHARACTER", 0.8, 1.2),
+             W("WAS", 1.3, 1.5)]
+    hooked = C.build_cues(words, hook_seconds=3.0)
+    assert all(len(cue.words) <= C.HOOK_MAX_WORDS for cue in hooked)
+    assert all(len(cue.text) <= C.HOOK_MAX_CHARS + C.GRACE_CHARS for cue in hooked)
+
+
+def test_a_cue_after_the_hook_window_takes_the_ordinary_caps():
+    words = [W("BANNED", 10.0, 10.3), W("FROM", 10.4, 10.6), W("EPCOT", 10.7, 11.0)]
+    assert len(C.build_cues(words, hook_seconds=3.0)[0].words) == 3
+
+
+def test_no_hook_window_builds_exactly_the_cues_it_always_did():
+    words = [W("WHICH", 0.0, 0.3), W("DISNEY", 0.4, 0.7), W("WAS", 0.8, 1.2)]
+    assert texts(C.build_cues(words)) == texts(C.build_cues(words, hook_seconds=0.0))
+    assert len(C.build_cues(words)[0].words) == 3
+
+
+def test_caps_at_is_the_one_place_the_two_caps_are_chosen():
+    assert C.caps_at(0.5, 3.0) == (C.HOOK_MAX_WORDS, C.HOOK_MAX_CHARS)
+    assert C.caps_at(9.0, 3.0) == (C.MAX_WORDS, C.MAX_CHARS)
+    assert C.caps_at(0.5, 0.0) == (C.MAX_WORDS, C.MAX_CHARS)
+
+
+# --- the spec surface --------------------------------------------------------------------
+
+def test_the_new_caption_keys_come_off_the_spec():
+    cfg = C.settings({"captions": {"enabled": True, "position": "center", "pop": 1.14,
+                                   "hook_seconds": 3.0}})
+    assert (cfg.position, cfg.pop, cfg.hook_seconds) == ("center", 1.14, 3.0)
+
+
+def test_a_spec_with_no_new_keys_gets_todays_defaults():
+    cfg = C.settings({"captions": {"enabled": True}})
+    assert (cfg.position, cfg.pop, cfg.hook_seconds) == ("top", C.DEFAULT_POP, 0.0)
