@@ -268,6 +268,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # plate IS the hook text, and a word-by-word caption running underneath it is two texts on the
 # one frame the viewer reads fastest. A plate on a spec with captions OFF is REFUSED, not
 # silently ignored — the uncaptioned join is a stream copy with nowhere to put an overlay.
+#
+# NO WORD OF `text:` MAY EXCEED 7 CHARACTERS (captions.PLATE_MAX_WORD_CHARS, derived from
+# PLATE_HEADLINE_PX_FRAC / FONT_EM_PER_CHAR / SAFE_X_FRAC and refused BY NAME at preflight).
+# Unlike a cue, the plate has no step-down: it burns one fixed type size on an
+# overflow:hidden page that cannot break inside a word, so an 8-character word is CLIPPED at
+# the frame edge rather than shrunk. "HIDDEN MICKEYS" clears it by one character. Move a long
+# word to the `kicker:`, which is a fifth of the size.
+# A PLATE OVER A `kind: card` FIRST SCENE IS SKIPPED, with a line on stdout: that card IS the
+# frame-0 text, and the plate — which places itself on captions.BAND_CENTER_FRAC, knowing
+# nothing of scene 0's layout — would print the Short's biggest type through the card's own
+# copy. Nothing is drawn and no cue is dropped, so the word-by-word captions carry the hook.
 
 # The closing CTA plate is now OPTIONAL. A `short:` block with a `cta:` renders exactly as it
 # always has. A block with `signoff:` and NO `cta:` renders with no terminal plate at all --

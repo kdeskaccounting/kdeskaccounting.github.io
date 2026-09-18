@@ -571,6 +571,18 @@ def main():
             "short.plate rides the caption pass, and this spec renders with captions off — "
             "the final join would be a stream copy with nowhere to put the overlay. Turn "
             "captions on for this spec, or drop the plate.")
+    # A `kind: card` first scene IS the frame-0 text: it is a full-frame plate of type that
+    # caption_plan already moves the caption band around. The hook plate knows nothing about
+    # scene 0's layout — it places itself on captions.BAND_CENTER_FRAC — so over a card it
+    # would print the Short's biggest type straight through the card's own copy. Skipped
+    # rather than drawn, announced rather than silent, and NO cue is dropped: with no plate
+    # up, the word-by-word captions are the hook text again.
+    picked = sh.get("scenes") or []
+    if plate is not None and picked and cards.is_card(spec["scenes"][picked[0]]):
+        print(f"short.plate: skipped — scene {picked[0]:02d} is a full-frame card and "
+              f"already carries the frame-0 text; a plate over it would print the Short's "
+              f"biggest type through the card's own copy.", flush=True)
+        plate = None
     # Preflight the end plate alongside every other spec check: --end-card on a spec that
     # carries no `cta:` has no copy to put on the plate, and must say so HERE — before a
     # build directory exists, let alone six narrated and encoded scenes. end_html is pure
@@ -691,8 +703,7 @@ def main():
         # The plate IS the hook text. A word-by-word caption running underneath it puts two
         # texts on one frame, which is more than the opening second can be read at.
         cap_cues = captions.drop_inside(cap_cues, plate.seconds)
-    overlays = render_captions(cap_cues, cap, cards.brand_tokens(spec.get("brand")), work,
-                               cap_box) if cap.enabled else []
+    overlays = render_captions(cap_cues, cap, btokens, work, cap_box) if cap.enabled else []
     if overlays:
         (work / "captions.json").write_text(
             json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
@@ -701,9 +712,8 @@ def main():
         plate_seconds = None
         if plate is not None:
             hp = work / "plate.html"
-            hp.write_text(captions.plate_html(plate, cap.accent,
-                                              cards.brand_tokens(spec.get("brand")),
-                                              OUT_W, OUT_H), encoding="utf-8")
+            hp.write_text(captions.plate_html(plate, cap.accent, btokens, OUT_W, OUT_H),
+                          encoding="utf-8")
             png = work / "plate.png"
             R.screenshot(hp, png, OUT_W, OUT_H, transparent=True)
             args += ["-i", str(png)]

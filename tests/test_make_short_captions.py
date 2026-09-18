@@ -646,3 +646,37 @@ def test_a_plate_without_captions_is_refused_rather_than_silently_dropped(stub):
     with pytest.raises(SystemExit) as excinfo:
         stub.go()
     assert "captions" in str(excinfo.value)
+
+
+def test_a_plate_over_a_card_scene_zero_is_skipped_with_a_notice(stub, capsys):
+    """A full-frame card IS the frame-0 text. The plate places itself on BAND_CENTER_FRAC
+    with no knowledge of scene 0, so over a card it would print 186 px type through the
+    card's own copy. Skipped, announced — and no cue dropped: with no plate up, the
+    word-by-word captions are the hook text again."""
+    stub.spec["scenes"][0] = _card("One")
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.go()
+    out = capsys.readouterr().out
+    assert "short.plate: skipped" in out and "scene 00" in out
+    cmd = _final(stub)
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert not any(pathlib.Path(p).name == "plate.png" for p in inputs)
+    assert "[p0]" not in cmd[cmd.index("-filter_complex") + 1]
+    assert len(_windows(cmd)) == sum(len(w) for w in WORDS.values()), "no cue was dropped"
+
+
+def test_a_plate_over_a_media_scene_zero_is_drawn(stub, capsys):
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.go()
+    assert "short.plate: skipped" not in capsys.readouterr().out
+    cmd = _final(stub)
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert pathlib.Path(inputs[1]).name == "plate.png"
+
+
+def test_a_card_scene_that_is_not_scene_zero_keeps_the_plate(stub):
+    """Only frame 0 is the plate's business; a card later in the Short is under captions."""
+    stub.spec = _with_card_scene({"enabled": True, "accent": "#ffe234"})
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.go()
+    assert _chain(_final(stub))[0].startswith("[0:v][1:v]overlay=x=0:y=0:")

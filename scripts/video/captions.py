@@ -551,6 +551,24 @@ PLATE_HEADLINE_PX_FRAC = 0.097
 PLATE_STROKE_FRAC = 0.08
 DEFAULT_PLATE_S = 1.4
 
+#: Every frame in this pipeline is 9:16 (1080x1920 delivered, 1296x2304 composite), so a
+#: width measured against a height is a constant of the pipeline — which is what lets the
+#: plate's box be checked at PREFLIGHT, from the fractions alone, before a frame size exists.
+PLATE_ASPECT = 9 / 16
+
+#: The longest WORD a plate headline may carry. Unlike a cue, the plate has no step-down:
+#: `plate_html` burns a fixed PLATE_HEADLINE_PX_FRAC of the frame height on an
+#: `overflow:hidden` page with no `overflow-wrap`, so a word too wide for the safe-zone box
+#: is not shrunk and not broken — it is clipped at the frame edge, silently, in a render
+#: nobody watches frame by frame. Hence the refusal in `plate_settings`.
+#:
+#:   0.5625 * (1 - 2*0.10) / (0.097 * 0.58) = 8.0 characters
+#:
+#: i.e. 7, with "MICKEYS" of the verified plate.png clearing it by exactly one character.
+#: The same width model as `font_size`: the longest word, at FONT_EM_PER_CHAR per glyph.
+PLATE_MAX_WORD_CHARS = int((PLATE_ASPECT * (1 - 2 * SAFE_X_FRAC))
+                           / (PLATE_HEADLINE_PX_FRAC * FONT_EM_PER_CHAR))
+
 
 @dataclasses.dataclass(frozen=True)
 class Plate:
@@ -576,6 +594,14 @@ def plate_settings(short: dict):
     if not text:
         raise ValueError("short.plate.text is empty; a plate with no text is a blank frame "
                          "over the hook. Drop the block, or name the subject.")
+    wide = [word for word in text.split() if len(word) > PLATE_MAX_WORD_CHARS]
+    if wide:
+        raise ValueError(
+            f"short.plate.text word(s) too wide for the frame: {', '.join(wide)}. The plate "
+            f"burns one fixed type size on a page that cannot wrap inside a word, so a word "
+            f"over {PLATE_MAX_WORD_CHARS} characters is CLIPPED at the frame edge rather "
+            f"than shrunk. Shorten the headline, or move the long word to the kicker "
+            f"(which is a fifth of the size).")
     position = str(block.get("position", "center"))
     if position not in POSITIONS:
         raise ValueError(f"unknown plate position {position!r}; "
@@ -614,11 +640,16 @@ html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
 
 
 def drop_inside(cues, seconds: float):
-    """Cues that start at or after `seconds`. The plate IS the hook text, so the word-by-word
-    captions do not also run underneath it — two texts on one frame is too much to read."""
+    """Cues that start strictly AFTER `seconds`. The plate IS the hook text, so the
+    word-by-word captions do not also run underneath it — two texts on one frame is too much
+    to read.
+
+    Strictly after, not at: ffmpeg's `between(t,a,b)` is inclusive at BOTH ends, so a cue
+    starting on the plate's own last instant would overprint it for a frame.
+    """
     if not seconds:
         return list(cues)
-    return [cue for cue in cues if cue.start >= float(seconds)]
+    return [cue for cue in cues if cue.start > float(seconds)]
 
 
 # --- the spec surface ------------------------------------------------------------------------

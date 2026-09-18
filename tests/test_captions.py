@@ -747,3 +747,41 @@ def test_the_plate_stays_clear_of_the_attribution_watermark_zone():
     block = 3 * 1.02 * head_px + 1.4 * kicker_px       # 3 headline lines + kicker + margin
     lowest = max(C.BAND_CENTER_FRAC[p] for p in C.POSITIONS) * height
     assert lowest + block / 2 < zone_top
+
+
+# --- the plate has no step-down, so its box is pinned and its overflow is refused ---------
+
+def test_every_word_of_the_day_three_headline_fits_the_plate_box():
+    """The verified plate.png's own content, measured the way font_size measures a cue.
+
+    The plate is the one place in this pipeline that burns a FIXED type size: no step-down,
+    no overflow-wrap, and an overflow:hidden page. So the margin "HIDDEN MICKEYS" has — one
+    character on the longest word — is not a detail of the render, it is the reason the
+    render is legible, and it is pinned here.
+    """
+    width, height = 1080, 1920
+    usable = width - 2 * round(width * C.SAFE_X_FRAC)
+    head_px = height * C.PLATE_HEADLINE_PX_FRAC
+    assert (usable, round(head_px)) == (864, 186)
+    for word in "HIDDEN MICKEYS".split():
+        assert len(word) * C.FONT_EM_PER_CHAR * head_px <= usable, word
+    assert C.PLATE_MAX_WORD_CHARS == 7
+    assert (C.PLATE_MAX_WORD_CHARS + 1) * C.FONT_EM_PER_CHAR * head_px > usable
+
+
+def test_a_headline_word_too_wide_for_the_frame_is_refused_by_name():
+    """At preflight, where a spec author can still fix it — not in a render nobody watches
+    frame by frame, where the word is simply cut off at the frame edge."""
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "ADVENTURELAND WAITS"}})
+    assert "ADVENTURELAND" in str(excinfo.value)
+    assert "WAITS" not in str(excinfo.value), "only the offending word is named"
+    assert C.plate_settings({"plate": {"text": "MICKEYS"}}).text == "MICKEYS"
+
+
+def test_a_cue_starting_exactly_at_the_plate_boundary_is_dropped_too():
+    """ffmpeg's between(t,a,b) is inclusive at BOTH ends, so a cue starting on the plate's
+    own last instant would overprint it for a frame."""
+    cues = C.build_cues([W("WHICH", 1.4, 1.8), W("ONE", 1.9, 2.2)])
+    assert cues and cues[0].start == pytest.approx(1.4)
+    assert C.drop_inside(cues, 1.4) == []
