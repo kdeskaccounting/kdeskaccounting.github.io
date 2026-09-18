@@ -229,13 +229,20 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                           # otherwise. The spoken word wears it; the rest of the cue is white.
 #     position: center      # top | center | lower   (default: top). The top band sits on the
 #                           # blurred letterbox of a media scene rather than on the picture.
+#                           # A `kind: card` scene OVERRIDES this back to the top band (the
+#                           # card is drawn below it); make_short says so on stdout.
+#     size: large           # default | large  (default: default). `default` IS the day-3
+#                           # geometry — band 0.16 of the frame, type 0.30 of the band, one
+#                           # line — and every existing Short renders byte-identically under
+#                           # it. `large` is 0.185 / 0.347 over two lines: 92.1 px -> 123.2 px.
 #     pop: 1.14             # scale the lit word; 1.0 (default) emits no extra CSS at all
 #     hook_seconds: 3.0     # cues starting before this take a 2-word / 14-char cap
 # --captions / --no-captions on make_short.py override the block either way.
 #
 # A cue is a PHRASE, not a sentence: <= 3 words and <= 20 characters, broken at a sentence end
 # always and at a comma once it has two words (inside the `hook_seconds` window: 2 words and
-# 14 characters). Type is measured over TWO lines, so a long cue wraps instead of shrinking.
+# 14 characters). Type is sized to the cue's LONGEST WORD as well as its character count —
+# CSS cannot break inside a word and the caption page is overflow:hidden.
 # A cue holds the screen until the next one starts
 # (capped at 2.2 s of silence) so the top of the frame never flickers, and inside a cue word k
 # is lit from its own start until the NEXT word's start. Rules and geometry: scripts/video/

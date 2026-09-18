@@ -304,8 +304,11 @@ def card_box_under_captions(width=RW, height=RH):
     card simply becomes a shorter card. The side margin is media.SAFE_X_FRAC, the one a media
     scene's plate already uses, so the two scene kinds inset their text alike.
 
-    Derived from the UNCONSTRAINED band, which is what keeps this from being circular: the box
-    it returns always sits below that band, so a card scene never pushes the band anywhere.
+    Derived from the UNCONSTRAINED band at its DEFAULT position and size, which is what keeps
+    this from being circular. Two consequences, both deliberate: a card scene never pushes the
+    top band anywhere (the clearance below it is exactly CLEARANCE_FRAC either way), and a
+    card scene DOES override a `center`/`lower` band — the card owns the frame below the top
+    band, so a band dropped onto it would overprint the card. caption_plan says so out loud.
     """
     top = captions.caption_box(width, height)[3] + round(height * captions.CLEARANCE_FRAC)
     x = round(width * media.SAFE_X_FRAC)
@@ -330,27 +333,36 @@ def scene_card_top(scene, width=OUT_W, height=OUT_H):
     return 0
 
 
-def caption_plan(spec, short, width=OUT_W, height=OUT_H, position="top"):
+def caption_plan(spec, short, width=OUT_W, height=OUT_H, position="top", size="default"):
     """(the band, the scene indexes it cannot cover) for one Short.
 
     Captions run the length of the Short, so there is ONE band and it cannot move scene by
     scene without jumping. It is sized against the card that reaches highest among the scenes
     it can cover, and captions.caption_box shrinks or lifts it to clear that card. A scene
     that leaves no readable band at all — caption_box refuses it — is dropped from the caption
-    pass rather than overprinted, and said out loud in caption_cues.
+    pass rather than overprinted, and said out loud in caption_cues. A `kind: card` scene owns
+    the frame below the top band, so it overrides a `center`/`lower` position outright; that
+    is announced here rather than left as a band that quietly is not where the spec put it.
     """
     tops, skipped = {}, set()
     for idx in short["scenes"]:
         top = scene_card_top((spec.get("scenes") or [])[idx], width, height)
         try:
-            captions.caption_box(width, height, top, position)
+            captions.caption_box(width, height, top, position, size)
         except ValueError:
             skipped.add(idx)
         else:
             tops[idx] = top
     limits = [t for t in tops.values() if t is not None]
-    return captions.caption_box(width, height, min(limits) if limits else None,
-                                position), skipped
+    box = captions.caption_box(width, height, min(limits) if limits else None, position, size)
+    if position != "top" and box != captions.caption_box(width, height, None, position, size):
+        carded = sorted(i for i in tops if cards.is_card((spec.get("scenes") or [])[i]))
+        if carded:
+            print(f"captions: position {position!r} overridden — scene(s) "
+                  f"{', '.join(f'{i:02d}' for i in carded)} are full-frame cards, which are "
+                  f"drawn BELOW the band, so the band stays at y={box[1]}-{box[3]} rather "
+                  f"than dropping onto a card", flush=True)
+    return box, skipped
 
 
 def caption_cues(scenes, audio_dir, skipped=(), hook_seconds=0.0):
@@ -392,7 +404,7 @@ def render_captions(cues, cfg, brand, work, box):
     out = []
     for n, win in enumerate(captions.word_windows(cues)):
         doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box,
-                                    pop=cfg.pop)
+                                    pop=cfg.pop, size=cfg.size)
         hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
         png = work / f"cap_{n:04d}.png"
         R.screenshot(hp, png, OUT_W, band_h, transparent=True)
@@ -549,7 +561,7 @@ def main():
     # string building, so paying for it twice costs nothing.
     if end_card_wanted(sh, a.end_card):
         end_html(sh.get("cta"))
-    cap_box, cap_skip = (caption_plan(spec, sh, position=cap.position)
+    cap_box, cap_skip = (caption_plan(spec, sh, position=cap.position, size=cap.size)
                          if cap.enabled else (None, set()))
     build = HERE / "build" / slug; paths = short_paths(build, slug, a.variant); work = paths.work; work.mkdir(parents=True, exist_ok=True)
     fj = build / "frames/focus.json"

@@ -565,3 +565,32 @@ def test_the_spec_accent_reaches_the_rendered_html(stub):
     stub.spec = _spec({"enabled": True, "accent": "#FFD966"})
     stub.go()
     assert "#FFD966" in (stub.work / "cap_0000.html").read_text(encoding="utf-8")
+
+
+# --- a card scene overrides a non-top band, out loud ------------------------------------------
+
+def test_a_card_scene_overrides_a_centre_band_and_says_so(capsys):
+    """A full-frame card sits BELOW the band, so a centre band would leave it the bottom
+    half of the frame. The band stays up — but silently moving a position the spec asked for
+    is how a render surprises you, so it is announced like a skipped scene is."""
+    spec = _with_card_scene({"enabled": True, "position": "center"})
+    box, skipped = M.caption_plan(spec, spec["short"], position="center")
+    out = capsys.readouterr().out
+    assert "center" in out and "card" in out.lower()
+    assert skipped == set()
+    assert box == captions.caption_box(M.OUT_W, M.OUT_H,
+                                       M.card_box_under_captions(M.OUT_W, M.OUT_H)[1],
+                                       "center")
+    assert box != captions.caption_box(M.OUT_W, M.OUT_H, None, "center")
+
+
+def test_a_short_with_no_card_scene_keeps_the_centre_band_it_asked_for(capsys):
+    spec = _spec({"enabled": True, "position": "center"})
+    box, _ = M.caption_plan(spec, spec["short"], position="center")
+    assert "overrid" not in capsys.readouterr().out
+    assert (box[1] + box[3]) / 2 / M.OUT_H > 0.30, "still a centre-ish band"
+
+
+def test_the_top_band_is_never_announced_as_overridden(capsys):
+    M.caption_plan(_with_card_scene({"enabled": True}), _spec()["short"])
+    assert "overrid" not in capsys.readouterr().out

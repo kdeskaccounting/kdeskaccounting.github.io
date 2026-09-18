@@ -26,7 +26,8 @@ make_short composites with `overlay` + `enable='between(t,a,b)'`.
 
 `caption_box()` is the single place that decides where a caption sits, exactly as
 `media.overlay_box` is for a card plate. A spec picks one of `POSITIONS` (`top`, the default
-and the original, `center` or `lower`). It keeps the band inside the Shorts safe zone
+and the original, `center` or `lower`) and one of `SIZES` (`default`, the day-3 geometry, or
+`large`). It keeps the band inside the Shorts safe zone
 (middle 80% of the width, nothing below 75% of the height), above any card overlay, and
 therefore nowhere near the lower-frame zone Google Earth Studio burns its attribution
 watermark into (`media.watermark_box`, measured: x >= 0.45, y >= 0.88).
@@ -98,9 +99,11 @@ SAFE_BOTTOM_FRAC = 0.75
 #: third. `top` is unchanged, so every spec that does not ask for a position is unmoved.
 BAND_CENTER_FRAC: dict = {"top": 0.22, "center": 0.46, "lower": 0.62}
 
-#: Nominal band height. Two lines of the largest type still fit inside it — which is the
-#: whole reason it grew from 0.16: at FONT_BAND_FRAC 0.347 a two-word cue wraps, and a
-#: wrapped two-word cue reads BETTER than one shrunk to fit a single line.
+#: Nominal band height, per `captions.size`. `default` is the day-3 geometry and is what a
+#: spec that does not ask for a size still gets, byte for byte. `large` grew it because at
+#: FONT_BAND_FRAC 0.347 a two-word cue wraps, and a wrapped two-word cue reads BETTER than
+#: one shrunk to fit a single line.
+BAND_H_FRAC_DEFAULT = 0.16
 BAND_H_FRAC = 0.185
 
 #: Height the band may never fall below; past it the type is too small to read on a phone.
@@ -116,15 +119,29 @@ CLEARANCE_FRAC = 0.02
 
 # --- type -------------------------------------------------------------------------------
 
-#: Font size as a fraction of the band's height. 0.30 -> 0.347 is about +15% of linear type
-#: size in a band that also grew, i.e. roughly +28% against the 92 px the day-3 build burned.
+#: Font size as a fraction of the band's height, per `captions.size`. 0.30 -> 0.347 is about
+#: +15% of linear type in a band that also grew, i.e. roughly +28% against the 92.1 px the
+#: day-3 build burned in — which is exactly what `default` still produces.
+FONT_BAND_FRAC_DEFAULT = 0.30
 FONT_BAND_FRAC = 0.347
 
-#: How many lines a cue may wrap to. font_size() divides the character count by this before
-#: stepping the type down, so a long cue wraps instead of shrinking to nothing.
+#: How many lines a cue may wrap to, per `captions.size`. font_size() divides the character
+#: count by this before stepping the type down, so a long cue wraps instead of shrinking to
+#: nothing. `default` is one line, the model every caption rendered under until v4.
+MAX_CUE_LINES_DEFAULT = 1
 MAX_CUE_LINES = 2
+
+#: size name -> (band height fraction, font fraction, lines). The whole of what `size` means:
+#: `default` is the geometry of every Short rendered before v4 and must stay byte-identical,
+#: `large` is the feed-stopper type the 2026-09-19 teardown measured on the reference channels.
+SIZE_TABLE = {
+    "default": (BAND_H_FRAC_DEFAULT, FONT_BAND_FRAC_DEFAULT, MAX_CUE_LINES_DEFAULT),
+    "large": (BAND_H_FRAC, FONT_BAND_FRAC, MAX_CUE_LINES),
+}
+SIZES = tuple(SIZE_TABLE)
+
 #: Average advance width of a bold sans glyph, in em. Used to step a long cue down so it fits
-#: its MAX_CUE_LINES — the same trick cards._heading_size uses on a card headline.
+#: its lines AND its longest word — the same trick cards._heading_size uses on a card headline.
 FONT_EM_PER_CHAR = 0.58
 #: Floor: below this a caption is unreadable on a phone, so the cue wraps instead.
 MIN_FONT_PX = 44.0
@@ -135,7 +152,9 @@ DEFAULT_ACCENT = "#ffe234"
 POSITIONS = ("top", "center", "lower")
 
 #: The first seconds of a Short read faster than the rest of it, so the cue caps tighten
-#: there: 1-2 words a card instead of 3. Off (0.0) unless a spec asks.
+#: there: 1-2 words a card instead of 3. Off (0.0) unless a spec asks — HOOK_S is the v4
+#: value a spec writer (and the ParkSheet spec builder) puts in `captions.hook_seconds`;
+#: nothing in this module reads it, because the window always comes off the spec.
 HOOK_S = 3.0
 HOOK_MAX_WORDS = 2
 HOOK_MAX_CHARS = 14
@@ -152,6 +171,19 @@ SPAN_MARGIN_EM = 0.07
 POP_ORIGIN = "50% 62%"
 
 _HEX = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
+
+
+def size_rules(size: str = "default") -> tuple:
+    """(band height fraction, font fraction, lines) for a `captions.size`, refused by name.
+
+    The one place a size name turns into numbers, so `default` cannot drift away from the
+    geometry every Short rendered before v4.
+    """
+    try:
+        return SIZE_TABLE[size]
+    except (KeyError, TypeError):
+        raise ValueError(f"unknown caption size {size!r}; "
+                         f"known: {', '.join(SIZES)}") from None
 
 
 # --- the data ---------------------------------------------------------------------------
@@ -187,6 +219,7 @@ class CaptionConfig:
     enabled: bool = False
     accent: str = DEFAULT_ACCENT
     position: str = "top"
+    size: str = "default"
     pop: float = DEFAULT_POP
     hook_seconds: float = 0.0
 
@@ -374,13 +407,14 @@ def word_windows(cues, min_window: float = MIN_WINDOW_S) -> list:
 # --- geometry -------------------------------------------------------------------------------
 
 def caption_box(width: int, height: int, card_top: int | None = None,
-                position: str = "top"):
+                position: str = "top", size: str = "default"):
     """The caption band as (left, top, right, bottom). The one place captions are placed.
 
-    `position` picks the band's centre out of BAND_CENTER_FRAC; a band that would reach into
-    the platform's own bottom quarter is lifted whole. `card_top` is the top edge of whatever
-    a scene draws below the captions — in practice `media.overlay_box(...)[1]`, the card plate
-    on a media scene. The band shrinks from the
+    `position` picks the band's centre out of BAND_CENTER_FRAC and `size` its height out of
+    SIZE_TABLE; a band that would reach into the platform's own bottom quarter is lifted whole.
+
+    `card_top` is the top edge of whatever a scene draws below the captions — in practice
+    `media.overlay_box(...)[1]`, the card plate on a media scene. The band shrinks from the
     BOTTOM to clear it (the band's top is the more valuable edge: it is what keeps captions
     off the platform's own chrome), and only once the band would drop below a readable height
     does it move up instead. A card that owns the whole top of the frame is refused rather
@@ -390,9 +424,10 @@ def caption_box(width: int, height: int, card_top: int | None = None,
         raise ValueError(f"unknown caption position {position!r}; "
                          f"known: {', '.join(POSITIONS)}")
     centre = BAND_CENTER_FRAC[position]
+    band_h_frac = size_rules(size)[0]
     x = round(width * SAFE_X_FRAC)
-    top = round(height * (centre - BAND_H_FRAC / 2))
-    bottom = round(height * (centre + BAND_H_FRAC / 2))
+    top = round(height * (centre - band_h_frac / 2))
+    bottom = round(height * (centre + band_h_frac / 2))
     floor = round(height * SAFE_BOTTOM_FRAC)
     if bottom > floor:
         # The platform's own UI owns the bottom quarter. A band that would reach into it is
@@ -417,19 +452,28 @@ def caption_box(width: int, height: int, card_top: int | None = None,
 
 # --- type -------------------------------------------------------------------------------------
 
-def font_size(text: str, box, lines: int = MAX_CUE_LINES) -> float:
+def font_size(text: str, box, lines: int | None = None, size: str = "default") -> float:
     """Type size for one cue: as big as the band allows, wrapped over at most `lines`.
 
-    A cue is capped at MAX_CHARS, so the worst case is bounded; the floor is what keeps a
-    caption readable on a phone if that cap is ever raised. Measuring over `lines` rather
-    than one is what lets the type stay big: a two-word cue that wraps reads better than the
-    same cue shrunk to fit a single line.
+    `size` picks the font fraction and the default line count out of SIZE_TABLE; `lines`
+    overrides the line count alone. Measuring over more than one line is what lets the type
+    stay big: a two-word cue that wraps reads better than the same cue shrunk onto one line.
+
+    The width model is the longest WORD, not the average line: CSS cannot break inside a word
+    (there is no overflow-wrap or hyphens in caption_html) and the page is overflow:hidden, so
+    a cue sized to `chars / lines` would simply have its longest word clipped — "IN
+    ADVENTURELAND" halves to 8 characters and then needs 1072 px of an 864 px band. The cap on
+    a cue's characters bounds the paragraph, not the word, so the word is measured directly;
+    MIN_FONT_PX is the floor below which the cue is unreadable anyway.
     """
     left, top, right, bottom = box
     band_h, usable = bottom - top, right - left
-    chars = max(len(str(text or "")), 1)
-    per_line = max(1.0, chars / max(1, int(lines)))
-    return max(MIN_FONT_PX, min(FONT_BAND_FRAC * band_h,
+    band_frac, size_lines = size_rules(size)[1:]
+    text = str(text or "")
+    rows = max(1, int(size_lines if lines is None else lines))
+    longest = max((len(word) for word in text.split()), default=1)
+    per_line = max(1.0, float(longest), max(len(text), 1) / rows)
+    return max(MIN_FONT_PX, min(band_frac * band_h,
                                 usable / (per_line * FONT_EM_PER_CHAR)))
 
 
@@ -442,7 +486,7 @@ def _checked_accent(value: object) -> str:
 
 
 def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
-                 pop: float = DEFAULT_POP) -> str:
+                 pop: float = DEFAULT_POP, size: str = "default") -> str:
     """One frame of one cue: every word of the phrase, with word `lit` in the accent colour.
 
     The page is the BAND, not the whole frame — make_short overlays it at the band's own y —
@@ -456,13 +500,14 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
     glyph instead of eating into it: the captions have to stay legible over bright footage as
     well as over a dark card.
 
-    `pop` scales the lit word. At DEFAULT_POP (1.0) it emits no CSS at all, so a spec that
-    does not ask for it renders the byte-identical PNG it rendered before the pop existed.
+    `pop` scales the lit word. At DEFAULT_POP (1.0) it emits no CSS at all, and `size`
+    defaults to the day-3 type, so a spec that asks for neither renders the byte-identical
+    PNG it rendered before either existed.
     """
     colour = _checked_accent(accent)
     left, top, _right, bottom = box
     band_h = bottom - top
-    fs = font_size(cue.text, box)
+    fs = font_size(cue.text, box, size=size)
     pop_css = "" if float(pop) <= DEFAULT_POP else (
         f"\n.line span{{display:inline-block;margin:0 {SPAN_MARGIN_EM}em}}"
         f"\n.lit{{transform:scale({float(pop):.2f});transform-origin:{POP_ORIGIN};"
@@ -500,6 +545,7 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
         enabled: true
         accent: "#ffe234"     # hex only: it is interpolated into CSS unescaped
         position: top         # top | center | lower
+        size: large           # default (the day-3 band and type) | large
         pop: 1.14             # scale the lit word; 1.0 emits no extra CSS at all
         hook_seconds: 3.0     # cues starting before this take the tighter hook caps
     """
@@ -517,6 +563,8 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
     if position not in POSITIONS:
         raise ValueError(f"unknown caption position {position!r}; "
                          f"known: {', '.join(POSITIONS)}")
+    size = str(block.get("size", "default"))
+    size_rules(size)          # refused by name, exactly as `position` is
     enabled = bool(block.get("enabled", False))
     if override is not None:
         enabled = bool(override)
@@ -528,4 +576,5 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
         raise ValueError(f"captions.hook_seconds must be in [0, 10]; got {hook_seconds!r}")
     return CaptionConfig(enabled=enabled,
                          accent=_checked_accent(block.get("accent", DEFAULT_ACCENT)),
-                         position=position, pop=pop, hook_seconds=hook_seconds)
+                         position=position, size=size, pop=pop,
+                         hook_seconds=hook_seconds)

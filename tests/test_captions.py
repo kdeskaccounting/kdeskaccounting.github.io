@@ -338,11 +338,9 @@ def test_a_non_hex_accent_is_refused_because_it_lands_in_css_unescaped():
 
 
 def test_a_long_cue_is_typeset_smaller_so_it_stays_on_one_line():
-    """Measured over one line: over two, "Tomorrowland waits" no longer has to shrink at all,
-    which is the whole point of MAX_CUE_LINES (see the two-line tests below)."""
     box = C.caption_box(1080, 1920)
-    short = C.font_size("Go", box, lines=1)
-    long = C.font_size("Tomorrowland waits", box, lines=1)
+    short = C.font_size("Go", box)
+    long = C.font_size("Tomorrowland waits", box)
     assert long < short
     assert C.MIN_FONT_PX <= long
 
@@ -524,25 +522,26 @@ def test_the_captions_are_still_all_caps_and_still_the_brand_accent():
 # --- type --------------------------------------------------------------------------------
 
 def test_two_lines_of_the_largest_type_still_fit_inside_the_band():
-    box = C.caption_box(1080, 1920, position="center")
+    box = C.caption_box(1080, 1920, position="center", size="large")
     band_h = box[3] - box[1]
-    size = C.font_size("WHICH DISNEY", box)
+    size = C.font_size("WHICH DISNEY", box, size="large")
     assert size >= 110, "the point of FONT_BAND_FRAC 0.347 is type you can read in a feed"
     assert C.MAX_CUE_LINES * 1.06 * size <= band_h
 
 
 def test_a_long_cue_is_measured_over_two_lines_not_one():
-    box = C.caption_box(1080, 1920, position="center")
-    assert C.font_size("BANNED FROM EPCOT", box) > C.font_size("BANNED FROM EPCOT", box,
-                                                               lines=1)
+    box = C.caption_box(1080, 1920, position="center", size="large")
+    assert C.font_size("BANNED FROM EPCOT", box, size="large") > \
+        C.font_size("BANNED FROM EPCOT", box, lines=1)
 
 
 # --- position ----------------------------------------------------------------------------
 
+@pytest.mark.parametrize("size", C.SIZES)
 @pytest.mark.parametrize("position", C.POSITIONS)
 @pytest.mark.parametrize("w,h", SIZES)
-def test_a_centre_band_still_clears_the_attribution_watermark(position, w, h):
-    box = C.caption_box(w, h, position=position)
+def test_a_centre_band_still_clears_the_attribution_watermark(position, w, h, size):
+    box = C.caption_box(w, h, position=position, size=size)
     assert not media.boxes_overlap(box, media.watermark_box(w, h))
     assert box[3] <= round(h * C.SAFE_BOTTOM_FRAC)
     assert box[1] > 0
@@ -599,3 +598,49 @@ def test_the_new_caption_keys_come_off_the_spec():
 def test_a_spec_with_no_new_keys_gets_todays_defaults():
     cfg = C.settings({"captions": {"enabled": True}})
     assert (cfg.position, cfg.pop, cfg.hook_seconds) == ("top", C.DEFAULT_POP, 0.0)
+
+
+# --- the type size is opt-in ---------------------------------------------------------------
+
+def test_a_spec_that_asks_for_nothing_gets_the_day_three_band_and_type_exactly():
+    """The binding constraint on this whole change: absent the key, the renderer produces
+    what it produced on day 3 — the band and the 92.1 px type the media-demo burned in."""
+    box = C.caption_box(1080, 1920)
+    assert box == (108, 269, 972, 576)
+    assert C.font_size("WHICH DISNEY", box) == pytest.approx(92.1, abs=0.05)
+    assert C.settings({"captions": {"enabled": True}}).size == "default"
+
+
+def test_the_large_size_is_the_bigger_band_and_the_bigger_type():
+    box = C.caption_box(1080, 1920, size="large")
+    assert box == (108, 245, 972, 600)
+    assert C.font_size("WHICH DISNEY", box, size="large") == pytest.approx(123.2, abs=0.05)
+
+
+def test_the_default_size_still_measures_a_cue_over_one_line():
+    box = C.caption_box(1080, 1920)
+    assert C.font_size("BANNED FROM EPCOT", box) == C.font_size("BANNED FROM EPCOT", box,
+                                                                lines=1)
+
+
+def test_the_size_key_comes_off_the_spec_and_an_unknown_one_is_refused_by_name():
+    assert C.settings({"captions": {"enabled": True, "size": "large"}}).size == "large"
+    with pytest.raises(ValueError) as excinfo:
+        C.settings({"captions": {"enabled": True, "size": "huge"}})
+    assert "huge" in str(excinfo.value)
+    with pytest.raises(ValueError) as excinfo:
+        C.caption_box(1080, 1920, size="huge")
+    assert "huge" in str(excinfo.value)
+
+
+def test_a_long_single_word_is_never_measured_as_half_a_word():
+    """CSS cannot break inside a word and the page is overflow:hidden, so a cue measured over
+    two lines still has to fit its LONGEST WORD across the band — halving the character count
+    would size "IN ADVENTURELAND" to 114 px of type in an 864 px band and clip the word."""
+    box = C.caption_box(1080, 1920, position="center", size="large")
+    usable = box[2] - box[0]
+    for text in ("EXTRAORDINARILY", "IN ADVENTURELAND", "WHICH DISNEY"):
+        size = C.font_size(text, box, size="large")
+        longest = max(len(word) for word in text.split())
+        assert longest * C.FONT_EM_PER_CHAR * size <= usable + 0.5, text
+        assert size >= C.MIN_FONT_PX
