@@ -739,9 +739,16 @@ def main(argv: list | None = None) -> int:
                 stored = json.loads(meta.read_text())
             except (OSError, ValueError):
                 stored = {}
-            # The lead-in is deliberately NOT in the cache key — it changes no billed byte —
-            # so it is compared here instead: a spec that shortens it re-renders the WAV
-            # locally (and its word timings with it) without re-billing anything it need not.
+            # The lead-in is deliberately NOT in the cache key: it changes no byte the
+            # provider generates, so a key that included it would have invalidated every meta
+            # written before this landed — one re-narration of every committed build, billed.
+            # It is compared here instead, defaulting to LEAD_IN_S so those older metas stay
+            # hits.
+            #
+            # A CHANGED lead-in is a MISS, and a miss re-synthesizes — it is NOT free. There
+            # is no local re-decode path: decode_to_wav unlinks the provider's mp3 in its
+            # finally block, so nothing is kept to prepend different silence to. On ElevenLabs
+            # that is a real billed request per scene (free on Kokoro).
             if (hash_matches(stored.get("hash"), cfg, text)
                     and float(stored.get("lead_in_s", LEAD_IN_S)) == cfg.lead_in_s):
                 durations[i] = stored["seconds"]

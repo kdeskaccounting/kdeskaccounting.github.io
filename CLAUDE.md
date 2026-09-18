@@ -192,9 +192,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # explicit offset, which replaces the concat stream copy — make_short.xfade_offsets() is the
 # arithmetic that rewrite will need. The silence a viewer hears at a join is this scene's
 # `scene_pad` plus the NEXT scene's `lead_in_s`: 0.25 + 0.3 = 0.55 s at the defaults, 0.15 s
-# at the v4 pair above. `lead_in_s` is deliberately NOT in narrate.py's cache key — the
-# provider bills for identical audio either way — so the per-scene meta records it and the
-# cache-hit branch compares it: shortening it re-renders the WAVs without re-billing anything.
+# at the v4 pair above. `lead_in_s` is deliberately NOT in narrate.py's cache key: it changes
+# no byte the provider generates, so a key that included it would have invalidated every meta
+# written before it landed. The per-scene meta records it and the cache-hit branch compares it,
+# defaulting to 0.3 so older metas stay hits. CHANGING IT IS NOT FREE: a changed lead-in misses
+# the cache and RE-SYNTHESIZES every scene, which on ElevenLabs is a billed request each — the
+# provider's mp3 is unlinked after decoding, so there is nothing to re-decode locally. Pick it
+# once per spec; do not tune it by trial on an ElevenLabs voice.
 
 # NEVER DRAW IN THE BOTTOM-RIGHT 55% x 12% OF A FRAME (x >= 0.45, y >= 0.88). That is where
 # Google Earth Studio burns its attribution watermark ("Google Earth" plus a data-provider

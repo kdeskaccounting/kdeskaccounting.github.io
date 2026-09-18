@@ -77,15 +77,24 @@ DEFAULT_JOIN = "fade"
 DEFAULT_XFADE_S = 0.12
 DEFAULT_XFADE_STYLE = "fade"
 
-#: Renderer-side backstop on how long one picture may stay on screen. Deliberately generous
-#: against the author-side cards.MAX_SCENE_S (3.0 s lore / 4.0 s data): this is the number
-#: that catches a spec built by something other than parksheet/cards.py.
+#: FORWARD DECLARATION — nothing reads this yet, and NO render is capped by it today. Same
+#: footnote as `xfade` above: a name a later task will build on, not a check that runs.
+#:
+#: Task 10 (the `beats:` branch) is the intended consumer. What it is meant to become: a
+#: renderer-side backstop on how long one picture may stay on screen, deliberately generous
+#: against the author-side cards.MAX_SCENE_S (3.0 s lore / 4.0 s data), so that it catches a
+#: spec built by something other than parksheet/cards.py. Until that lands, a spec may hold a
+#: picture for as long as it likes and nothing here objects.
 MAX_PICTURE_S = 6.0
 
 
 @dataclasses.dataclass(frozen=True)
 class Transitions:
     join: str = DEFAULT_JOIN
+    #: FORWARD DECLARATIONS, like MAX_PICTURE_S above: transitions() parses and coerces these,
+    #: but nothing reads them, because their only consumer is the `xfade` pass that refuses
+    #: above. They are therefore unvalidated beyond the coercion — whoever builds that pass
+    #: owns bounds-checking them at the same time.
     duration: float = DEFAULT_XFADE_S
     style: str = DEFAULT_XFADE_STYLE
 
@@ -201,8 +210,9 @@ def probe_size(p):
 def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
     """One still + one narration WAV -> an mp4 beside the PNG. Returns that path.
 
-    Slow zoom to 1.06x over the whole scene, 0.3 s fades either end, audio padded so the last
-    word is never clipped. Every scene kind - sheet, pan and card - encodes through here.
+    Slow zoom to 1.06x over the whole scene, 0.3 s fades either end under the default
+    `join: fade` and none at all under `join: cut` (fade_steps owns that string), audio padded
+    so the last word is never clipped. Every scene kind - sheet, pan and card - encodes here.
 
     `-color_range tv` + RANGE_BSF tag the output limited range. The pixels always were; only
     some parts carried the tag, and the parts are concatenated with `-c:v copy`, so the
