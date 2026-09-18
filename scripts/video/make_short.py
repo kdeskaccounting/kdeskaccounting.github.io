@@ -18,7 +18,7 @@ the Short's only re-encode, loudnorm and all, rather than a second one. The rule
 band's geometry live in scripts/video/captions.py; the per-word timings come from the
 `scene_NN.words.json` narrate.py writes beside each WAV.
 """
-import argparse, html, json, math, pathlib, subprocess, sys
+import argparse, dataclasses, html, json, math, pathlib, subprocess, sys
 # yaml and PIL are imported inside the functions that use them so this module
 # imports with the standard library alone (see tests/test_make_short_cards.py).
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
@@ -58,6 +58,101 @@ RANGE_BSF = "h264_metadata=video_full_range_flag=0"
 #: the last word ends instead of 0.3 s after it — and a mixed Short that kept 0.6 s on its card
 #: scenes would still have 0.9 s of dead air at every card-led join, which is the defect.
 SCENE_PAD = 0.25
+
+#: How two parts meet. `fade` is what every existing spec gets and must keep getting.
+#:
+#: Measured on the published day-3 Short: the 0.3 s fade-out of one part meeting the 0.3 s
+#: fade-in of the next is a 0.55 s dip to luma 0.0, four times, plus a 0.3 s opening fade —
+#: about 3.0 s of a 45.3 s video, spent at exactly the moments the eye would re-engage. It
+#: also makes the file undetectable to a scene-change detector: `scdet=threshold=12` finds
+#: ZERO cuts across the whole Short, because every join is black meeting black.
+#:
+#: `cut` drops both `fade=` clauses. The parts still encode identically and the concat
+#: demuxer still stream-copies them, so nothing else in main() changes.
+#: `xfade` is a known value and is REFUSED here: it cannot run over a concat demuxer (every
+#: part has to become its own input with an explicit offset), and that rewrite is not in
+#: this change. `xfade_offsets` below is the arithmetic it will need.
+JOINS = ("cut", "fade", "xfade")
+DEFAULT_JOIN = "fade"
+DEFAULT_XFADE_S = 0.12
+DEFAULT_XFADE_STYLE = "fade"
+
+#: Renderer-side backstop on how long one picture may stay on screen. Deliberately generous
+#: against the author-side cards.MAX_SCENE_S (3.0 s lore / 4.0 s data): this is the number
+#: that catches a spec built by something other than parksheet/cards.py.
+MAX_PICTURE_S = 6.0
+
+
+@dataclasses.dataclass(frozen=True)
+class Transitions:
+    join: str = DEFAULT_JOIN
+    duration: float = DEFAULT_XFADE_S
+    style: str = DEFAULT_XFADE_STYLE
+
+
+def transitions(spec: dict) -> Transitions:
+    """The spec's top-level `transitions:` block. Absent -> today's fades, exactly."""
+    block = (spec or {}).get("transitions") or {}
+    if not isinstance(block, dict):
+        raise SystemExit(f"spec `transitions:` must be a mapping, got {type(block).__name__}")
+    unknown = set(block) - {"join", "duration", "style"}
+    if unknown:
+        raise SystemExit(f"unknown transitions key(s) {', '.join(sorted(unknown))}; "
+                         f"known: join, duration, style")
+    join = str(block.get("join", DEFAULT_JOIN))
+    if join not in JOINS:
+        raise SystemExit(f"unknown transitions.join {join!r}; known: {', '.join(JOINS)}")
+    if join == "xfade":
+        raise SystemExit(
+            "transitions.join: xfade needs every part as its own ffmpeg input with an "
+            "explicit offset, which replaces the concat-demuxer stream copy in main(). That "
+            "pass is not built yet (spec 2026-09-19-engagement-v4-design.md section 4.2, "
+            "step 2). Use `join: cut` for now; xfade_offsets() is the arithmetic it needs.")
+    return Transitions(join=join,
+                       duration=float(block.get("duration", DEFAULT_XFADE_S)),
+                       style=str(block.get("style", DEFAULT_XFADE_STYLE)))
+
+
+def fade_steps(dur: float, join: str) -> str:
+    """The `fade=` clauses for one part, ending in a comma so it prefixes `format=yuv420p`.
+
+    Empty under `join: cut`. This is the ONLY place in the renderer that builds the string,
+    so there is one thing to read when asking whether a part fades.
+    """
+    if join == "cut":
+        return ""
+    return f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur - 0.3):.3f}:d=0.3,"
+
+
+def scene_pad(short: dict) -> float:
+    """Frames held after the narration ends, from `short.scene_pad` or the constant.
+
+    The silence a viewer hears at a cut is this plus the NEXT scene's narrate.LEAD_IN_S.
+    At the defaults that is 0.25 + 0.3 = 0.55 s; the v4 pair (0.10 + 0.05) is 0.15 s.
+    """
+    value = (short or {}).get("scene_pad")
+    if value is None:
+        return SCENE_PAD
+    pad = float(value)
+    if not 0.0 < pad <= 1.0:
+        raise SystemExit(f"short.scene_pad must be in (0, 1.0]; got {pad!r}. Some pad has "
+                         f"to survive or the last word of every scene is clipped.")
+    return pad
+
+
+def xfade_offsets(durations, t: float) -> list:
+    """Where each `xfade` join starts, given the part durations and one transition length.
+
+    With durations d0..dn and transition T the running length is Lk = sum(d0..dk) - k*T, and
+    the k-th join's offset is L(k-1) - T. Pure arithmetic, so the single-pass join that will
+    use it has one tested thing to build on.
+    """
+    offsets, running = [], 0.0
+    for index, duration in enumerate(list(durations)[:-1]):
+        running += float(duration) - (t if index else 0.0)
+        offsets.append(round(running - t, 4))
+    return offsets
+
 
 #: Input options for the concat in the CAPTIONED final pass, which is the only pass that runs
 #: the parts through a filter graph.
@@ -103,7 +198,7 @@ def probe_size(p):
             return int(parts[0]), int(parts[1])
     return None
 
-def encode_scene(png, wav, dur, crf):
+def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
     """One still + one narration WAV -> an mp4 beside the PNG. Returns that path.
 
     Slow zoom to 1.06x over the whole scene, 0.3 s fades either end, audio padded so the last
@@ -116,7 +211,7 @@ def encode_scene(png, wav, dur, crf):
     n = math.ceil(dur * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
     vf = (f"scale={RW}:{RH}:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},{zmax})':"
           f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
-          f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p")
+          f"{fade_steps(dur, join)}format=yuv420p")
     out = pathlib.Path(png).with_suffix(".mp4")
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
          "-filter_complex",
@@ -127,7 +222,7 @@ def encode_scene(png, wav, dur, crf):
          "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
-def encode_media_scene(src, motion, layers, wav, dur, crf, out):
+def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN):
     """One media file + its layer PNGs + one narration WAV -> an mp4. Returns `out`.
 
     The composite is three things stacked: the footage or still, put through the motion's
@@ -161,8 +256,7 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out):
     # yuvj420p while every card and sheet scene encodes yuv420p, and `-c:v copy` concat
     # would put a brightness jump at the cut.
     steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv,"
-                 f"fade=t=in:st=0:d=0.3,"
-                 f"fade=t=out:st={max(0.0, dur-0.3):.3f}:d=0.3,format=yuv420p[v]")
+                 f"{fade_steps(dur, join)}format=yuv420p[v]")
     steps.append("[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
@@ -434,6 +528,8 @@ def main():
     media.validate_spec(spec, spec_path)
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
+    tr = transitions(spec)
+    pad = scene_pad(sh)
     # Preflight the end plate alongside every other spec check: --end-card on a spec that
     # carries no `cta:` has no copy to put on the plate, and must say so HERE — before a
     # build directory exists, let alone six narrated and encoded scenes. end_html is pure
@@ -481,9 +577,9 @@ def main():
             motion = sc.get("motion") or media.default_motion(kind)
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
-            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
-                                     work / f"scene_{k}.mp4")
+                                     work / f"scene_{k}.mp4", join=tr.join)
             add_part(out, idx)
             print(f"scene {idx:02d}: media {kind}/{motion} {dur:.1f}s -> {out.name}", flush=True)
             continue
@@ -496,8 +592,8 @@ def main():
                                 RW, RH, html_dir=work,
                                 box=card_box_under_captions(RW, RH) if cap.enabled else None)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
-            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
-            out = encode_scene(png, wav, dur, a.crf)
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            out = encode_scene(png, wav, dur, a.crf, join=tr.join)
             add_part(out, idx); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue
         if str(idx) in ranges:  # dedicated portrait-friendly render of a narrower range, trimmed to the table
@@ -531,8 +627,8 @@ def main():
             f = focus.get(str(idx), {}); fx = min(0.72, max(0.30, float(f.get("fx", 0.5)))); fy = min(0.60, max(0.20, float(f.get("fy", 0.5)) * src.height / crop.height))
         hp = work / f"scene_{k}.html"; hp.write_text(scene_html(sh["hook"], sc.get("caption", ""), cropped.resolve(), fx, fy, mode, pan))
         png = work / f"scene_{k}.png"; R.screenshot(hp, png, RW, RH)
-        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + SCENE_PAD
-        out = encode_scene(png, wav, dur, a.crf)
+        wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+        out = encode_scene(png, wav, dur, a.crf, join=tr.join)
         add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
     if end_card_wanted(sh, a.end_card):

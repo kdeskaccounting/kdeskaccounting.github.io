@@ -176,6 +176,26 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # committed; marketing/video/media-demo/assets/generate.py remakes them.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
 
+# How two parts MEET, and how much silence sits in the join (2026-09-18). All three keys are
+# OPTIONAL and every existing spec — and every golden — renders byte-identically without them.
+#   transitions:            # optional; absent == {join: fade}, today's 0.3 s dips to black
+#     join: cut             # cut | fade   (xfade is a known value and refuses: not built)
+#   short:
+#     scene_pad: 0.10       # optional; frames held after the narration, default 0.25
+#   tts:
+#     lead_in_s: 0.05       # optional; silence prepended to every scene WAV, default 0.3
+# `join: fade` fades every part from and to black over 0.3 s, so frame 0 is black and every
+# join is black meeting black — `scdet` finds ZERO cuts in such a file. `join: cut` drops both
+# `fade=` clauses (make_short.fade_steps is the only place that string is built); the parts
+# still encode identically, so the concat demuxer still stream-copies them. `join: xfade` is
+# accepted as a NAME and then refused: it needs every part as its own ffmpeg input with an
+# explicit offset, which replaces the concat stream copy — make_short.xfade_offsets() is the
+# arithmetic that rewrite will need. The silence a viewer hears at a join is this scene's
+# `scene_pad` plus the NEXT scene's `lead_in_s`: 0.25 + 0.3 = 0.55 s at the defaults, 0.15 s
+# at the v4 pair above. `lead_in_s` is deliberately NOT in narrate.py's cache key — the
+# provider bills for identical audio either way — so the per-scene meta records it and the
+# cache-hit branch compares it: shortening it re-renders the WAVs without re-billing anything.
+
 # NEVER DRAW IN THE BOTTOM-RIGHT 55% x 12% OF A FRAME (x >= 0.45, y >= 0.88). That is where
 # Google Earth Studio burns its attribution watermark ("Google Earth" plus a data-provider
 # line), and the imagery terms require it to stay visible — covering it is a licence breach,

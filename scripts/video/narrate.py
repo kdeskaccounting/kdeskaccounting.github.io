@@ -136,6 +136,10 @@ class TTSConfig:
     model: str = ""
     settings: tuple = ()
     kokoro_voice: str = DEFAULT_KOKORO_VOICE
+    #: Silence prepended by finish(). NOT a voice setting and NOT in the cache key: the
+    #: provider bills for identical audio either way, and only the local silence changes.
+    #: An unknown key inside voice_settings is a 422, so it is carried here instead.
+    lead_in_s: float = LEAD_IN_S
 
     def voice_settings(self) -> dict:
         return dict(self.settings)
@@ -144,6 +148,18 @@ class TTSConfig:
         """The same spec narrated locally by Kokoro."""
         return dataclasses.replace(self, provider=KOKORO, voice=self.kokoro_voice,
                                    model="", settings=())
+
+
+def _lead_in(block: dict) -> float:
+    """The `tts.lead_in_s` a spec asks for, or the constant. Refuses an impossible one."""
+    value = block.get("lead_in_s")
+    if value is None:
+        return LEAD_IN_S
+    lead = float(value)
+    if not 0.0 <= lead <= 1.0:
+        raise SystemExit(f"tts.lead_in_s must be in [0, 1.0]; got {lead!r}. It is the "
+                         f"silence prepended to every scene, and the word timings carry it.")
+    return lead
 
 
 def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSConfig:
@@ -158,7 +174,7 @@ def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSC
     if provider == KOKORO:
         chosen = str(voice or block.get("voice") or legacy_voice or DEFAULT_KOKORO_VOICE)
         return TTSConfig(provider=KOKORO, voice=chosen, speed=float(speed),
-                         kokoro_voice=chosen)
+                         kokoro_voice=chosen, lead_in_s=_lead_in(block))
     chosen = voice or block.get("voice")
     if not chosen:
         raise SystemExit("tts.provider is elevenlabs but no tts.voice was given. Set the "
@@ -182,7 +198,8 @@ def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSC
     return TTSConfig(provider=ELEVENLABS, voice=str(chosen), speed=float(speed),
                      model=str(block.get("model") or DEFAULT_EL_MODEL),
                      settings=tuple(sorted(settings.items())),
-                     kokoro_voice=str(legacy_voice or DEFAULT_KOKORO_VOICE))
+                     kokoro_voice=str(legacy_voice or DEFAULT_KOKORO_VOICE),
+                     lead_in_s=_lead_in(block))
 
 
 def narration_text(scene: dict) -> str:
@@ -435,12 +452,12 @@ def fold_kokoro_tokens(groups) -> list | None:
     return words if saw_timing else None
 
 
-def words_offset(trim_start_samples: int) -> float:
+def words_offset(trim_start_samples: int, lead_in_s: float = LEAD_IN_S) -> float:
     """Seconds to add to a raw timing so it lines up with the finished WAV.
 
-    finish() drops `trim_start_samples` from the front and prepends LEAD_IN_S of silence.
+    finish() drops `trim_start_samples` from the front and prepends `lead_in_s` of silence.
     """
-    return LEAD_IN_S - (int(trim_start_samples) / SR)
+    return lead_in_s - (int(trim_start_samples) / SR)
 
 
 def shift_words(words, offset: float):
@@ -480,8 +497,8 @@ def trim_bounds(audio) -> tuple[int, int]:
     return max(0, int(idx[0]) - int(0.1 * SR)), int(idx[-1]) + int(0.25 * SR)
 
 
-def finish(audio):
-    """Trim the silence either side and prepend 0.3 s — what the Kokoro path has always done.
+def finish(audio, lead_in_s: float = LEAD_IN_S):
+    """Trim the silence either side and prepend `lead_in_s` — the Kokoro path, always.
 
     Both providers go through here, so an ElevenLabs scene lines up against the frames exactly
     as a Kokoro one does and assemble.py needs no change.
@@ -490,15 +507,15 @@ def finish(audio):
     audio = np.asarray(audio, dtype=np.float32)
     start, stop = trim_bounds(audio)
     audio = audio[start:stop]
-    return np.concatenate([np.zeros(int(LEAD_IN_S * SR), dtype=np.float32), audio])
+    return np.concatenate([np.zeros(int(lead_in_s * SR), dtype=np.float32), audio])
 
 
-def finish_with_words(audio, words):
+def finish_with_words(audio, words, lead_in_s: float = LEAD_IN_S):
     """finish(), plus the same scene's word timings moved onto the WAV it produced."""
     import numpy as np  # lazy: absent outside the TTS venv
     audio = np.asarray(audio, dtype=np.float32)
     start, _stop = trim_bounds(audio)
-    return finish(audio), shift_words(words, words_offset(start))
+    return finish(audio, lead_in_s), shift_words(words, words_offset(start, lead_in_s))
 
 
 def write_wav(path: pathlib.Path, audio) -> None:
@@ -511,7 +528,8 @@ def write_wav(path: pathlib.Path, audio) -> None:
 
 
 def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path,
-                  alignment: dict | None = None) -> tuple[float, list | None]:
+                  alignment: dict | None = None,
+                  lead_in_s: float = LEAD_IN_S) -> tuple[float, list | None]:
     """MP3 bytes -> a finished scene WAV. Returns (seconds, word timings or None)."""
     import soundfile as sf  # lazy: absent outside the TTS venv
     wav_path = pathlib.Path(wav_path)
@@ -525,7 +543,7 @@ def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path,
             raise TTSError(f"ffmpeg produced {sr} Hz audio, expected {SR} Hz")
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
-        audio, words = finish_with_words(audio, fold_alignment(alignment))
+        audio, words = finish_with_words(audio, fold_alignment(alignment), lead_in_s)
         write_wav(wav_path, audio)
         return len(audio) / SR, words
     finally:
@@ -567,7 +585,7 @@ def synth_kokoro(cfg: TTSConfig, text: str, wav_path: pathlib.Path) -> tuple[flo
         chunks.append(chunk)
         emitted += len(chunk)
     audio, words = finish_with_words(np.concatenate(chunks).astype(np.float32),
-                                     fold_kokoro_tokens(groups))
+                                     fold_kokoro_tokens(groups), cfg.lead_in_s)
     write_wav(wav_path, audio)
     return len(audio) / SR, words
 
@@ -601,7 +619,7 @@ def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
     if not content:
         raise TTSError("ElevenLabs: HTTP 200 with an empty body — no audio to decode")
     audio, alignment = parse_timestamped_response(content, key)
-    return decode_to_wav(audio, wav_path, alignment)
+    return decode_to_wav(audio, wav_path, alignment, cfg.lead_in_s)
 
 
 def synth_scene(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
@@ -721,7 +739,11 @@ def main(argv: list | None = None) -> int:
                 stored = json.loads(meta.read_text())
             except (OSError, ValueError):
                 stored = {}
-            if hash_matches(stored.get("hash"), cfg, text):
+            # The lead-in is deliberately NOT in the cache key — it changes no billed byte —
+            # so it is compared here instead: a spec that shortens it re-renders the WAV
+            # locally (and its word timings with it) without re-billing anything it need not.
+            if (hash_matches(stored.get("hash"), cfg, text)
+                    and float(stored.get("lead_in_s", LEAD_IN_S)) == cfg.lead_in_s):
                 durations[i] = stored["seconds"]
                 print(f"scene {i:02d}: cached {durations[i]:.1f}s "
                       f"[{stored.get('provider_used', KOKORO)}]")
@@ -769,6 +791,7 @@ def main(argv: list | None = None) -> int:
                                     "voice": scene_cfg.voice,
                                     "provider_used": scene_cfg.provider,
                                     "model": scene_cfg.model, "speed": scene_cfg.speed,
+                                    "lead_in_s": scene_cfg.lead_in_s,
                                     "text": text}))
         print(f"scene {i:02d}: {seconds:.1f}s  [{scene_cfg.provider}]", flush=True)
     with open(out / "durations.json", "w") as fh:

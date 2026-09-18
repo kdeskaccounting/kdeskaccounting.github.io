@@ -411,18 +411,18 @@ NARRATE_TRIM_TAIL_S = 0.25
 NARRATE_TRIM_HEAD_S = 0.1
 
 #: The silence a viewer hears at a cut, decomposed. make_short owns exactly one of these four
-#: terms — SCENE_PAD — and the other three are narrate.py's, so 0.65 s of the gap is already
-#: spent before a Short holds its first extra frame. At the 0.6 s pad this replaced the budget
-#: was 1.25 s, which is the "~1.2 s of dead air at every join" the fix started from.
+#: terms — the scene pad — and the other three are narrate.py's, so 0.65 s of the gap is
+#: already spent before a Short holds its first extra frame. At the 0.6 s pad this replaced
+#: the budget was 1.25 s, which is the "~1.2 s of dead air at every join" the fix started
+#: from. Two of the four are now settable per spec (`short.scene_pad`, `tts.lead_in_s`), so
+#: the budget is a function of whichever pair a render used rather than of two constants.
 #:
 #: silencedetect measures slightly LESS than this: the first ~0.1 s of narrate's trim tail is
 #: the last word decaying, which is still above the floor. On the demo: 0.77 s and 0.81 s.
 
 
-def _join_budget():
-    import make_short as M
-    import narrate
-    return (NARRATE_TRIM_TAIL_S + M.SCENE_PAD + NARRATE_TRIM_HEAD_S + narrate.LEAD_IN_S)
+def _join_budget(pad, lead_in):
+    return NARRATE_TRIM_TAIL_S + pad + NARRATE_TRIM_HEAD_S + lead_in
 
 
 def _part_spans():
@@ -457,13 +457,20 @@ def _silences(video, floor="-45dB", minimum=0.15):
     return out
 
 
-def test_the_pad_make_short_owns_leaves_room_inside_the_half_second_it_is_allowed():
-    """make_short's own half of the join: the pad plus the lead-in it is handed."""
+def test_the_default_join_budget_is_a_breath_and_the_v4_pair_is_shorter():
+    """The silence at a cut is this scene's pad plus the next scene's lead-in."""
     import make_short as M
     import narrate
     assert M.SCENE_PAD + narrate.LEAD_IN_S <= 0.6
+    assert M.SCENE_PAD > 0, "some pad has to survive, or the last word is cut off"
     # and the whole join, narrate's trim margins included, is well under what 0.6 s gave
-    assert _join_budget() < NARRATE_TRIM_TAIL_S + 0.6 + NARRATE_TRIM_HEAD_S + narrate.LEAD_IN_S
+    assert _join_budget(M.SCENE_PAD, narrate.LEAD_IN_S) < \
+        _join_budget(0.6, narrate.LEAD_IN_S)
+    # The v4 pair, which is what the engagement-v4 spec asks day 3 for: a 0.15 s breath,
+    # against the 0.55 s the defaults spend. (`<= 0.15` would be a float trap: 0.10 + 0.05
+    # is 0.15000000000000002.)
+    assert M.scene_pad({"scene_pad": 0.10}) + 0.05 == pytest.approx(0.15)
+    assert 0.15 < M.SCENE_PAD + narrate.LEAD_IN_S
 
 
 @needs_ffmpeg
@@ -471,7 +478,11 @@ def test_the_pad_make_short_owns_leaves_room_inside_the_half_second_it_is_allowe
                     reason=f"{DEMO_SHORT} has not been rendered in this checkout")
 def test_the_rendered_demo_has_no_dead_air_at_a_scene_join():
     """The defect: ~1.2 s of silence at every cut, because each part was narration + 0.6 s."""
-    budget = _join_budget()
+    import make_short as M
+    import narrate
+    # marketing/video/media-demo/scenes.yaml sets neither `short.scene_pad` nor
+    # `tts.lead_in_s`, so the demo was rendered with the defaults and is judged against them.
+    budget = _join_budget(M.SCENE_PAD, narrate.LEAD_IN_S)
     spans = _part_spans()
     assert len(spans) >= 2, "a one-part Short has no joins to measure"
     quiet = _silences(DEMO_SHORT)
@@ -488,7 +499,7 @@ def test_the_rendered_demo_has_no_dead_air_at_a_scene_join():
         assert gap <= budget, (
             f"{gap:.2f}s of silence across the join at {boundary:.2f}s "
             f"({name} -> {next_name}); the budget is {budget:.2f}s — narrate's 0.25 s trim "
-            f"tail, make_short.SCENE_PAD, narrate's 0.1 s trim head and narrate.LEAD_IN_S. "
+            f"tail, the scene pad, narrate's 0.1 s trim head and the lead-in. "
             f"A 0.6 s pad puts this at ~1.15s, which is the defect.")
     assert measured, "every join was the end-card plate; nothing was actually checked"
 

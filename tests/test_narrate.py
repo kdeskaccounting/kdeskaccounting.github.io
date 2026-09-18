@@ -367,7 +367,7 @@ def test_a_2xx_decodes_the_mp3_it_was_handed(tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(N, "_post_tts", lambda v, k, b, **kw: (200, _timestamped()))
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None:
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S:
                         seen.update(content=content, path=path) or (3.25, None))
     cfg = N.tts_config(spec_with(tts=EL))
     assert N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY) == (3.25, None)
@@ -694,7 +694,7 @@ def test_a_transport_error_falls_back_per_scene_when_allowed(drive, monkeypatch)
 
     monkeypatch.setattr(N, "_post_tts", flaky)
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None:
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S:
                         (pathlib.Path(path).write_bytes(b"RIFF"), (3.0, None))[1])
     assert drive.run("--allow-fallback") == 0
     assert calls == ["First scene.", "Third scene."]
@@ -895,7 +895,7 @@ def test_kokoro_tokens_with_no_timestamps_at_all_yield_none():
 def test_the_word_offset_is_the_lead_in_minus_whatever_the_trim_removed():
     assert N.words_offset(0) == pytest.approx(N.LEAD_IN_S)
     assert N.words_offset(N.SR // 2) == pytest.approx(N.LEAD_IN_S - 0.5)
-    assert N.LEAD_IN_S == 0.3
+    assert N.LEAD_IN_S == 0.3          # the default; tts.lead_in_s overrides it per spec
 
 
 def test_shifting_words_moves_them_onto_the_finished_wav():
@@ -973,8 +973,10 @@ def test_an_unusable_response_body_is_redacted_before_it_is_reported():
 def test_synth_elevenlabs_returns_the_seconds_and_the_words(tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
-    monkeypatch.setattr(N, "decode_to_wav", lambda content, path, alignment=None: (
-        seen.update(content=content, alignment=alignment) or (3.25, [{"text": "Magic"}])))
+    monkeypatch.setattr(N, "decode_to_wav",
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S: (
+                            seen.update(content=content, alignment=alignment)
+                            or (3.25, [{"text": "Magic"}])))
     cfg = N.tts_config(spec_with(tts=EL))
     assert N.synth_elevenlabs(cfg, "Magic now.", tmp_path / "scene_00.wav", FAKE_KEY) == \
         (3.25, [{"text": "Magic"}])
@@ -1039,3 +1041,62 @@ def test_an_empty_fold_is_stored_as_no_timings_rather_than_an_empty_list(drive, 
     assert C.read_words(drive.out / "scene_00.wav") is None
     err = capsys.readouterr().err
     assert "scene 00" in err and "captions" in err
+
+
+# --- the lead-in is a spec key ---------------------------------------------------------
+
+def test_the_lead_in_defaults_to_the_constant_and_is_not_a_voice_setting():
+    cfg = N.tts_config({"tts": {"provider": "elevenlabs", "voice": "v1"}})
+    assert cfg.lead_in_s == N.LEAD_IN_S
+    assert "lead_in_s" not in cfg.voice_settings()
+
+
+def test_a_spec_lead_in_reaches_the_config_and_stays_out_of_the_request_body():
+    cfg = N.tts_config({"tts": {"provider": "elevenlabs", "voice": "v1", "lead_in_s": 0.05}})
+    assert cfg.lead_in_s == pytest.approx(0.05)
+    assert "lead_in_s" not in cfg.voice_settings()
+    assert "lead_in_s" not in N.request_body(cfg, "hello")["voice_settings"]
+
+
+def test_an_impossible_lead_in_is_refused_by_name():
+    with pytest.raises(SystemExit) as excinfo:
+        N.tts_config({"tts": {"provider": "elevenlabs", "voice": "v1", "lead_in_s": -0.5}})
+    assert "lead_in_s" in str(excinfo.value)
+
+
+def test_the_words_offset_follows_the_lead_in_it_was_given():
+    assert N.words_offset(0, 0.05) == pytest.approx(0.05)
+    assert N.words_offset(N.SR // 2, 0.05) == pytest.approx(0.05 - 0.5)
+    assert N.words_offset(0) == pytest.approx(N.LEAD_IN_S)
+
+
+def test_the_lead_in_is_not_in_the_cache_key_so_the_bill_does_not_move():
+    """The audio ElevenLabs bills for is identical; only the local silence changes."""
+    plain = N.tts_config({"tts": {"provider": "elevenlabs", "voice": "v1"}})
+    short = N.tts_config({"tts": {"provider": "elevenlabs", "voice": "v1", "lead_in_s": 0.05}})
+    assert N.cache_hash(plain, "hello") == N.cache_hash(short, "hello")
+
+
+def test_the_elevenlabs_path_hands_its_lead_in_down_to_the_decode(tmp_path, monkeypatch):
+    """The config carries the lead-in; decode_to_wav is what actually prepends the silence."""
+    seen = {}
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
+    monkeypatch.setattr(N, "decode_to_wav",
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S: (
+                            seen.update(lead_in_s=lead_in_s) or (3.25, None)))
+    cfg = N.tts_config(spec_with(tts=dict(EL, lead_in_s=0.05)))
+    N.synth_elevenlabs(cfg, "Magic now.", tmp_path / "scene_00.wav", FAKE_KEY)
+    assert seen["lead_in_s"] == pytest.approx(0.05)
+
+
+def test_a_changed_lead_in_re_renders_the_wav_even_though_the_cache_key_did_not_move(drive):
+    """The bill does not move, so the hash cannot — the meta carries the lead-in instead."""
+    assert drive.run() == 0
+    narrated = len(drive.calls)
+    assert narrated
+    assert drive.meta(0)["lead_in_s"] == pytest.approx(N.LEAD_IN_S)
+    assert drive.run() == 0 and len(drive.calls) == narrated, "an unchanged spec is a hit"
+    drive.spec["tts"] = {"lead_in_s": 0.05}
+    assert drive.run() == 0
+    assert len(drive.calls) == 2 * narrated, "a shortened lead-in must re-render every scene"
+    assert drive.meta(0)["lead_in_s"] == pytest.approx(0.05)

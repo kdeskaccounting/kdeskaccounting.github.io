@@ -36,7 +36,7 @@ SPEC = {
 DURATIONS = {"0": 4.0, "1": 6.0}
 
 
-def _expected_encode_cmd(png, wav, out, dur, crf=26):
+def _expected_encode_cmd(png, wav, out, dur, crf=26, join="fade"):
     """The ffmpeg command as make_short built it before encode_scene was extracted.
 
     Plus `-color_range tv`, added later so the TAG matches the limited-range pixels every
@@ -46,7 +46,7 @@ def _expected_encode_cmd(png, wav, out, dur, crf=26):
     dz = (1.06 - 1.0) / n
     vf = (f"scale=1296:2304:flags=lanczos,zoompan=z='min(zoom+{dz:.7f},1.06)':"
           f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s=1080x1920:fps=30,"
-          f"fade=t=in:st=0:d=0.3,fade=t=out:st={max(0.0, dur - 0.3):.3f}:d=0.3,format=yuv420p")
+          f"{M.fade_steps(dur, join)}format=yuv420p")
     return ["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
             "-filter_complex",
             f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"

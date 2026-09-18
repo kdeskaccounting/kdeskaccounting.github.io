@@ -148,16 +148,17 @@ def test_media_branch_encodes_each_scene_against_its_narrated_wav(stub_main):
 def test_the_encode_flags_match_the_card_and_sheet_scenes_so_concat_still_works(stub_main):
     """Every part of a Short is concatenated with -c:v copy: the streams must match."""
     M.main()
-    for cmd in _media_cmds(stub_main):
+    for k, cmd in enumerate(_media_cmds(stub_main)):
         for flag, value in (("-c:v", "libx264"), ("-preset", "medium"),
                             ("-r", "30"), ("-c:a", "aac"), ("-b:a", "128k"),
                             ("-crf", "26"), ("-color_range", "tv"),
                             ("-bsf:v", "h264_metadata=video_full_range_flag=0")):
             assert cmd[cmd.index(flag) + 1] == value
+        dur = DURATIONS[str(k)] + M.SCENE_PAD
         chain = cmd[cmd.index("-filter_complex") + 1]
         assert f"scale={M.OUT_W}:{M.OUT_H}" in chain
         assert "format=yuv420p" in chain
-        assert "fade=t=in:st=0:d=0.3" in chain
+        assert M.fade_steps(dur, "fade") in chain
         assert "apad=pad_dur=2" in chain
         assert "aformat=sample_rates=48000:channel_layouts=stereo" in chain
 
@@ -266,10 +267,11 @@ def test_the_scene_pad_and_narrates_lead_in_fit_inside_the_join_budget():
     assert M.SCENE_PAD > 0, "some pad has to survive, or the last word is cut off"
 
 
-def test_every_scene_kind_is_padded_by_the_same_constant(stub_main):
-    """Media, card and legacy sheet scenes all read SCENE_PAD — one place to change it."""
+def test_every_scene_kind_reads_the_same_pad_helper(stub_main):
+    """Media, card and legacy sheet scenes all take `pad` from scene_pad() — one place."""
     src = pathlib.Path(M.__file__).read_text(encoding="utf-8")
-    assert src.count("dur = adur + SCENE_PAD") == 3
+    assert src.count("dur = adur + pad") == 3
+    assert "dur = adur + SCENE_PAD" not in src
     assert "dur = adur + 0.6" not in src
 
 
@@ -415,3 +417,88 @@ def test_a_wedged_ffmpeg_is_reported_as_a_failure_not_a_hang(monkeypatch):
     with pytest.raises(SystemExit) as e:
         M.run(["ffmpeg", "-i", "x"])
     assert "timed out" in str(e.value)
+
+
+# --- transitions -------------------------------------------------------------------------
+
+def test_the_default_join_still_emits_the_two_point_three_second_fades(stub_main):
+    """Golden guard: a spec with no `transitions:` block renders exactly what it rendered."""
+    M.main()
+    for cmd in _media_cmds(stub_main):
+        chain = cmd[cmd.index("-filter_complex") + 1]
+        assert "fade=t=in:st=0:d=0.3" in chain
+        assert "fade=t=out:" in chain
+
+
+def test_join_cut_leaves_no_fade_filter_in_any_scene_chain(stub_main):
+    stub_main.spec["transitions"] = {"join": "cut"}
+    M.main()
+    cmds = _media_cmds(stub_main)
+    assert cmds
+    for cmd in cmds:
+        chain = cmd[cmd.index("-filter_complex") + 1]
+        # The AUDIO ramp is `afade=`, which CONTAINS `fade=` — strip it first, so this is a
+        # statement about the video fades and cannot be satisfied by dropping the audio one.
+        assert "fade=t=" not in chain.replace("afade=t=", "")
+        assert "format=yuv420p" in chain
+        assert "afade=t=in:d=0.05" in chain    # the audio ramp is not a video fade
+
+
+def test_fade_steps_is_the_only_place_the_fade_string_is_built():
+    assert M.fade_steps(4.0, "cut") == ""
+    assert M.fade_steps(4.0, "fade") == "fade=t=in:st=0:d=0.3,fade=t=out:st=3.700:d=0.3,"
+    assert M.fade_steps(0.2, "fade") == "fade=t=in:st=0:d=0.3,fade=t=out:st=0.000:d=0.3,"
+
+
+def test_an_unknown_join_is_refused_by_name():
+    with pytest.raises(SystemExit) as excinfo:
+        M.transitions({"transitions": {"join": "dissolve"}})
+    assert "dissolve" in str(excinfo.value)
+    assert "cut" in str(excinfo.value)
+
+
+def test_xfade_is_a_known_value_that_refuses_until_the_single_pass_join_lands():
+    """`xfade` cannot run over a concat demuxer, and that rewrite is not in this change."""
+    with pytest.raises(SystemExit) as excinfo:
+        M.transitions({"transitions": {"join": "xfade"}})
+    assert "xfade" in str(excinfo.value)
+
+
+def test_xfade_offsets_leave_the_final_part_whole():
+    """L_k = sum(d_0..d_k) - k*T; the k-th join's offset is L_{k-1} - T."""
+    offsets = M.xfade_offsets([3.067, 2.733, 3.300, 4.079], 0.12)
+    assert offsets == pytest.approx([2.9470, 5.5600, 8.7400], abs=1e-3)
+
+
+def test_the_scene_pad_is_spec_settable_and_defaults_to_the_constant():
+    assert M.scene_pad({}) == M.SCENE_PAD
+    assert M.scene_pad({"scene_pad": 0.10}) == pytest.approx(0.10)
+
+
+def test_a_nonsense_scene_pad_is_refused_rather_than_clipping_the_last_word():
+    with pytest.raises(SystemExit):
+        M.scene_pad({"scene_pad": 0.0})
+    with pytest.raises(SystemExit):
+        M.scene_pad({"scene_pad": 3.0})
+
+
+def test_the_spec_scene_pad_reaches_every_scenes_encode(stub_main):
+    stub_main.spec["short"]["scene_pad"] = 0.10
+    M.main()
+    cmds = _media_cmds(stub_main)
+    for k, idx in enumerate(stub_main.spec["short"]["scenes"]):
+        dur = DURATIONS[str(idx)] + 0.10
+        assert cmds[k][cmds[k].index("-t") + 1] == f"{dur:.3f}"
+
+
+def test_a_bad_transitions_or_pad_is_refused_before_a_single_frame_is_rendered(stub_main):
+    """Same rule as the media preflight: a typo costs nothing, not six encoded scenes."""
+    stub_main.spec["transitions"] = {"join": "dissolve"}
+    with pytest.raises(SystemExit):
+        M.main()
+    assert not stub_main.cmds and not stub_main.shots
+    stub_main.spec.pop("transitions")
+    stub_main.spec["short"]["scene_pad"] = 0.0
+    with pytest.raises(SystemExit):
+        M.main()
+    assert not stub_main.cmds and not stub_main.shots
