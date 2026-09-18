@@ -259,6 +259,8 @@ def test_validate_spec_ignores_scenes_that_are_not_media(tmp_path):
     ({"credit": None}, "credit"),                       # a still with no credit
     ({"src": "media/gone.png"}, "gone.png"),
     ({"src": "media/notes.txt"}, ".txt"),
+    ({"fill": "stretch"}, "stretch"),                   # the fill keys are preflighted too,
+    ({"focus": [0.5, 1.4]}, "focus"),                   # so a typo is not silently ignored
 ])
 def test_validate_spec_catches_every_per_scene_error(tmp_path, override, needle):
     spec, spec_path = _media_spec(tmp_path, **override)
@@ -710,3 +712,59 @@ def test_media_html_matches_its_golden_file(name, build):
         path.write_text(html, encoding="utf-8")
     assert path.exists(), f"missing golden {path}; regenerate with KDESK_UPDATE_GOLDEN=1"
     assert html == path.read_text(encoding="utf-8")
+
+
+# --- fill: crop ---------------------------------------------------------------------------
+
+HERO_LANDSCAPE = (6161, 3862)     # day 3's Spaceship Earth still, 1.60:1
+
+
+def test_a_landscape_source_is_still_blur_filled_by_default():
+    steps = media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304,
+                                     src_w=HERO_LANDSCAPE[0], src_h=HERO_LANDSCAPE[1])
+    assert any("boxblur" in step for step in steps)
+
+
+def test_fill_crop_takes_the_cover_path_whatever_the_source_shape_is():
+    steps = media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304,
+                                     src_w=HERO_LANDSCAPE[0], src_h=HERO_LANDSCAPE[1],
+                                     fill="crop")
+    assert not any("boxblur" in step for step in steps)
+    assert len(steps) == 1
+    assert "force_original_aspect_ratio=increase" in steps[0]
+    assert "crop=1296:2304" in steps[0]
+
+
+def test_fill_blur_letterboxes_a_portrait_source_that_would_otherwise_crop():
+    steps = media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304,
+                                     src_w=1080, src_h=1920, fill="blur")
+    assert any("boxblur" in step for step in steps)
+
+
+def test_focus_moves_the_crop_off_centre_by_the_fraction_it_was_given():
+    assert media.cover_chain(1296, 2304) == (
+        "scale=1296:2304:force_original_aspect_ratio=increase,crop=1296:2304")
+    assert media.cover_chain(1296, 2304, 0.50, 0.42) == (
+        "scale=1296:2304:force_original_aspect_ratio=increase,"
+        "crop=1296:2304:x=(iw-1296)*0.500:y=(ih-2304)*0.420")
+
+
+def test_a_centred_focus_emits_the_chain_it_always_emitted():
+    """Golden guard: 0.5/0.5 is the implicit centre crop, so it writes no offset at all."""
+    assert "x=(iw-" not in media.cover_chain(1296, 2304, 0.5, 0.5)
+
+
+def test_a_focus_outside_the_frame_is_refused_by_name():
+    with pytest.raises(ValueError) as excinfo:
+        media.scene_fill({"kind": "media", "src": "x.jpg", "focus": [0.5, 1.4]})
+    assert "focus" in str(excinfo.value)
+
+
+def test_an_unknown_fill_is_refused_by_name():
+    with pytest.raises(ValueError) as excinfo:
+        media.scene_fill({"kind": "media", "src": "x.jpg", "fill": "stretch"})
+    assert "stretch" in str(excinfo.value)
+
+
+def test_a_scene_with_neither_key_asks_for_nothing():
+    assert media.scene_fill({"kind": "media", "src": "x.jpg"}) == (None, (0.5, 0.5))

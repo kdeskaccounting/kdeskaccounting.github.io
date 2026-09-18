@@ -165,7 +165,16 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     nothing, instead of surfacing after six scenes have been narrated and encoded.
 #     credit: "Imagery: Google Earth, Maxar Technologies"   # REQUIRED when src is a still
 #     overlay: {template: …, data: {…}}    # optional; the `card` contract unchanged
-# A 16:9 source is scaled and cropped to FILL the 9:16 frame — no letterbox bars.
+#     fill: crop            # optional; crop | blur. Absent: the source's ratio decides
+#                           # (media.BLUR_FILL_RATIO), which is today's behaviour.
+#     focus: [0.50, 0.42]   # optional; what to keep when cropping. Default [0.5, 0.5].
+# By default the SOURCE's shape decides the fill: at or below media.BLUR_FILL_RATIO (0.8) it is
+# scaled and cropped to FILL the 9:16 frame — no letterbox bars — and above it the whole picture
+# is fitted inside the frame over a blurred, darkened copy of itself. `fill:` overrides that per
+# scene: `fill: crop` makes a landscape hero fill the frame instead of sitting at ~35% of its
+# height over blur, and `focus: [fx, fy]` aims the crop (fractions of the overflow; [0.5, 0.5]
+# is the centre crop and emits the chain it always did, so nothing existing moves). Both are
+# validated in the media preflight, so a bad value stops the run before anything renders.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end

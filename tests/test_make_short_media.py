@@ -502,3 +502,13 @@ def test_a_bad_transitions_or_pad_is_refused_before_a_single_frame_is_rendered(s
     with pytest.raises(SystemExit):
         M.main()
     assert not stub_main.cmds and not stub_main.shots
+
+
+def test_the_scenes_fill_and_focus_reach_its_encode(stub_main):
+    stub_main.spec["scenes"][0]["fill"] = "crop"
+    stub_main.spec["scenes"][0]["focus"] = [0.50, 0.42]
+    M.main()
+    chain = _media_cmds(stub_main)[0][
+        _media_cmds(stub_main)[0].index("-filter_complex") + 1]
+    assert "crop=1296:2304:x=(iw-1296)*0.500:y=(ih-2304)*0.420" in chain
+    assert "boxblur" not in chain

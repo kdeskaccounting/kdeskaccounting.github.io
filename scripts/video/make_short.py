@@ -234,7 +234,8 @@ def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
          "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
-def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN):
+def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
+                       fill=None, focus=(0.5, 0.5)):
     """One media file + its layer PNGs + one narration WAV -> an mp4. Returns `out`.
 
     The composite is three things stacked: the footage or still, put through the motion's
@@ -245,7 +246,8 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
 
     How the source fills the frame depends on its shape, which is why it is probed here: a
     landscape source is letterboxed over a blurred copy of itself instead of being cropped to
-    its middle column (media.ffmpeg_video_steps). Either way the fill ends at RWxRH, so the
+    its middle column (media.ffmpeg_video_steps). The scene may override that with `fill`, and
+    aim the crop with `focus` (media.scene_fill). Either way the fill ends at RWxRH, so the
     layer geometry above is unchanged.
 
     The output flags are encode_scene's, byte for byte, because the parts are concatenated
@@ -258,7 +260,8 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     size = probe_size(src)
     steps = media.ffmpeg_video_steps(motion, dur, RW, RH, FPS,
                                      src_w=size[0] if size else None,
-                                     src_h=size[1] if size else None)
+                                     src_h=size[1] if size else None,
+                                     fill=fill, focus=focus)
     stage = "m0"
     for i, _layer in enumerate(layers):
         # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
@@ -632,8 +635,10 @@ def main():
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            fill, focus = media.scene_fill(sc)
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
-                                     work / f"scene_{k}.mp4", join=tr.join)
+                                     work / f"scene_{k}.mp4", join=tr.join,
+                                     fill=fill, focus=focus)
             add_part(out, idx)
             print(f"scene {idx:02d}: media {kind}/{motion} {dur:.1f}s -> {out.name}", flush=True)
             continue

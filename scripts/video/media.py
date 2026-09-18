@@ -29,12 +29,15 @@ tests/test_media.py are what keep a later layout tweak from sliding a plate over
 **A still must be credited.** Footage may carry its own on-screen attribution; a still frame
 never does, so `check_credit()` refuses an image scene with no `credit:`.
 
-**A landscape source is never cropped to 9:16.** Scaling a 16:9 photograph up until it fills
-a 9:16 frame and cropping the overflow keeps under a third of its width, so the subject is
-whatever happened to sit in the middle column. Above `BLUR_FILL_RATIO` the source is fitted
-INSIDE the frame and composited over a blurred, darkened copy of itself — the whole picture
-stays visible, the frame is still full. Portrait sources keep the cover-and-crop fill, which
-only costs them their edges. See `ffmpeg_video_steps()`.
+**A landscape source is never cropped to 9:16 unless the scene asks.** Scaling a 16:9
+photograph up until it fills a 9:16 frame and cropping the overflow keeps under a third of its
+width, so the subject is whatever happened to sit in the middle column. Above
+`BLUR_FILL_RATIO` the source is fitted INSIDE the frame and composited over a blurred,
+darkened copy of itself — the whole picture stays visible, the frame is still full. Portrait
+sources keep the cover-and-crop fill, which only costs them their edges. A scene that knows
+better says so: `fill: crop | blur` overrides that ratio test and `focus: [fx, fy]` says which
+part of the picture the crop keeps, which is how a 1.60:1 hero fills the frame instead of
+letterboxing at 35% of its height. See `ffmpeg_video_steps()` and `scene_fill()`.
 
 **The overlay is the card renderer, not a copy of it.** `overlay_html()` calls
 `cards.card_html()` with a box and a transparent background, so the templates, the row caps,
@@ -82,6 +85,12 @@ KENBURNS_ZOOM = 1.08
 #: and stays. 0.8 is deliberately below 1.0: a mildly portrait 3:4 source (0.75) still crops
 #: cleanly, a square one (1.0) does not.
 BLUR_FILL_RATIO = 0.8
+
+#: How a source fills the frame, when a scene says rather than letting the ratio decide.
+#: `crop` covers and crops — the whole frame is picture. `blur` letterboxes over a blurred
+#: copy — the whole PICTURE survives. Absent, wants_blur_fill() decides from the ratio, which
+#: is what every existing spec gets.
+FILLS = ("crop", "blur")
 
 #: The backdrop: boxblur radius:power, then a slight darken. 20:2 is soft enough that no edge
 #: of the original survives it, and -0.10 brightness keeps the sharp middle the brightest
@@ -271,6 +280,7 @@ def validate_spec(spec: dict, spec_path) -> None:
             kind = media_kind(path)
             check_credit(kind, scene.get("credit"))
             check_motion(kind, scene.get("motion") or default_motion(kind))
+            scene_fill(scene)
         except (ValueError, FileNotFoundError) as exc:
             raise type(exc)(f"{where}: {exc}") from exc
 
@@ -281,6 +291,30 @@ def check_credit(kind: str, credit: str | None) -> None:
         raise ValueError(
             "a `media` scene whose src is a still image must carry a `credit:` line — the "
             "imagery is licensed on attribution and a still cannot credit itself on screen")
+
+
+def scene_fill(scene: dict) -> tuple:
+    """(`fill` or None, (fx, fy)) off one media scene. Validates both.
+
+    Both keys are optional and both are read here rather than in the render loop, so
+    validate_spec() refuses a bad one in the preflight. A misspelling (`fill: strech`, a
+    `focus` outside the frame) that is silently ignored is worse than one that stops the run:
+    the Short renders, looks plausible, and is not the framing the spec asked for.
+    """
+    scene = scene or {}
+    fill = scene.get("fill")
+    if fill is not None:
+        fill = str(fill)
+        if fill not in FILLS:
+            raise ValueError(f"unknown media fill {fill!r}; known: {', '.join(FILLS)}")
+    focus = scene.get("focus") or (0.5, 0.5)
+    try:
+        fx, fy = (float(focus[0]), float(focus[1]))
+    except (TypeError, ValueError, IndexError, KeyError):
+        raise ValueError(f"media focus must be [fx, fy], got {scene.get('focus')!r}") from None
+    if not (0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0):
+        raise ValueError(f"media focus must be two fractions in [0, 1]; got [{fx}, {fy}]")
+    return fill, (fx, fy)
 
 
 # --- boxes ----------------------------------------------------------------------------
@@ -380,9 +414,17 @@ img{{position:absolute;left:0;top:0;width:{width}px;height:{height}px}}
 
 # --- ffmpeg ---------------------------------------------------------------------------
 
-def cover_chain(w: int, h: int) -> str:
-    """Scale up until the frame is covered, then crop the overflow away. Portrait sources."""
-    return f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
+def cover_chain(w: int, h: int, fx: float = 0.5, fy: float = 0.5) -> str:
+    """Scale up until the frame is covered, then crop the overflow away.
+
+    `fx`/`fy` say WHAT to keep: 0.5/0.5 is the implicit centre crop ffmpeg does anyway, and
+    is emitted as the bare `crop=w:h` it always was so no existing render moves. Day 3's
+    hero is 1.60:1 and its subject sits slightly above centre, hence focus [0.50, 0.42].
+    """
+    cover = f"scale={w}:{h}:force_original_aspect_ratio=increase"
+    if (float(fx), float(fy)) == (0.5, 0.5):
+        return f"{cover},crop={w}:{h}"
+    return f"{cover},crop={w}:{h}:x=(iw-{w})*{float(fx):.3f}:y=(ih-{h})*{float(fy):.3f}"
 
 
 def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str:
@@ -404,15 +446,17 @@ def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str
     return f"fps={fps},tpad=stop_mode=clone:stop_duration={dur:.3f}"
 
 
-def ffmpeg_video_filter(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str:
+def ffmpeg_video_filter(motion: str, dur: float, w: int, h: int, fps: int = FPS,
+                        focus: tuple = (0.5, 0.5)) -> str:
     """The `-vf` chain that turns one PORTRAIT media source into `dur` seconds of `w`x`h`.
 
     Cover, not contain: a source that is already taller than it is wide loses only its edges
     to the crop, and letterbox bars on a Short read as a mistake. A landscape source would
-    lose most of itself here, so it goes through blur_fill_steps() instead — see
-    ffmpeg_video_steps(), which is what the renderer actually calls.
+    lose most of itself here, so by default it goes through blur_fill_steps() instead — see
+    ffmpeg_video_steps(), which is what the renderer actually calls. A scene that asks for
+    `fill: crop` comes back here whatever its shape, and `focus` says which part it keeps.
     """
-    return f"{cover_chain(w, h)},{motion_chain(motion, dur, w, h, fps)}"
+    return f"{cover_chain(w, h, focus[0], focus[1])},{motion_chain(motion, dur, w, h, fps)}"
 
 
 def wants_blur_fill(src_w: int | None, src_h: int | None) -> bool:
@@ -454,17 +498,25 @@ def blur_fill_steps(src_label: str, out_label: str, w: int, h: int) -> list[str]
 
 def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
                        src_w: int | None = None, src_h: int | None = None,
-                       src_label: str = "0:v", out_label: str = "m0") -> list[str]:
+                       src_label: str = "0:v", out_label: str = "m0",
+                       fill: str | None = None, focus: tuple = (0.5, 0.5)) -> list[str]:
     """The filter-graph chains that turn one media source into `dur` seconds of `w`x`h`.
 
     A list of chains rather than one string because the blur fill needs a `split`, which
     cannot live inside a single linear chain. Portrait sources come back as the one chain
     they always were, so nothing about an existing portrait render moves.
+
+    `fill` is the scene's opt-in override (see FILLS and scene_fill): given, it decides
+    instead of the source's ratio, so a landscape hero can cover-crop on `focus` rather than
+    sit at 35% of frame height over blur. Absent — which is every existing spec —
+    wants_blur_fill() decides exactly as before.
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
-    if not wants_blur_fill(src_w, src_h):
-        return [f"[{src_label}]{ffmpeg_video_filter(motion, dur, w, h, fps)}[{out_label}]"]
-    fill = f"{out_label}_fill"
-    return [*blur_fill_steps(src_label, fill, w, h),
-            f"[{fill}]{motion_chain(motion, dur, w, h, fps)}[{out_label}]"]
+    blur = wants_blur_fill(src_w, src_h) if fill is None else (fill == "blur")
+    if not blur:
+        return [f"[{src_label}]"
+                f"{ffmpeg_video_filter(motion, dur, w, h, fps, focus)}[{out_label}]"]
+    fill_label = f"{out_label}_fill"
+    return [*blur_fill_steps(src_label, fill_label, w, h),
+            f"[{fill_label}]{motion_chain(motion, dur, w, h, fps)}[{out_label}]"]
