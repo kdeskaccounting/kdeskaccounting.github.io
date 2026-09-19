@@ -964,3 +964,87 @@ def test_the_cut_list_is_announced_so_a_render_log_carries_the_number(stub_main,
     M.main()
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("cuts:")]
     assert lines == ["cuts: 1 picture change in 30.0s"], "one change is not one changes"
+
+
+# --- a beat's own credit --------------------------------------------------------------------
+
+PEXELS = "Photo: Pexels"
+COMMONS = "Photo: Jane Doe / CC BY 4.0, via Wikimedia Commons"
+
+
+def test_a_still_beat_borrowed_into_a_footage_scene_is_credited_by_its_own_line(stub_main):
+    """Scene 1's src is footage, which needs no credit; its beats are licensed stills, which
+    do. The beat's own `credit:` is what licenses it — not the scene it happens to sit in."""
+    stub_main.spec["scenes"][1].pop("credit")
+    stub_main.spec["scenes"][1]["beats"] = [{**BEATS[0], "credit": PEXELS},
+                                            {**BEATS[1], "credit": PEXELS}]
+    M.main()
+    assert len(_media_cmds(stub_main)) == 2
+    plate = (stub_main.work / "credit_1.html").read_text(encoding="utf-8")
+    assert PEXELS in plate
+
+
+def test_the_same_beat_without_a_credit_anywhere_is_still_refused(stub_main):
+    stub_main.spec["scenes"][1].pop("credit")
+    stub_main.spec["scenes"][1]["beats"] = [dict(BEATS[0]), dict(BEATS[1])]
+    with pytest.raises(ValueError) as excinfo:
+        M.main()
+    assert "credit" in str(excinfo.value) and "scene 1" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_the_plate_lists_every_distinct_credit_the_scene_owes_once(stub_main):
+    """Five Pexels beats are one line; a Commons still beside them is a second."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {**BEATS[0], "credit": PEXELS}, {**BEATS[1], "credit": PEXELS},
+        {**BEATS[2], "credit": COMMONS}]
+    M.main()
+    assert media.scene_credits(stub_main.spec["scenes"][0]) == [CREDIT, PEXELS, COMMONS]
+    plate = (stub_main.work / "credit_0.html").read_text(encoding="utf-8")
+    assert plate == media.credit_plate_html(
+        media.CREDIT_JOIN.join([CREDIT, PEXELS, COMMONS]), cards.brand_tokens(BRAND),
+        M.RW, M.RH)
+    assert plate.count(PEXELS) == 1
+
+
+def test_a_scene_without_beats_renders_the_plate_it_renders_today(stub_main):
+    """Golden guard: the join, the dedupe and the beats must not touch the one-credit case."""
+    M.main()
+    assert media.scene_credits(stub_main.spec["scenes"][0]) == [CREDIT]
+    assert media.credit_text(stub_main.spec["scenes"][0]) == CREDIT
+    assert (stub_main.work / "credit_0.html").read_text(encoding="utf-8") == \
+        media.credit_plate_html(CREDIT, cards.brand_tokens(BRAND), M.RW, M.RH)
+
+
+def test_a_beat_with_no_credit_of_its_own_falls_back_to_the_scenes(stub_main):
+    """Which is every spec written before ParkSheet had the key."""
+    stub_main.spec["scenes"][0]["beats"] = [dict(BEATS[0]), {**BEATS[1], "credit": PEXELS}]
+    M.main()
+    assert media.scene_credits(stub_main.spec["scenes"][0]) == [CREDIT, PEXELS]
+
+
+def test_scene_beats_carries_the_credit_keys_through_to_the_render(stub_main):
+    beats = M.scene_beats({"beats": [
+        {**BEATS[0], "credit": PEXELS, "credit_line": "Photo by A on Pexels (CC0)"},
+        dict(BEATS[1])]})
+    assert beats[0]["credit"] == PEXELS
+    assert beats[0]["credit_line"] == "Photo by A on Pexels (CC0)"
+    assert beats[1]["credit"] == "" and beats[1]["credit_line"] == ""
+
+
+def test_prepare_beats_keeps_the_credit_keys(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "a.png").write_bytes(b"\0")
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("")
+    beats = M.prepare_beats(M.scene_beats({"beats": [
+        {"src": "a.png", "seconds": 1.0, "credit": PEXELS, "credit_line": "long"},
+        {"src": "a.png", "seconds": 1.0, "credit": COMMONS}]}), spec_path)
+    assert [b["credit"] for b in beats] == [PEXELS, COMMONS]
+    assert beats[0]["credit_line"] == "long"
+
+
+def test_a_scene_that_owes_nothing_gets_no_plate(stub_main):
+    """A footage scene with footage beats and no credit anywhere: no layer, as today."""
+    assert media.credit_text({"kind": "media"}) == ""
+    assert media.scene_credits({}) == []

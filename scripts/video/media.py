@@ -332,8 +332,11 @@ def check_beats(scene: dict, spec_path) -> None:
     kind of the scene's OWN `src:` — but under `beats:` that file is never rendered: the beats
     are what reach the screen. A scene whose src is footage needs no credit, so
     `src: clip.mp4` with a list of licensed STILLS as its beats would burn those stills with
-    no attribution plate at all. The plate itself is still one layer over the whole scene —
-    one credit covers every beat — but whether it is required now depends on the beats.
+    no attribution plate at all.
+
+    A beat is asked for its OWN `credit:` — the credit of the picture it shows — and falls
+    back to the scene's only when it has none, which is what an older spec written before the
+    key existed has. Both end up on the one plate: see scene_credits().
     """
     for index, beat in enumerate(scene.get("beats") or []):
         if not isinstance(beat, dict):
@@ -343,7 +346,7 @@ def check_beats(scene: dict, spec_path) -> None:
             continue                              # and this one
         try:
             kind = media_kind(resolve_src(spec_path, src))
-            check_credit(kind, scene.get("credit"))
+            check_credit(kind, beat.get("credit") or scene.get("credit"))
             check_motion(kind, beat.get("motion") or default_motion(kind))
             # crop_chain's w/h are the frame the crop will be covered TO and are not part of
             # the clause it returns (it is all iw/ih-relative), so any frame validates it.
@@ -358,6 +361,45 @@ def check_credit(kind: str, credit: str | None) -> None:
         raise ValueError(
             "a `media` scene whose src is a still image must carry a `credit:` line — the "
             "imagery is licensed on attribution and a still cannot credit itself on screen")
+
+
+#: How several credits share one plate. A middot rather than a comma or a newline: credits
+#: contain commas of their own ("Imagery: Google Earth, Maxar Technologies"), and the plate is
+#: one wrapping block, so a separator that survives a line break is the one that reads.
+CREDIT_JOIN = " · "
+
+
+def scene_credits(scene: dict) -> list:
+    """Every credit this scene owes, deduplicated, in first-appearance order.
+
+    The scene's own `credit:` first, then each beat's. A beat carries the credit of ITS OWN
+    picture — under `beats:` the scene's `src` is never rendered, and a still borrowed into a
+    footage scene is licensed on its own line, not on the scene's — so the plate is the union
+    rather than either one alone. Five Pexels beats give `Photo: Pexels` ONCE; a Commons
+    CC-BY still beside a Pexels still gives two lines, both on the one plate.
+
+    A scene without beats returns exactly `[scene['credit']]`, so the plate it renders today
+    is byte for byte the plate it renders tomorrow.
+
+    A beat's `credit_line:` — the fuller attribution ParkSheet writes beside `credit:`, URL
+    and licence and modifications and all — is deliberately NOT read here: the burned-in plate
+    wants the short line, and the long one belongs in the description that cards.spec_credits()
+    formats. Nothing wires that yet (see its docstring); scene_beats() carries the key so the
+    pass that does has it.
+    """
+    out: list = []
+    for value in [(scene or {}).get("credit"),
+                  *[(beat or {}).get("credit") if isinstance(beat, dict) else None
+                    for beat in ((scene or {}).get("beats") or [])]]:
+        text = str(value or "").strip()
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def credit_text(scene: dict) -> str:
+    """The one plate's text for a scene: its credits joined. "" when it owes none."""
+    return CREDIT_JOIN.join(scene_credits(scene))
 
 
 def scene_fill(scene: dict) -> tuple:

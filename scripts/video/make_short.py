@@ -204,7 +204,16 @@ def scene_beats(scene: dict) -> list:
                 f"whole change set exists to remove.")
         out.append({"src": src, "seconds": seconds,
                     "motion": str(beat.get("motion") or "").strip(),
-                    "crop": dict(beat.get("crop") or {})})
+                    "crop": dict(beat.get("crop") or {}),
+                    # The PICTURE's own attribution, not the scene's: a still borrowed into a
+                    # footage scene is licensed on its own line. `credit` is the short line
+                    # the plate burns in (media.scene_credits); `credit_line` is the fuller
+                    # one — URL, licence, modifications — that belongs in the description, and
+                    # nothing reads it yet (cards.spec_credits is still unwired). Both default
+                    # to "" so a spec written before the keys existed falls back to the
+                    # scene's `credit:`, which is what it has always meant.
+                    "credit": str(beat.get("credit") or "").strip(),
+                    "credit_line": str(beat.get("credit_line") or "").strip()})
     return out
 
 
@@ -488,12 +497,17 @@ def media_layers(scene, brand, work, k):
 
     Credit last, so it is drawn on top: the two boxes never overlap, but the attribution is
     the one thing that must never end up behind anything.
+
+    ONE plate, however many pictures the scene shows: media.credit_text() is the scene's own
+    credit and its beats' own credits, deduplicated. A scene without beats gets exactly the
+    string it always got, so its plate does not move.
     """
+    credit = media.credit_text(scene)
     layers = []
     for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, RW, RH)
                        if scene.get("overlay") else None),
-                      ("credit", media.credit_plate_html(scene["credit"], brand, RW, RH)
-                       if scene.get("credit") else None)):
+                      ("credit", media.credit_plate_html(credit, brand, RW, RH)
+                       if credit else None)):
         if doc is None:
             continue
         hp = work / f"{name}_{k}.html"; hp.write_text(doc, encoding="utf-8")

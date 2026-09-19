@@ -192,9 +192,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                           # Only the picture cuts — the narration and the caption cues are
 #                           # untouched, because it is still one scene and one encode.
 #       - {src: media/photos/a.jpg, seconds: 2.6, motion: punch,
-#          crop: {zoom: 1.00, fx: 0.50, fy: 0.50}}
+#          crop: {zoom: 1.00, fx: 0.50, fy: 0.50},
+#          credit: "Photo: Pexels",      # THIS PICTURE's own credit, not the scene's
+#          credit_line: "Photo by A on Pexels (CC0)"}   # the long form; nothing reads it yet
 #       - {src: media/photos/b.jpg, seconds: 2.4, motion: push,
-#          crop: {zoom: 1.30, fx: 0.28, fy: 0.32}}
+#          crop: {zoom: 1.30, fx: 0.28, fy: 0.32}, credit: "Photo: Pexels"}
 #                           # `seconds` is an ESTIMATE (the author counts words before
 #                           # narrate.py has run); make_short.beat_spans rescales them to the
 #                           # scene's real encoded duration so they sum to it exactly.
@@ -228,10 +230,18 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # a still's crop). The renderer refuses a one-entry list (one picture IS the scene) and any
 # beat longer than make_short.MAX_PICTURE_S (6.0 s) — the estimate in the preflight, and then
 # the RESCALED span once the narration's real length is known, because two 3.0 s beats are
-# both legal and are two ten-second pictures against a 20 s narration. Under `beats:` the
-# `credit:` rule follows the BEATS, not the scene's own `src:`: that file is never rendered,
-# so a footage scene whose beats are licensed stills is refused unless it carries a credit.
-# A scene with no `beats:` builds the graph it always built, input order included.
+# both legal and are two ten-second pictures against a 20 s narration.
+# ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
+# each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
+# footage scene is licensed on its own line — falling back to the scene's `credit:` when the
+# beat has none (every spec written before the key existed). A still beat with no credit on
+# either is refused in the preflight, by scene and beat index. The scene still burns ONE plate:
+# media.scene_credits() is the scene's credit plus its beats', deduplicated and kept in
+# first-appearance order, joined with ` · ` — five Pexels beats are one line, a Commons still
+# beside them is a second. Verified in Chrome: three credits wrap to four lines that grow
+# UPWARD inside media.credit_box and stay clear of the Earth Studio watermark zone. A scene
+# with no `beats:` renders the plate it always rendered, and the graph it always built, input
+# order included.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end
