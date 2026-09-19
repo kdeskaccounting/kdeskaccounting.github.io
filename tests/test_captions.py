@@ -785,3 +785,69 @@ def test_a_cue_starting_exactly_at_the_plate_boundary_is_dropped_too():
     cues = C.build_cues([W("WHICH", 1.4, 1.8), W("ONE", 1.9, 2.2)])
     assert cues and cues[0].start == pytest.approx(1.4)
     assert C.drop_inside(cues, 1.4) == []
+
+
+# --- a plate may ask for a smaller headline, and carries its own word cap ------------------
+
+def test_a_plate_with_no_headline_fraction_burns_the_verified_one():
+    """The default is the fraction of the verified plate.png, and stays the default."""
+    plate = C.plate_settings({"plate": dict(PLATE)})
+    assert plate.headline_frac == C.PLATE_HEADLINE_PX_FRAC
+
+
+def test_a_plate_may_ask_for_a_smaller_headline_and_it_is_the_one_burned():
+    """The point of the key: a long subject rides a smaller headline instead of no plate."""
+    plate = C.plate_settings({"plate": {"text": "CARIBBEAN", "headline_frac": 0.086}})
+    assert plate.headline_frac == 0.086
+    html = C.plate_html(plate, "#FFE234", _tokens(), 1080, 1920)
+    assert f"{1920 * 0.086:.0f}px" in html                       # ~165 px, not 186
+    assert f"{1920 * C.PLATE_HEADLINE_PX_FRAC:.0f}px" not in html
+    # The stroke is still proportional to the headline, as it is at the default.
+    assert f"-webkit-text-stroke:{C.PLATE_STROKE_FRAC * 1920 * 0.086:.1f}px" in html
+
+
+def test_a_nine_character_word_is_refused_at_the_default_and_admitted_at_its_own_fraction():
+    """"PIRATES OF THE CARIBBEAN" is the day-1 subject the fixed fraction had no room for."""
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "PIRATES OF THE CARIBBEAN"}})
+    assert "CARIBBEAN" in str(excinfo.value)
+    plate = C.plate_settings({"plate": {"text": "PIRATES OF THE CARIBBEAN",
+                                        "headline_frac": 0.086}})
+    assert plate.text == "PIRATES OF THE CARIBBEAN"
+
+
+def test_the_word_cap_is_computed_from_the_plates_own_fraction():
+    """Same width model as the default cap, read off the fraction the plate actually burns."""
+    usable_frac = C.PLATE_ASPECT * (1 - 2 * C.SAFE_X_FRAC)
+    for frac in (0.05, 0.064, 0.086, C.PLATE_HEADLINE_PX_FRAC):
+        cap = int(usable_frac / (frac * C.FONT_EM_PER_CHAR))
+        assert C.plate_settings({"plate": {"text": "M" * cap, "headline_frac": frac}})
+        with pytest.raises(ValueError):
+            C.plate_settings({"plate": {"text": "M" * (cap + 1), "headline_frac": frac}})
+
+
+def test_the_refusal_names_the_cap_for_the_asked_for_fraction_and_the_key_that_moves_it():
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "ADVENTURELAND"}})
+    message = str(excinfo.value)
+    assert "ADVENTURELAND" in message
+    assert str(C.PLATE_MAX_WORD_CHARS) in message
+    assert "headline_frac" in message
+
+
+@pytest.mark.parametrize("frac", [0.0, -0.05, 0.049, 0.098, 0.2])
+def test_a_headline_fraction_outside_the_verified_range_is_refused(frac):
+    """Under 0.05 of the frame it is no longer a headline; over the default it overflows a
+    layout nothing has verified — the safe-zone box, the watermark clearance and the
+    two-line band were all measured at PLATE_HEADLINE_PX_FRAC."""
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "MICKEYS", "headline_frac": frac}})
+    assert "headline_frac" in str(excinfo.value)
+
+
+def test_the_default_fraction_cap_is_still_the_module_constant():
+    """Other code and this repo's CLAUDE.md quote PLATE_MAX_WORD_CHARS: it stays the cap of
+    the DEFAULT fraction, not of whatever a given plate asked for."""
+    assert C.PLATE_MAX_WORD_CHARS == int(
+        (C.PLATE_ASPECT * (1 - 2 * C.SAFE_X_FRAC))
+        / (C.PLATE_HEADLINE_PX_FRAC * C.FONT_EM_PER_CHAR))

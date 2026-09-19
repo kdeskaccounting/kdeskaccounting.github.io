@@ -556,18 +556,40 @@ DEFAULT_PLATE_S = 1.4
 #: plate's box be checked at PREFLIGHT, from the fractions alone, before a frame size exists.
 PLATE_ASPECT = 9 / 16
 
-#: The longest WORD a plate headline may carry. Unlike a cue, the plate has no step-down:
-#: `plate_html` burns a fixed PLATE_HEADLINE_PX_FRAC of the frame height on an
-#: `overflow:hidden` page with no `overflow-wrap`, so a word too wide for the safe-zone box
-#: is not shrunk and not broken — it is clipped at the frame edge, silently, in a render
-#: nobody watches frame by frame. Hence the refusal in `plate_settings`.
+#: The smallest headline a plate may ask for, as a fraction of the frame height. Below
+#: this the "headline" is no longer the biggest type in the Short — it is a caption in the
+#: middle of the frame — and the plate stops doing the one job it has on frame 0. The
+#: ceiling is PLATE_HEADLINE_PX_FRAC itself: everything about the layout above (the
+#: safe-zone box, the watermark clearance, two lines inside the band) was verified at that
+#: size, and a larger one would overflow a geometry nothing has measured.
+PLATE_HEADLINE_FRAC_MIN = 0.05
+
+
+def plate_max_word_chars(headline_frac: float = PLATE_HEADLINE_PX_FRAC) -> int:
+    """The longest WORD a plate headline may carry AT THIS TYPE SIZE.
+
+    Unlike a cue, the plate has no step-down: `plate_html` burns one fixed fraction of the
+    frame height on an `overflow:hidden` page with no `overflow-wrap`, so a word too wide
+    for the safe-zone box is not shrunk and not broken — it is clipped at the frame edge,
+    silently, in a render nobody watches frame by frame. Hence the refusal in
+    `plate_settings`, and hence `short.plate.headline_frac`: a subject with a longer word
+    rides a smaller headline rather than no plate at all.
+
+    The same width model as `font_size`: the longest word, at FONT_EM_PER_CHAR per glyph.
+    It FLOORS, so the cap it returns always fits.
+    """
+    return int((PLATE_ASPECT * (1 - 2 * SAFE_X_FRAC))
+               / (float(headline_frac) * FONT_EM_PER_CHAR))
+
+
+#: The cap of the DEFAULT fraction — what a plate that asks for no `headline_frac` gets:
 #:
 #:   0.5625 * (1 - 2*0.10) / (0.097 * 0.58) = 8.0 characters
 #:
 #: i.e. 7, with "MICKEYS" of the verified plate.png clearing it by exactly one character.
-#: The same width model as `font_size`: the longest word, at FONT_EM_PER_CHAR per glyph.
-PLATE_MAX_WORD_CHARS = int((PLATE_ASPECT * (1 - 2 * SAFE_X_FRAC))
-                           / (PLATE_HEADLINE_PX_FRAC * FONT_EM_PER_CHAR))
+#: Quoted by name in CLAUDE.md and mirrored by ParkSheet, so it stays the default's cap
+#: rather than becoming whatever a given plate asked for.
+PLATE_MAX_WORD_CHARS = plate_max_word_chars(PLATE_HEADLINE_PX_FRAC)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -576,6 +598,7 @@ class Plate:
     kicker: str = ""
     seconds: float = DEFAULT_PLATE_S
     position: str = "center"
+    headline_frac: float = PLATE_HEADLINE_PX_FRAC
 
 
 def plate_settings(short: dict):
@@ -594,14 +617,23 @@ def plate_settings(short: dict):
     if not text:
         raise ValueError("short.plate.text is empty; a plate with no text is a blank frame "
                          "over the hook. Drop the block, or name the subject.")
-    wide = [word for word in text.split() if len(word) > PLATE_MAX_WORD_CHARS]
+    headline_frac = float(block.get("headline_frac", PLATE_HEADLINE_PX_FRAC))
+    if not PLATE_HEADLINE_FRAC_MIN <= headline_frac <= PLATE_HEADLINE_PX_FRAC:
+        raise ValueError(
+            f"short.plate.headline_frac must be in "
+            f"[{PLATE_HEADLINE_FRAC_MIN}, {PLATE_HEADLINE_PX_FRAC}]; got {headline_frac!r}. "
+            f"Smaller than {PLATE_HEADLINE_FRAC_MIN} of the frame is not a headline, and "
+            f"larger than {PLATE_HEADLINE_PX_FRAC} overflows the layout that was verified.")
+    max_chars = plate_max_word_chars(headline_frac)
+    wide = [word for word in text.split() if len(word) > max_chars]
     if wide:
         raise ValueError(
             f"short.plate.text word(s) too wide for the frame: {', '.join(wide)}. The plate "
             f"burns one fixed type size on a page that cannot wrap inside a word, so a word "
-            f"over {PLATE_MAX_WORD_CHARS} characters is CLIPPED at the frame edge rather "
-            f"than shrunk. Shorten the headline, or move the long word to the kicker "
-            f"(which is a fifth of the size).")
+            f"over {max_chars} characters is CLIPPED at the frame edge rather "
+            f"than shrunk. Shorten the headline, move the long word to the kicker (which is "
+            f"a fifth of the size), or set short.plate.headline_frac (>= "
+            f"{PLATE_HEADLINE_FRAC_MIN}) to buy the word the width it needs.")
     position = str(block.get("position", "center"))
     if position not in POSITIONS:
         raise ValueError(f"unknown plate position {position!r}; "
@@ -610,14 +642,20 @@ def plate_settings(short: dict):
     if not 0.0 < seconds <= 4.0:
         raise ValueError(f"short.plate.seconds must be in (0, 4.0]; got {seconds!r}")
     return Plate(text=text, kicker=str(block.get("kicker") or "").strip(),
-                 seconds=seconds, position=position)
+                 seconds=seconds, position=position, headline_frac=headline_frac)
 
 
 def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) -> str:
-    """The plate as a full-frame transparent page. ALL CAPS, like every caption."""
+    """The plate as a full-frame transparent page. ALL CAPS, like every caption.
+
+    The headline is `plate.headline_frac` of the frame height — PLATE_HEADLINE_PX_FRAC
+    unless the spec asked for less — and the stroke stays proportional to it, so a plate
+    that shrinks to fit a long word shrinks as one piece. Nothing else about the layout
+    moves: the kicker, the safe-zone padding and the band centre are what they were.
+    """
     colour = _checked_accent(accent)
     kicker_px = height * PLATE_KICKER_PX_FRAC
-    head_px = height * PLATE_HEADLINE_PX_FRAC
+    head_px = height * plate.headline_frac
     centre = BAND_CENTER_FRAC[plate.position]
     kicker = (f'<div class="kicker">{_html.escape(plate.kicker, quote=True)}</div>'
               if plate.kicker else "")

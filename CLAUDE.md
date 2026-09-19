@@ -419,6 +419,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #       kicker: EPCOT       # optional, in the caption accent, above the headline
 #       seconds: 1.4        # (0, 4.0]; the plate's window, from t=0
 #       position: center    # top | center | lower  (default: center; captions.POSITIONS)
+#       headline_frac: 0.086  # optional; the headline's share of the frame height
 # The plate is input 1 of the caption pass, overlaid full-frame at (0, 0) and gated to
 # `enable='between(t,0,SECONDS)'`; the word PNGs shift to inputs 2..n
 # (make_short.caption_filter). ALL CAPS like every caption, white headline at 0.097 of the
@@ -435,6 +436,18 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # overflow:hidden page that cannot break inside a word, so an 8-character word is CLIPPED at
 # the frame edge rather than shrunk. "HIDDEN MICKEYS" clears it by one character. Move a long
 # word to the `kicker:`, which is a fifth of the size.
+#
+# `headline_frac:` (2026-09-19) BUYS A LONGER WORD ITS WIDTH instead of dropping the plate.
+# It is the headline's share of the frame height, default PLATE_HEADLINE_PX_FRAC (0.097), and
+# the word cap is computed FROM IT by the same width model (captions.plate_max_word_chars),
+# so 0.086 admits a 9-character "CARIBBEAN" and 0.096 an 8-character "HORIZONS". Range
+# [0.05, 0.097]: below 0.05 the headline is no longer the biggest type in the Short, and above
+# the default it overflows the layout that was actually verified (safe-zone box, watermark
+# clearance, two lines in the band) — both ends are refused at preflight. Only the headline
+# and its stroke scale; the kicker, the padding and the band centre do not move.
+# PLATE_MAX_WORD_CHARS stays the DEFAULT fraction's cap (7), which is what a plate that omits
+# the key gets and what the refusal quotes. A spec with no `headline_frac:` renders the
+# byte-identical PNG it rendered before the key existed.
 # THE PLATE DOES NOT DEPEND ON A CAPTION WINDOW SURVIVING. A captioned spec whose scenes
 # produced no word timings at all still takes the filter pass for the plate alone (it is the
 # frame the feed judges, not caption collateral), and the "no scene produced a window"
