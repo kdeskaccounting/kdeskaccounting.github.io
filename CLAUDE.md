@@ -229,9 +229,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # Each beat's `src` and `motion` are its OWN — the motion is checked against THAT file's kind
 # in the preflight and defaults per kind, so `punch` on an .mp4 beat is refused by name — and
 # `crop: {zoom, fx, fy}` re-frames the source before it is covered, which is how several beats
-# can be several shots of ONE photograph. Footage is never re-framed: a video beat's crop is
-# dropped (`hold` is the one motion both kinds take, so it is the one that can arrive carrying
-# a still's crop). The renderer refuses a one-entry list (one picture IS the scene) and any
+# can be several shots of ONE photograph. It applies under BOTH fills: on the cover path it
+# precedes the cover, and on the BLUR path it goes in ahead of the `split`, so the sharp
+# foreground and the blurred backdrop are the same re-framed region. (Until the final render
+# caught it, the blur path dropped the crop — so two beats re-framing one LANDSCAPE still cut
+# from that picture to the same picture at the same framing, at 19.78 s.) Footage is never
+# re-framed, whichever fill it takes: a video beat's crop is dropped (`hold` is the one motion
+# both kinds take, so it is the one that can arrive carrying a still's crop). The renderer refuses a one-entry list (one picture IS the scene) and any
 # beat longer than make_short.MAX_PICTURE_S (6.0 s) — the estimate in the preflight, and then
 # the RESCALED span once the narration's real length is known, because two 3.0 s beats are
 # both legal and are two ten-second pictures against a 20 s narration.

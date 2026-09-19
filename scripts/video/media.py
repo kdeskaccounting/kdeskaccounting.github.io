@@ -714,7 +714,8 @@ def wants_blur_fill(src_w: int | None, src_h: int | None) -> bool:
     return src_w / src_h > BLUR_FILL_RATIO
 
 
-def blur_fill_steps(src_label: str, out_label: str, w: int, h: int) -> list[str]:
+def blur_fill_steps(src_label: str, out_label: str, w: int, h: int,
+                    crop: dict | None = None) -> list[str]:
     """The TikTok fill: the whole source letterboxed over a blurred, darkened copy of itself.
 
     Two chains off one `split`, so a clip's backdrop is that same clip rather than a still of
@@ -723,13 +724,20 @@ def blur_fill_steps(src_label: str, out_label: str, w: int, h: int) -> list[str]
     centred over a background built the way the portrait path builds its whole picture
     (cover + crop), then blurred and dimmed so the eye lands on the sharp middle.
 
+    `crop` re-frames BEFORE the split, so the sharp foreground and the blurred backdrop are
+    the same re-framed region — a beat that says "the same photograph, closer" gets a
+    different picture here too, which it did not when the crop lived only on the cover path.
+    It keeps the source's aspect, so what is "the whole picture" simply becomes the cropped
+    region and none of the fill geometry below moves. No crop, or zoom 1.0, emits nothing and
+    the four chains are byte for byte the ones this has always returned.
+
     Output is exactly `w`x`h`, so every layer laid over it afterwards — the card overlay, the
     credit plate, the caption band — keeps the geometry media.overlay_box / credit_box and
     the Earth Studio watermark zone already agreed on.
     """
     bg, fg = f"{out_label}_bg", f"{out_label}_fg"
     return [
-        f"[{src_label}]split=2[{bg}_s][{fg}_s]",
+        f"[{src_label}]{crop_chain(w, h, crop)}split=2[{bg}_s][{fg}_s]",
         f"[{bg}_s]{cover_chain(w, h)},boxblur={BLUR_RADIUS}:{BLUR_POWER},"
         f"eq=brightness=-{BLUR_DARKEN}[{bg}]",
         f"[{fg}_s]scale={w}:{h}:force_original_aspect_ratio=decrease[{fg}]",
@@ -756,13 +764,14 @@ def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
 
     A HIGH_MOTION covers to PRESCALE x the render size and runs its zoompan there (see
     ZOOMPAN_W), which is what stops the stutter. `crop` re-frames the source first, so one
-    still can be several shots; it applies to every IMAGE motion — `kenburns` and `hold`
-    included, at their own frame size rather than the 2x one — and is IGNORED rather than
-    refused on `clip`, which has footage to play rather than a frame to re-frame, and under
-    a blur fill, whose picture is the whole source by definition. (`hold` is the one motion
-    both kinds share, so a `hold` beat carrying a crop re-frames footage too. That is a
-    zoom-in on the clip, which is what the beat asked for.) Without a crop every one of
-    these chains is byte for byte the one it has always been.
+    still can be several shots. It applies to every IMAGE motion — `kenburns` and `hold`
+    included, at their own frame size rather than the 2x one — and on BOTH fills: under a
+    blur fill it goes in ahead of the split (see blur_fill_steps), so a landscape still that
+    two beats re-frame differently is two pictures rather than the same one twice. It is
+    IGNORED rather than refused on `clip`, which has footage to play rather than a frame to
+    re-frame. (`hold` is the one motion both kinds share, so a `hold` beat carrying a crop
+    re-frames footage too. That is a zoom-in on the clip, which is what the beat asked for.)
+    Without a crop every one of these chains is byte for byte the one it has always been.
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
@@ -778,5 +787,6 @@ def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
         return [f"[{src_label}]"
                 f"{ffmpeg_video_filter(motion, dur, w, h, fps, focus)}[{out_label}]"]
     fill_label = f"{out_label}_fill"
-    return [*blur_fill_steps(src_label, fill_label, w, h),
+    return [*blur_fill_steps(src_label, fill_label, w, h,
+                             None if motion == "clip" else crop),
             f"[{fill_label}]{motion_chain(motion, dur, w, h, fps)}[{out_label}]"]

@@ -968,12 +968,53 @@ def test_an_uncropped_kenburns_or_hold_is_byte_for_byte_the_chain_it_always_was(
         [f"[0:v]{media.ffmpeg_video_filter(motion, 5.0, 1296, 2304, 30)}[m0]"]
 
 
-def test_a_crop_under_a_blur_fill_is_ignored_rather_than_refused():
-    """The blur fill's whole point is that the WHOLE picture stays on screen; re-framing it
-    would throw away the thing it exists to keep."""
-    assert media.ffmpeg_video_steps("kenburns", 3.0, 1296, 2304, src_w=4000, src_h=2250,
+#: The blur-fill chains, exactly as they read before the crop was let onto this branch.
+#: Hard-coded on purpose: this is the byte-for-byte guard, so it must not be built from the
+#: same helpers it is checking.
+BLUR_FILL_CHAINS = [
+    "[0:v]split=2[m0_fill_bg_s][m0_fill_fg_s]",
+    "[m0_fill_bg_s]scale=1296:2304:force_original_aspect_ratio=increase,crop=1296:2304,"
+    "boxblur=20:2,eq=brightness=-0.10[m0_fill_bg]",
+    "[m0_fill_fg_s]scale=1296:2304:force_original_aspect_ratio=decrease[m0_fill_fg]",
+    "[m0_fill_bg][m0_fill_fg]overlay=x=(main_w-overlay_w)/2:y=(main_h-overlay_h)/2:"
+    "format=auto[m0_fill]",
+]
+
+
+def test_a_crop_under_a_blur_fill_re_frames_the_source_before_the_split():
+    """REPLACES the assertion that a blur fill drops the crop.
+
+    It was wrong in the way that shows: ParkSheet re-framed a landscape still for its second
+    beat, the scene blur-filled because the source is landscape, the crop was dropped, and
+    the join at 19.78 s cut from that picture to the SAME picture at the same framing. The
+    crop now goes in ahead of the `split`, so the sharp foreground and the blurred backdrop
+    are both the re-framed region.
+    """
+    steps = media.ffmpeg_video_steps("kenburns", 3.0, 1296, 2304, src_w=4000, src_h=2250,
+                                     crop={"zoom": 1.3, "fx": 0.28, "fy": 0.32})
+    assert steps[0] == ("[0:v]crop=iw/1.300:ih/1.300:x=(iw-iw/1.300)*0.280:"
+                        "y=(ih-ih/1.300)*0.320,split=2[m0_fill_bg_s][m0_fill_fg_s]")
+    assert steps[0].index("crop=iw/") < steps[0].index("split=2")
+    # and the rest of the fill is untouched: same two chains off the split, same overlay
+    assert steps[1:4] == BLUR_FILL_CHAINS[1:]
+
+
+@pytest.mark.parametrize("motion", ["kenburns", "hold"])
+def test_an_uncropped_blur_fill_is_byte_for_byte_the_chain_it_always_was(motion):
+    """The guard on the change above. Compared against the literal strings, not against the
+    helpers that build them."""
+    for crop in (None, {"zoom": 1.00, "fx": 0.5, "fy": 0.5}):
+        steps = media.ffmpeg_video_steps(motion, 4.0, 1296, 2304, src_w=4000, src_h=2250,
+                                         crop=crop)
+        assert steps[:4] == BLUR_FILL_CHAINS
+        assert steps[4] == f"[m0_fill]{media.motion_chain(motion, 4.0, 1296, 2304)}[m0]"
+
+
+def test_a_crop_on_a_blur_filled_clip_is_still_ignored():
+    """Footage is never re-framed, whichever fill it takes."""
+    assert media.ffmpeg_video_steps("clip", 4.0, 1296, 2304, src_w=4000, src_h=2250,
                                     crop=CROP) == \
-        media.ffmpeg_video_steps("kenburns", 3.0, 1296, 2304, src_w=4000, src_h=2250)
+        media.ffmpeg_video_steps("clip", 4.0, 1296, 2304, src_w=4000, src_h=2250)
 
 
 @pytest.mark.parametrize("crop,bad", [
