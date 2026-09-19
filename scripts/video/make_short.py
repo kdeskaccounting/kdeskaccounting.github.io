@@ -712,6 +712,255 @@ def caption_filter(overlays, y, plate_seconds=None):
     return steps
 
 
+# --- the audio mix -------------------------------------------------------------------------
+#
+# There was no audio path of any kind here before 2026-09-19: the only audio filters in the
+# renderer were apad, afade, aformat and the final loudnorm, and the published day-3 Short
+# measured a quietest-5%-window of -88.0 dBFS with 8.8% of windows below -60. A bed is the
+# cheapest continuity device there is -- it bridges the cuts and gives the whoosh something
+# to land against -- and it costs 0.81 s of render time for 12.8 s of output, because the
+# whole mix rides the pass that already re-encodes the audio.
+#
+# Absent an `audio:` block the renderer emits exactly the chain it always emitted, so every
+# existing spec renders the same bytes it rendered yesterday.
+
+@dataclasses.dataclass(frozen=True)
+class Bed:
+    src: str
+    #: The asset's measured integrated loudness, from its manifest row. NOT measured here:
+    #: a one-pass loudnorm is dynamic, so the mix would depend on where the loop lands.
+    lufs: float
+    target_lufs: float = -22.0
+    fade_in: float = 0.6
+    fade_out: float = 1.2
+
+
+@dataclasses.dataclass(frozen=True)
+class Duck:
+    #: Swept against the real voice envelope: 0.03:8 gives ~10-11 dB of duck. Under 8 dB the
+    #: bed fights the voice; past 14 dB it pumps audibly under near-continuous narration.
+    #: attack=5 ms catches consonant onsets; release=300 ms lets the bed back up inside a
+    #: sentence gap without chattering.
+    threshold: float = 0.03
+    ratio: int = 8
+    attack: int = 5
+    release: int = 300
+
+
+@dataclasses.dataclass(frozen=True)
+class Sfx:
+    src: str
+    gain_db: float = -6.0
+    #: Start the whoosh this far BEFORE the cut, so it peaks on it.
+    lead: float = 0.20
+    #: How many structural beats the video has. A whoosh on every cut is a cartoon; one at
+    #: each of the two boundaries between three ~11 s beats is an edit.
+    beats: int = 3
+
+
+@dataclasses.dataclass(frozen=True)
+class Master:
+    lufs: float = -16.0
+    tp: float = -1.5
+    lra: int = 11
+
+
+@dataclasses.dataclass(frozen=True)
+class AudioMix:
+    bed: Bed | None
+    duck: Duck
+    sfx: Sfx | None
+    master: Master
+
+
+def bed_gain_db(target_lufs: float, measured_lufs: float) -> float:
+    """How far to push the bed: the target level minus what the file actually measures."""
+    return round(float(target_lufs) - float(measured_lufs), 3)
+
+
+def beat_boundaries(cuts, runtime: float, beats: int = 3) -> list:
+    """The cut nearest each structural beat division. `beats` beats give `beats - 1` of them.
+
+    Spec section 2 S13: about three beats of about eleven seconds, SFX only at the
+    boundaries. A whoosh on all sixteen picture changes is not sound design, it is a
+    cartoon.
+
+    Two divisions can land on the same cut (a short Short with few cuts), and the duplicate
+    is dropped rather than stacking two whooshes on one frame -- which is why the caller
+    must take its input count from THIS list and not from `beats - 1`.
+    """
+    cuts = sorted(float(cut) for cut in cuts)
+    if not cuts or beats < 2:
+        return []
+    out = []
+    for k in range(1, int(beats)):
+        target = float(runtime) * k / float(beats)
+        nearest = min(cuts, key=lambda cut: abs(cut - target))
+        if nearest not in out:
+            out.append(nearest)
+    return sorted(out)
+
+
+def loudnorm_filter(master) -> str:
+    """The master loudnorm, as an `-af` value. The one place its numbers are spelled."""
+    return f"loudnorm=I={master.lufs:g}:TP={master.tp:g}:LRA={master.lra:g}"
+
+
+def plain_audio_steps(master: Master) -> str:
+    """The chain a spec with no `audio:` block gets — byte-identical to what it always got."""
+    return f"[0:a]{loudnorm_filter(master)}[aout]"
+
+
+def _only(block, known, what):
+    """`block` as a plain dict, refusing any key outside `known` by name."""
+    block = block or {}
+    if not isinstance(block, dict):
+        raise SystemExit(f"spec `audio.{what}:` must be a mapping, got {type(block).__name__}")
+    unknown = set(block) - set(known)
+    if unknown:
+        raise SystemExit(f"unknown audio.{what} key(s) {', '.join(sorted(unknown))}; "
+                         f"known: {', '.join(known)}")
+    return block
+
+
+def audio_settings(spec: dict, spec_path):
+    """The spec's `audio:` block, with every file resolved and checked. None when absent.
+
+    A missing file REFUSES the render. It never silently drops the bed: a Short that was
+    meant to carry music and came out silent is indistinguishable from one that was not,
+    and the whole point of round 3 is to hear the difference.
+    """
+    block = (spec or {}).get("audio")
+    if block is None:
+        return None
+    if not isinstance(block, dict):
+        raise SystemExit(f"spec `audio:` must be a mapping, got {type(block).__name__}")
+    unknown = set(block) - {"bed", "duck", "sfx", "master"}
+    if unknown:
+        raise SystemExit(f"unknown audio key(s) {', '.join(sorted(unknown))}; "
+                         f"known: bed, duck, sfx, master")
+
+    def resolved(name, raw):
+        src = raw.get("src")
+        if not src:
+            raise SystemExit(f"audio.{name} has no `src:`, so there is no file to mix.")
+        # media.resolve_src raises (FileNotFoundError, or ValueError for a src that climbs
+        # out of the spec's repo) — the render has to stop either way, but with the hint
+        # about where these two files come from, because nothing downloads them.
+        try:
+            return str(media.resolve_src(spec_path, src))
+        except (FileNotFoundError, ValueError) as exc:
+            raise SystemExit(
+                f"audio.{name}.src does not exist: {src}\n{exc}\n"
+                f"Audio is fetched BY HAND -- the code never downloads it. The picks are "
+                f"Mixkit 'Forest Treasure' id 138 "
+                f"(https://assets.mixkit.co/music/138/138.mp3) and Mixkit 'Cinematic whoosh "
+                f"fast transition' id 1492 "
+                f"(https://assets.mixkit.co/active_storage/sfx/1492/1492.wav). Put them in "
+                f"media/audio/ and row them in media/manifest.yaml; see ParkSheet's RUNBOOK "
+                f"'Music and SFX'.") from None
+
+    for name in ("bed", "sfx"):
+        # `bed:` with nothing under it is a spec that asked for music and would have got
+        # silence. Every refusal in this function is that same rule: never silently drop it.
+        if name in block and not block[name]:
+            raise SystemExit(f"spec `audio.{name}:` is empty. Give it a `src:` (and, for the "
+                             f"bed, its measured `lufs:`), or drop the key.")
+    if block.get("sfx") and not block.get("bed"):
+        raise SystemExit(
+            "audio.sfx without audio.bed: the whooshes are mixed onto the music bus, and "
+            "there is no bed-less path through the graph — the render would emit the plain "
+            "loudnorm chain and the SFX would vanish without a word. Add a `bed:`.")
+    bed = None
+    if block.get("bed"):
+        raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
+        if raw.get("lufs") is None:
+            raise SystemExit("audio.bed.lufs is missing. The bed's gain is target minus "
+                             "measured, so an unmeasured bed has no gain. Run ParkSheet's "
+                             "scripts/measure_audio_asset.py.")
+        bed = Bed(src=resolved("bed", raw), lufs=float(raw["lufs"]),
+                  target_lufs=float(raw.get("target_lufs", -22.0)),
+                  fade_in=float(raw.get("fade_in", 0.6)),
+                  fade_out=float(raw.get("fade_out", 1.2)))
+    sfx = None
+    if block.get("sfx"):
+        # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
+        # accepted as the spelling every other block in this renderer uses.
+        raw = _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats"), "sfx")
+        sfx = Sfx(src=resolved("sfx", {"src": raw.get("on_cut") or raw.get("src")}),
+                  gain_db=float(raw.get("gain_db", -6.0)),
+                  lead=float(raw.get("lead", 0.20)),
+                  beats=int(raw.get("beats", 3)))
+    duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
+    master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
+    return AudioMix(bed=bed,
+                    duck=Duck(**{k: float(v) for k, v in duck.items()}),
+                    sfx=sfx,
+                    master=Master(**{k: float(v) for k, v in master.items()}))
+
+
+def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_indexes,
+                voice: str = "0:a") -> list:
+    """The audio half of the final filter graph. Verified end to end at full scale.
+
+    `runtime` is the FINISHED Short's length, not the sum of the scene rows: a closing CTA
+    plate is 1.5 s of picture that carries no scene, so a bed trimmed to the rows would fade
+    out before the plate and leave the last frames in the silence this block exists to end.
+    """
+    master = mix.master
+    if mix.bed is None:
+        return [plain_audio_steps(master)]
+    steps = [f"[{voice}]aformat=sample_rates=48000:channel_layouts=stereo,"
+             f"asplit=2[vox][key]"]
+    gain = bed_gain_db(mix.bed.target_lufs, mix.bed.lufs)
+    fade_out_at = max(0.0, float(runtime) - mix.bed.fade_out)
+    steps.append(
+        f"[{bed_index}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+        f"atrim=0:{float(runtime):.3f},asetpts=PTS-STARTPTS,volume={gain:g}dB,"
+        f"afade=t=in:d={mix.bed.fade_in:g},"
+        f"afade=t=out:st={fade_out_at:.3f}:d={mix.bed.fade_out:g}[bed]")
+    steps.append(f"[bed][key]sidechaincompress=threshold={mix.duck.threshold:g}:"
+                 f"ratio={mix.duck.ratio:g}:attack={mix.duck.attack:g}:"
+                 f"release={mix.duck.release:g}:detection=rms[bedduck]")
+    labels = ["bedduck"]
+    if mix.sfx is not None and sfx_indexes:
+        for n, (index, at) in enumerate(
+                zip(sfx_indexes,
+                    beat_boundaries(cuts, runtime, mix.sfx.beats)), start=1):
+            delay = max(0, round((float(at) - mix.sfx.lead) * 1000))
+            steps.append(f"[{index}:a]volume={mix.sfx.gain_db:g}dB,"
+                         f"adelay={delay}|{delay}[s{n}]")
+            labels.append(f"s{n}")
+    steps.append("".join(f"[{label}]" for label in labels)
+                 + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
+    steps.append(f"[vox][music]amix=inputs=2:normalize=0,alimiter=limit=0.97,"
+                 f"{loudnorm_filter(master)}[aout]")
+    return steps
+
+
+def audio_inputs(mix: AudioMix, boundaries, bed_index: int):
+    """The extra ffmpeg `-i` arguments for the mix, and the input indexes they will take.
+
+    `bed_index` is the next free input, counted explicitly by the caller rather than derived
+    from `len(args)`: the bed carries `-stream_loop -1` in front of its own `-i`, so
+    arithmetic on the argument list is off by one for it and for every whoosh after it. These
+    inputs are always queued LAST — the caption pass numbers its plate and its word PNGs from
+    1, and a bed in front of them would burn the wrong word onto the wrong frame.
+
+    One whoosh input per BOUNDARY, never per `beats - 1`: two divisions of a short runtime can
+    pick the same cut, and beat_boundaries drops the duplicate.
+    """
+    args = ["-stream_loop", "-1", "-i", mix.bed.src]
+    count = bed_index + 1
+    sfx_indexes = []
+    if mix.sfx is not None:
+        for _at in boundaries:
+            sfx_indexes.append(count)
+            args += ["-i", mix.sfx.src]
+            count += 1
+    return args, bed_index, sfx_indexes
+
+
 def highlight_bbox(im):
     """Bounding box of the orange (#E67E22) highlight rings drawn by render_sheets, or None."""
     from PIL import ImageChops
@@ -831,6 +1080,10 @@ def main():
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     tr = transitions(spec)
+    # Preflighted here, beside every other spec block: a missing bed or whoosh file must
+    # refuse the render BEFORE a scene is narrated or encoded, and it must refuse rather
+    # than silently render the silence this block exists to end.
+    mix = audio_settings(spec, spec_path)
     pad = scene_pad(sh)
     # The hook plate rides the caption pass, so it is read HERE, beside the caption settings
     # and with the end-plate preflight below: a malformed `short.plate:` block must fail
@@ -1003,11 +1256,26 @@ def main():
         # texts on one frame, which is more than the opening second can be read at.
         cap_cues = captions.drop_inside(cap_cues, plate.seconds)
     overlays = render_captions(cap_cues, cap, btokens, work, cap_box) if cap.enabled else []
+    # The mix's clock. The finished Short is the sum of the parts just encoded — INCLUDING
+    # the closing plate, which is a part with no scene row — so the bed's length is the
+    # timeline, never `sum(row["seconds"])`, which is short by the plate's 1.5 s and would
+    # fade the music out before the last picture. cuts.json below is rebuilt from the probed
+    # file; the whooshes need the same list one pass earlier, so it is built here in memory.
+    mixed = mix is not None and mix.bed is not None
+    runtime, cuts, boundaries = timeline[0], [], []
+    if mixed:
+        cuts = cut_plan_json(cut_rows, tr.join, runtime, cut_extras)["cuts"]
+        if mix.sfx is not None:
+            boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
     if overlays:
         (work / "captions.json").write_text(
             json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
             encoding="utf-8")
         args = [*CONCAT_INPUT_ARGS, "-f", "concat", "-safe", "0", "-i", str(lst)]
+        # Every `-i` is an input index the filter graph names, so they are counted as they
+        # are appended rather than derived from len(args) — the bed's `-stream_loop -1` sits
+        # in front of its own `-i` and throws any arithmetic on the argument list off by one.
+        inputs = 1
         plate_seconds = None
         if plate is not None:
             hp = work / "plate.html"
@@ -1016,15 +1284,24 @@ def main():
             png = work / "plate.png"
             R.screenshot(hp, png, OUT_W, OUT_H, transparent=True)
             args += ["-i", str(png)]
+            inputs += 1
             plate_seconds = plate.seconds
         for png, _s, _e in overlays:
             args += ["-i", str(png)]
+            inputs += 1
         steps = caption_filter(overlays, cap_box[1], plate_seconds)
-        steps.append("[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[aout]")
+        if mixed:
+            extra, bed_index, sfx_indexes = audio_inputs(mix, boundaries, inputs)
+            args += extra
+            steps.extend(audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
+                                     sfx_indexes=sfx_indexes))
+        else:
+            steps.append(plain_audio_steps(mix.master if mix is not None else Master()))
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
              "-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-preset", "medium",
              "-crf", str(a.crf), "-r", str(FPS), "-color_range", "tv", "-bsf:v", RANGE_BSF,
-             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
+             "-c:a", "aac", "-b:a", "160k" if mixed else "128k",
+             "-movflags", "+faststart", str(final)])
         print(f"captions: {len(overlays)} word windows burned in "
               f"(accent {cap.accent}, band y={cap_box[1]}-{cap_box[3]})", flush=True)
     else:
@@ -1036,7 +1313,19 @@ def main():
                   "was either skipped (its own layout owns the top of the frame) or has no "
                   "word timings. Re-run narrate.py to write the scene_NN.words.json files; "
                   "rendering without captions.", flush=True)
-        run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
+        if mixed:
+            # -c:v copy: the video is untouched, so the whole mix costs 0.81 s for 12.8 s of
+            # output. This is exactly the command the filtergraph was verified with.
+            extra, bed_index, sfx_indexes = audio_inputs(mix, boundaries, 1)
+            run(["ffmpeg", "-y", "-loglevel", "error", *CONCAT_INPUT_ARGS,
+                 "-f", "concat", "-safe", "0", "-i", str(lst), *extra,
+                 "-filter_complex", ";".join(
+                     audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
+                                 sfx_indexes=sfx_indexes)),
+                 "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
+                 "-b:a", "160k", "-movflags", "+faststart", str(final)])
+        else:
+            run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", loudnorm_filter(mix.master if mix is not None else Master()), "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
     total = dur_of(final)
     # Beside captions.json, and written on every render: a `scdet` pass over a Short whose
     # joins dip to black finds nothing, so this file — not a pixel detector — is what a
@@ -1047,6 +1336,14 @@ def main():
     changes = len(cut_plan["cuts"])
     print(f"cuts: {changes} picture change{'' if changes == 1 else 's'} in {total:.1f}s",
           flush=True)
+    if mixed:
+        gain = bed_gain_db(mix.bed.target_lufs, mix.bed.lufs)
+        print(f"audio: bed {pathlib.Path(mix.bed.src).name} at {gain:+g} dB "
+              f"(measured {mix.bed.lufs:g} -> {mix.bed.target_lufs:g} LUFS), ducked "
+              f"{mix.duck.threshold:g}:{mix.duck.ratio:g}, "
+              f"{len(boundaries)} whoosh{'' if len(boundaries) == 1 else 'es'} at "
+              f"{', '.join(f'{at:.2f}s' for at in boundaries) or 'no boundary'}",
+              flush=True)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
     rev = paths.review; rev.mkdir(exist_ok=True)
     for name, t in (("t01", 1.0), ("mid", total / 2), ("end", max(0.0, total - 1.0))):

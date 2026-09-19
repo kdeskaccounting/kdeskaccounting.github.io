@@ -276,6 +276,52 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # provider's mp3 is unlinked after decoding, so there is nothing to re-decode locally. Pick it
 # once per spec; do not tune it by trial on an ElevenLabs voice.
 
+# SOUND (2026-09-19). A music bed under the narration, ducked out of the way by the voice
+# itself, plus a whoosh on each structural beat boundary. OPTIONAL and off by default: with no
+# `audio:` block the final pass emits exactly the chain it always emitted
+# (`[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[aout]`, or the same `-af` on the uncaptioned stream
+# copy) and every golden and existing Short is byte-identical.
+#   audio:                  # optional; absent == today's plain loudnorm and nothing else
+#     bed:
+#       src: media/audio/mixkit-forest-treasure-138.mp3
+#       lufs: -13.2         # REQUIRED: the asset's measured integrated loudness
+#       target_lufs: -22    # bed level BEFORE ducking
+#       fade_in: 0.6
+#       fade_out: 1.2
+#     duck: {threshold: 0.03, ratio: 8, attack: 5, release: 300}   # ~10-11 dB, measured
+#     sfx:
+#       on_cut: media/audio/mixkit-cinematic-whoosh-1492.wav
+#       gain_db: -6
+#       lead: 0.20          # start this far before the boundary so it peaks on it
+#       beats: 3            # whooshes land on the 2 boundaries between 3 beats, not on cuts
+#     master: {lufs: -16, tp: -1.5, lra: 11}
+# The whole mix rides the pass that already re-encodes the audio, so it costs almost nothing:
+# measured at 3.4 s for 43.6 s of output with `-c:v copy`. The graph is make_short.audio_steps
+# and every stage earns its place — two of them are traps:
+#   * `sidechaincompress` is `[main][sidechain]`: the BED is the main and the VOICE is the key.
+#     Reversed, it ducks the narration under the music.
+#   * `amix=...:normalize=0` is essential. With the default normalize=1 ffmpeg divides every
+#     input by the input count, so ADDING A WHOOSH quietly drops the voice by 6 dB.
+#   * `dropout_transition=0` stops amix ramping gain when the short SFX inputs end.
+#   * `alimiter=limit=0.97` goes BEFORE loudnorm, so one whoosh-plus-voice transient cannot
+#     force loudnorm into a big negative offset.
+#   * `adelay` is milliseconds PER CHANNEL: `adelay=2747|2747` for stereo.
+# `bed.lufs` is REQUIRED and is measured ONCE, at vetting time, into the asset's manifest row —
+# the gain is `target_lufs - lufs`. A one-pass `loudnorm` on the bed inside the render is
+# dynamic, so the mix would depend on where the loop lands. The bed is `-stream_loop -1` and
+# `atrim`ed to the FINISHED runtime (the sum of the encoded parts, which INCLUDES the closing
+# CTA plate — `sum(scenes[].seconds)` in cuts.json is short by the plate's 1.5 s and a bed cut
+# to it would fade out before the last picture). The whooshes go on `beat_boundaries()` — the
+# cut nearest each of the `beats - 1` divisions of the runtime — NOT on every cut: a whoosh on
+# all sixteen picture changes is a cartoon, and the ear habituates to it by the third.
+# A missing bed or sfx file REFUSES the render by name: a Short meant to carry music that came
+# out silent is indistinguishable from one that never asked for any. Audio is fetched BY HAND;
+# nothing here downloads it. The bed and sfx inputs are queued AFTER the caption PNGs so no
+# overlay's input index moves. Measured on the round-1 day-3 build (rc 0, 3.4 s): I -16.4 LUFS,
+# LRA 1.8 LU, and the quietest 5% window went from -37.7 dBFS to -26.5 with 0.0% of windows
+# below -60. Levels and the duck sweep: ParkSheet docs/research/2026-09-19-production-techniques.md
+# section 5.
+
 # NEVER DRAW IN THE BOTTOM-RIGHT 55% x 12% OF A FRAME (x >= 0.45, y >= 0.88). That is where
 # Google Earth Studio burns its attribution watermark ("Google Earth" plus a data-provider
 # line), and the imagery terms require it to stay visible — covering it is a licence breach,
