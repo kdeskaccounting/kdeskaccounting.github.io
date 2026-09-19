@@ -732,5 +732,127 @@ def test_every_beat_is_normalised_so_concat_can_join_unlike_sources(stub_main):
     for index in range(2):
         span = M.beat_spans(stub_main.spec["scenes"][0]["beats"], BEAT_DUR)[index]
         assert _beat_chain(chain, index).endswith(
-            f"format=yuv420p,setsar=1,trim=duration={span:.3f},setpts=PTS-STARTPTS[b{index}]")
+            f"scale=in_range=auto:out_range=tv,format=yuv420p,setsar=1,"
+            f"trim=duration={span:.3f},setpts=PTS-STARTPTS[b{index}]")
         assert _beat_chain(chain, index).count("trim=duration=") == 1
+
+
+def test_every_beat_enters_concat_in_the_same_colour_range(stub_main):
+    """The fourth thing concat needs them to agree on, and the one it does NOT refuse.
+
+    A still decodes full range and footage limited. Joined without this, `[m0]` is full range
+    for one beat and limited for the next, and the shared `out_range=tv` below converts the
+    lot under whichever range the joined stream claims — crushed blacks on half the beats.
+    """
+    stub_main.spec["scenes"][0]["beats"] = [dict(BEATS[0]),
+                                            {"src": "assets/clip.mp4", "seconds": 1.5,
+                                             "motion": "clip"}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    for index in range(2):
+        assert "scale=in_range=auto:out_range=tv" in _beat_chain(chain, index)
+
+
+def test_a_scene_whose_beats_are_stills_must_credit_them(stub_main):
+    """The scene's own src is never rendered under `beats:` — the beats are. A footage scene
+    needs no credit, so footage + licensed stills as beats would burn them unattributed."""
+    stub_main.spec["scenes"][1]["beats"] = [dict(BEATS[0]), dict(BEATS[1])]
+    stub_main.spec["scenes"][1].pop("credit")
+    with pytest.raises(ValueError) as excinfo:
+        M.main()
+    assert "credit" in str(excinfo.value) and "scene 1" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_a_credited_scene_covers_every_one_of_its_beats(stub_main):
+    """One plate over the whole scene, so one `credit:` is all it takes."""
+    stub_main.spec["scenes"][1]["beats"] = [dict(BEATS[0]), dict(BEATS[1])]
+    M.main()                                       # scene 1 keeps its CREDIT line
+    assert len(_media_cmds(stub_main)) == 2
+
+
+def test_the_backstop_is_enforced_on_what_reaches_the_screen_not_the_estimate(stub_main):
+    """Two 3.0 s beats are both inside the backstop and both legal in the preflight; against
+    a 20 s narration they are two pictures held for ten seconds each."""
+    beats = [{**BEATS[0], "seconds": 3.0}, {**BEATS[1], "seconds": 3.0}]
+    assert M.beat_spans(beats, 8.0) == pytest.approx([4.0, 4.0], abs=1e-3)   # fine
+    with pytest.raises(SystemExit) as excinfo:
+        M.beat_spans(beats, 20.0)
+    assert "10.0" in str(excinfo.value) and str(M.MAX_PICTURE_S) in str(excinfo.value)
+
+
+def test_the_estimate_is_still_checked_before_any_duration_is_known(stub_main):
+    """Both halves: the preflight catches what it can see, beat_spans catches the rest."""
+    with pytest.raises(SystemExit) as excinfo:
+        M.scene_beats({"beats": [{**BEATS[0], "seconds": M.MAX_PICTURE_S + 0.5},
+                                 dict(BEATS[1])]})
+    assert str(M.MAX_PICTURE_S) in str(excinfo.value)
+
+
+def test_a_beat_with_no_length_is_refused_in_its_own_words(stub_main):
+    with pytest.raises(SystemExit) as excinfo:
+        M.scene_beats({"beats": [{**BEATS[0], "seconds": 0}, dict(BEATS[1])]})
+    assert "positive" in str(excinfo.value)
+    assert str(M.MAX_PICTURE_S) not in str(excinfo.value), "that is the other defect"
+
+
+# --- the published entry point ------------------------------------------------------------
+
+def test_prepare_beats_resolves_the_src_and_defaults_the_motion_per_kind(tmp_path):
+    """scene_beats() -> prepare_beats() -> encode_media_scene(beats=) is the published path,
+    so the three things main() used to do inline have to be callable by anyone."""
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "a.png").write_bytes(b"\0")
+    (tmp_path / "b.mp4").write_bytes(b"\0")
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("")
+    beats = M.prepare_beats(M.scene_beats({"beats": [
+        {"src": "a.png", "seconds": 1.0}, {"src": "b.mp4", "seconds": 1.0}]}), spec_path)
+    assert beats[0]["src"] == tmp_path / "a.png" and beats[0]["motion"] == "kenburns"
+    assert beats[1]["src"] == tmp_path / "b.mp4" and beats[1]["motion"] == "clip"
+
+
+def test_prepare_beats_drops_a_video_beats_crop_so_footage_is_never_reframed(tmp_path):
+    (tmp_path / ".git").mkdir()
+    (tmp_path / "b.mp4").write_bytes(b"\0")
+    (tmp_path / "a.png").write_bytes(b"\0")
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("")
+    crop = {"zoom": 1.30, "fx": 0.28, "fy": 0.32}
+    spec_beats = [{"src": "b.mp4", "seconds": 1.0, "motion": "hold", "crop": dict(crop)},
+                  {"src": "a.png", "seconds": 1.0, "motion": "punch", "crop": dict(crop)}]
+    beats = M.prepare_beats(M.scene_beats({"beats": spec_beats}), spec_path)
+    assert beats[0]["crop"] == {}
+    assert beats[1]["crop"] == crop
+    assert spec_beats[0]["crop"] == crop, "the spec's own dicts are not touched"
+
+
+def test_an_unprepared_video_beat_is_refused_rather_than_silently_reframed(tmp_path):
+    """beat_steps cannot see the kind through media.ffmpeg_video_steps, which is handed a
+    label rather than a path — so the last place that can still tell says so."""
+    (tmp_path / "b.mp4").write_bytes(b"\0")
+    with pytest.raises(SystemExit) as excinfo:
+        M.beat_steps([{"src": tmp_path / "b.mp4", "seconds": 1.0, "motion": "hold",
+                       "crop": {"zoom": 1.3}},
+                      {"src": tmp_path / "b.mp4", "seconds": 1.0, "motion": "clip",
+                       "crop": {}}], 4.0)
+    assert "prepare_beats" in str(excinfo.value) and "beats[0]" in str(excinfo.value)
+
+
+def test_beats_on_a_scene_that_is_not_a_media_scene_are_refused_by_name(stub_main):
+    """Nothing would have read the key: a card scene's picture is the card."""
+    stub_main.spec["scenes"].append({"kind": "card", "template": "ranked_list",
+                                     "data": {}, "beats": [dict(b) for b in BEATS]})
+    with pytest.raises(SystemExit) as excinfo:
+        M.main()
+    assert "beats" in str(excinfo.value) and "card" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_a_beats_scene_reports_its_beat_count_rather_than_the_src_it_never_rendered(
+        stub_main, capsys):
+    _beaten(stub_main)
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("scene 00")]
+    assert lines and "3 beats" in lines[0]
+    assert "kenburns" not in lines[0], "the scene's own motion never reaches the screen"

@@ -326,9 +326,14 @@ def check_beats(scene: dict, spec_path) -> None:
 
     The SHAPE of the list — two or more entries, each with a src and a sane `seconds` — is
     make_short.scene_beats()'s, which runs in the same preflight and raises SystemExit; an
-    entry that has not got that far is skipped here rather than reported twice. A beat's
-    `credit:` is the scene's: the plate is one layer over the whole scene, so the beats of a
-    credited scene are credited.
+    entry that has not got that far is skipped here rather than reported twice.
+
+    `credit:` is asked of every beat too, and that is not belt-and-braces. It is keyed to the
+    kind of the scene's OWN `src:` — but under `beats:` that file is never rendered: the beats
+    are what reach the screen. A scene whose src is footage needs no credit, so
+    `src: clip.mp4` with a list of licensed STILLS as its beats would burn those stills with
+    no attribution plate at all. The plate itself is still one layer over the whole scene —
+    one credit covers every beat — but whether it is required now depends on the beats.
     """
     for index, beat in enumerate(scene.get("beats") or []):
         if not isinstance(beat, dict):
@@ -338,6 +343,7 @@ def check_beats(scene: dict, spec_path) -> None:
             continue                              # and this one
         try:
             kind = media_kind(resolve_src(spec_path, src))
+            check_credit(kind, scene.get("credit"))
             check_motion(kind, beat.get("motion") or default_motion(kind))
             # crop_chain's w/h are the frame the crop will be covered TO and are not part of
             # the clause it returns (it is all iw/ih-relative), so any frame validates it.

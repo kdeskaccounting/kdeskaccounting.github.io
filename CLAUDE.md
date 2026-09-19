@@ -198,6 +198,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                           # `seconds` is an ESTIMATE (the author counts words before
 #                           # narrate.py has run); make_short.beat_spans rescales them to the
 #                           # scene's real encoded duration so they sum to it exactly.
+#                           # media only — `beats:` on a card scene is refused by name.
 # By default the SOURCE's shape decides the fill: at or below media.BLUR_FILL_RATIO (0.8) it is
 # scaled and cropped to FILL the 9:16 frame — no letterbox bars — and above it the whole picture
 # is fitted inside the frame over a blurred, darkened copy of itself. `fill:` overrides that per
@@ -225,8 +226,12 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # can be several shots of ONE photograph. Footage is never re-framed: a video beat's crop is
 # dropped (`hold` is the one motion both kinds take, so it is the one that can arrive carrying
 # a still's crop). The renderer refuses a one-entry list (one picture IS the scene) and any
-# beat longer than make_short.MAX_PICTURE_S (6.0 s), both in the preflight. A scene with no
-# `beats:` builds the graph it always built, input order included.
+# beat longer than make_short.MAX_PICTURE_S (6.0 s) — the estimate in the preflight, and then
+# the RESCALED span once the narration's real length is known, because two 3.0 s beats are
+# both legal and are two ten-second pictures against a 20 s narration. Under `beats:` the
+# `credit:` rule follows the BEATS, not the scene's own `src:`: that file is never rendered,
+# so a footage scene whose beats are licensed stills is refused unless it carries a credit.
+# A scene with no `beats:` builds the graph it always built, input order included.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end
