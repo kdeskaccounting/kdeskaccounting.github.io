@@ -504,7 +504,10 @@ def test_a_bad_transitions_or_pad_is_refused_before_a_single_frame_is_rendered(s
     assert not stub_main.cmds and not stub_main.shots
 
 
-def test_the_scenes_fill_and_focus_reach_its_encode(stub_main):
+def test_the_scenes_fill_and_focus_reach_its_encode(stub_main, monkeypatch):
+    """A 16:9 source, which the ratio alone would blur-fill — so `boxblur not in chain` is a
+    statement about `fill: crop` arriving, not about ffprobe having answered nothing."""
+    monkeypatch.setattr(M, "probe_size", lambda p: (1920, 1080))
     stub_main.spec["scenes"][0]["fill"] = "crop"
     stub_main.spec["scenes"][0]["focus"] = [0.50, 0.42]
     M.main()

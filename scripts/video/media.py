@@ -420,6 +420,12 @@ def cover_chain(w: int, h: int, fx: float = 0.5, fy: float = 0.5) -> str:
     `fx`/`fy` say WHAT to keep: 0.5/0.5 is the implicit centre crop ffmpeg does anyway, and
     is emitted as the bare `crop=w:h` it always was so no existing render moves. Day 3's
     hero is 1.60:1 and its subject sits slightly above centre, hence focus [0.50, 0.42].
+
+    Only the axis that overflows moves. After `force_original_aspect_ratio=increase` a source
+    wider than the frame overflows horizontally ONLY, so `ih-h` is 0 and `fy` multiplies
+    nothing: that hero crops at centre height whatever `fy` says. `fy` bites on a source
+    taller than the frame. The offset is emitted either way — it is ffmpeg's arithmetic that
+    zeroes it, not ours, and the same chain has to hold for both shapes.
     """
     cover = f"scale={w}:{h}:force_original_aspect_ratio=increase"
     if (float(fx), float(fy)) == (0.5, 0.5):
@@ -513,6 +519,8 @@ def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
+    if fill is not None and fill not in FILLS:
+        raise ValueError(f"unknown media fill {fill!r}; known: {', '.join(FILLS)}")
     blur = wants_blur_fill(src_w, src_h) if fill is None else (fill == "blur")
     if not blur:
         return [f"[{src_label}]"

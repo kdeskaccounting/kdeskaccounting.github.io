@@ -768,3 +768,28 @@ def test_an_unknown_fill_is_refused_by_name():
 
 def test_a_scene_with_neither_key_asks_for_nothing():
     assert media.scene_fill({"kind": "media", "src": "x.jpg"}) == (None, (0.5, 0.5))
+
+
+def test_fill_blur_leaves_the_backdrop_centred_whatever_the_focus_says():
+    """`focus` aims the CROP. The blur backdrop is a full-bleed wash and must stay centred.
+
+    blur_fill_steps() builds it with a bare cover_chain(w, h); this is the guard that a later
+    change threading focus through that chain — Task 9 adds a parameter to it — cannot leak
+    an offset into the backdrop without turning a test red.
+    """
+    steps = media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304,
+                                     src_w=HERO_LANDSCAPE[0], src_h=HERO_LANDSCAPE[1],
+                                     fill="blur", focus=(0.5, 0.42))
+    bg = [s for s in steps if "boxblur" in s]
+    assert len(bg) == 1
+    assert "crop=1296:2304," in bg[0]
+    assert "x=(iw-" not in bg[0] and "y=(ih-" not in bg[0]
+
+
+def test_ffmpeg_video_steps_refuses_an_unknown_fill_the_way_it_refuses_a_motion():
+    """The renderer's own gate, so a caller that skipped scene_fill() still cannot silently
+    fall through to the ratio default."""
+    with pytest.raises(ValueError) as excinfo:
+        media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304, fill="stretch")
+    assert "stretch" in str(excinfo.value)
+    assert "crop" in str(excinfo.value) and "blur" in str(excinfo.value)
