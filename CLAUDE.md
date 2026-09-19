@@ -314,6 +314,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # to it would fade out before the last picture). The whooshes go on `beat_boundaries()` — the
 # cut nearest each of the `beats - 1` divisions of the runtime — NOT on every cut: a whoosh on
 # all sixteen picture changes is a cartoon, and the ear habituates to it by the third.
+# `bed.lufs` is checked, not just required: ebur128 reports NEGATIVE LUFS, so a positive one
+# is a sign flip (`lufs: 13.2` for a -13.2 asset gains the bed -35.2 dB and ships a Short with
+# an inaudible bed, rc 0, no word said), and a computed gain past +/-30 dB
+# (make_short.BED_GAIN_LIMIT_DB) is a typo in one of the two numbers. `sfx.beats` must be 2 or
+# more — `beats - 1` boundaries means one beat places no whoosh at all. `duck:`, `master:` and
+# `sfx:` without a `bed:` are refused: there is no bed-less path through the mix, so they would
+# be read and then ignored.
 # A missing bed or sfx file REFUSES the render by name: a Short meant to carry music that came
 # out silent is indistinguishable from one that never asked for any. Audio is fetched BY HAND;
 # nothing here downloads it. The bed and sfx inputs are queued AFTER the caption PNGs so no

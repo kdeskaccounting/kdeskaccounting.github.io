@@ -88,8 +88,32 @@ def test_the_whooshes_land_on_beats_not_on_every_cut():
 
 
 def test_a_boundary_before_zero_is_clamped_rather_than_negative():
-    graph = ";".join(_steps(runtime=9.0, cuts=(0.1, 3.0, 6.0)))
+    """One cut at 0.1 s is the nearest to BOTH divisions of a 9 s runtime, so the only
+    boundary is 0.1 and the lead of 0.20 puts the whoosh at -0.1 s. adelay refuses a
+    negative delay, so the clamp is the difference between a render and an ffmpeg error."""
+    graph = ";".join(_steps(runtime=9.0, cuts=(0.1,)))
+    assert "adelay=0|0" in graph
     assert "adelay=-" not in graph
+
+
+def test_each_whoosh_is_made_stereo_before_it_is_delayed():
+    """adelay takes one delay PER CHANNEL: `adelay=2747|2747` on a MONO whoosh delays the one
+    channel it has and drops the second value, so the SFX lands early against a stereo bed."""
+    graph = ";".join(_steps())
+    for step in graph.split(";"):
+        if "adelay=" in step:
+            assert step.index("aformat=sample_rates=48000:channel_layouts=stereo") \
+                < step.index("adelay="), step
+
+
+def test_the_music_bus_cannot_outlast_the_picture():
+    """amix ends with its LONGEST input. A 1.33 s whoosh delayed to the last boundary of a
+    short runtime would run past the last frame and pad the file with music over nothing."""
+    graph = ";".join(_steps(runtime=45.29))
+    for step in graph.split(";"):
+        if "adelay=" in step:
+            assert "atrim=0:45.290" in step, step
+            assert "apad=whole_dur=45.290" in step, step
 
 
 def test_the_limiter_sits_before_the_loudnorm():
@@ -124,6 +148,51 @@ def test_a_bed_with_no_measured_lufs_is_refused(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         M.audio_settings({"audio": {"bed": {"src": "media/audio/bed.mp3"}}}, spec_path)
     assert "lufs" in str(excinfo.value)
+
+
+def test_a_positive_bed_lufs_is_refused_because_ebur128_reports_negative_lufs(tmp_path):
+    """`lufs: 13.2` for a -13.2 LUFS asset is one keystroke, and it is SILENT: the gain
+    becomes -35.2 dB, the render returns 0, and the Short ships with an inaudible bed."""
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(_mix(bed={"src": BED["src"], "lufs": 13.2}), tmp_path / "scenes.yaml")
+    assert "13.2" in str(excinfo.value)
+    assert "negative" in str(excinfo.value).lower()
+
+
+def test_a_bed_gain_beyond_thirty_db_is_refused_and_names_both_numbers(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(_mix(bed={"src": BED["src"], "lufs": -60.0, "target_lufs": -22}),
+                         tmp_path / "scenes.yaml")
+    message = str(excinfo.value)
+    assert "38" in message, "the gain it would have applied"
+    assert "30" in message, "the limit it broke"
+
+
+def test_a_bed_gain_of_exactly_thirty_db_is_allowed(tmp_path):
+    """The bound is a sanity check on a typo, not an opinion about quiet assets."""
+    (tmp_path / "media" / "audio").mkdir(parents=True)
+    (tmp_path / "media" / "audio" / "bed.mp3").write_bytes(b"\0")
+    mix = M.audio_settings({"audio": {"bed": {"src": BED["src"], "lufs": -52.0,
+                                              "target_lufs": -22}}},
+                           tmp_path / "scenes.yaml")
+    assert M.bed_gain_db(mix.bed.target_lufs, mix.bed.lufs) == pytest.approx(30.0)
+
+
+def test_a_duck_or_master_block_with_no_bed_is_refused_by_name(tmp_path):
+    """Both only mean something against a bed. Accepted and ignored, they read as applied."""
+    for key in ("duck", "master"):
+        with pytest.raises(SystemExit) as excinfo:
+            M.audio_settings({"audio": {key: {}}}, tmp_path / "scenes.yaml")
+        assert key in str(excinfo.value)
+
+
+def test_fewer_than_two_beats_places_no_whoosh_and_is_refused(tmp_path):
+    (tmp_path / "media" / "audio").mkdir(parents=True)
+    for name in ("bed.mp3", "whoosh.wav"):
+        (tmp_path / "media" / "audio" / name).write_bytes(b"\0")
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(_mix(sfx={**SFX, "beats": 1}), tmp_path / "scenes.yaml")
+    assert "beats" in str(excinfo.value)
 
 
 def test_a_whoosh_with_no_bed_is_refused_rather_than_silently_dropped(tmp_path):

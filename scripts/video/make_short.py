@@ -675,9 +675,17 @@ def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
     screen, and can hard-fail on it. So `scenes` stays scene-only and `cuts` stays complete.
 
     Which means: `sum(scenes[].seconds)` is NOT `duration_s` when a plate is present — it is
-    short by the plate's 1.5 s. Anything that needs the finished runtime (an audio bed's
-    length, a fade-out offset) reads `duration_s`, which is the probed file; the rows are
-    where the SCENES are, not what the Short adds up to.
+    short by the plate's 1.5 s. Anything that needs the finished runtime reads the whole
+    Short's length, never the row sum; the rows are where the SCENES are, not what the Short
+    adds up to.
+
+    Two spellings of that length, and they differ by up to a frame. `duration_s` here is the
+    PROBED file, written after the final pass. The audio mix needs the same number one pass
+    EARLIER — the bed is trimmed and faded against it, and the whooshes are placed on `cuts`
+    — so main() takes the timeline length (the sum of the encoded parts, plate included) and
+    builds this plan in memory before the pass that writes the file this one measures. A
+    frame of difference is a bed that fades out 33 ms off; anything larger means the concat
+    did not join what the timeline says it did.
     """
     cuts = [round(float(at), 3) for at in extra_cuts if float(at) > 0]
     for row in rows:
@@ -723,6 +731,12 @@ def caption_filter(overlays, y, plate_seconds=None):
 #
 # Absent an `audio:` block the renderer emits exactly the chain it always emitted, so every
 # existing spec renders the same bytes it rendered yesterday.
+
+#: How far bed_gain_db may push a bed before the numbers are read as a typo rather than as a
+#: quiet asset. Measured beds run -13 to -29 LUFS against a -22 target, so ±30 dB is loose
+#: enough to be nobody's ceiling and tight enough to catch a transposed or invented figure.
+BED_GAIN_LIMIT_DB = 30.0
+
 
 @dataclasses.dataclass(frozen=True)
 class Bed:
@@ -866,11 +880,17 @@ def audio_settings(spec: dict, spec_path):
         if name in block and not block[name]:
             raise SystemExit(f"spec `audio.{name}:` is empty. Give it a `src:` (and, for the "
                              f"bed, its measured `lufs:`), or drop the key.")
-    if block.get("sfx") and not block.get("bed"):
-        raise SystemExit(
-            "audio.sfx without audio.bed: the whooshes are mixed onto the music bus, and "
-            "there is no bed-less path through the graph — the render would emit the plain "
-            "loudnorm chain and the SFX would vanish without a word. Add a `bed:`.")
+    for name in ("sfx", "duck", "master"):
+        # Each of these only means something against a bed: the whooshes are mixed onto the
+        # music bus, the duck IS the bed's compressor, and the master rides the same chain.
+        # Accepted and ignored, they read in a spec as applied.
+        # `name in block`, not `block.get(name)`: `duck: {}` is falsy and still says, to
+        # anyone reading the spec, that this Short ducks its music.
+        if name in block and not block.get("bed"):
+            raise SystemExit(
+                f"audio.{name} without audio.bed: there is no bed-less path through the mix, "
+                f"so the render would emit the plain loudnorm chain and this block would "
+                f"vanish without a word. Add a `bed:`, or drop `{name}:`.")
     bed = None
     if block.get("bed"):
         raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
@@ -878,8 +898,26 @@ def audio_settings(spec: dict, spec_path):
             raise SystemExit("audio.bed.lufs is missing. The bed's gain is target minus "
                              "measured, so an unmeasured bed has no gain. Run ParkSheet's "
                              "scripts/measure_audio_asset.py.")
-        bed = Bed(src=resolved("bed", raw), lufs=float(raw["lufs"]),
-                  target_lufs=float(raw.get("target_lufs", -22.0)),
+        # A sign-flipped measurement is one keystroke and it is SILENT: `lufs: 13.2` for a
+        # -13.2 LUFS asset makes the gain -35.2 dB, ffmpeg returns 0, and the Short ships
+        # with a bed nobody can hear. ebur128 reports loudness below full scale, so the
+        # measurement is always negative.
+        lufs = float(raw["lufs"])
+        if lufs >= 0:
+            raise SystemExit(
+                f"audio.bed.lufs is {lufs:g}, which cannot be a measurement: ebur128 reports "
+                f"negative LUFS (loudness below full scale). A sign-flipped measurement is "
+                f"silent, not loud — the gain would come out {bed_gain_db(float(raw.get('target_lufs', -22.0)), lufs):g} dB. "
+                f"Use the number as ebur128 printed it, e.g. -13.2.")
+        target = float(raw.get("target_lufs", -22.0))
+        gain = bed_gain_db(target, lufs)
+        if abs(gain) > BED_GAIN_LIMIT_DB:
+            raise SystemExit(
+                f"audio.bed would be gained {gain:+g} dB (target {target:g} minus measured "
+                f"{lufs:g}), past the {BED_GAIN_LIMIT_DB:g} dB sanity bound. That is a typo "
+                f"in one of the two numbers, not a bed: re-measure the asset with "
+                f"ParkSheet's scripts/measure_audio_asset.py.")
+        bed = Bed(src=resolved("bed", raw), lufs=lufs, target_lufs=target,
                   fade_in=float(raw.get("fade_in", 0.6)),
                   fade_out=float(raw.get("fade_out", 1.2)))
     sfx = None
@@ -887,10 +925,19 @@ def audio_settings(spec: dict, spec_path):
         # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
         # accepted as the spelling every other block in this renderer uses.
         raw = _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats"), "sfx")
+        beats = int(raw.get("beats", 3))
+        if beats < 2:
+            # `beats - 1` boundaries: one beat has none, and the whole sfx block would be
+            # read, resolved, and then place nothing.
+            raise SystemExit(
+                f"audio.sfx.beats is {beats}, and {beats} beat{'' if beats == 1 else 's'} "
+                f"ha{'s' if beats == 1 else 've'} no boundary to put a whoosh on — the SFX "
+                f"would be configured and never heard. Use 2 or more (3 is the default: two "
+                f"whooshes), or drop `sfx:`.")
         sfx = Sfx(src=resolved("sfx", {"src": raw.get("on_cut") or raw.get("src")}),
                   gain_db=float(raw.get("gain_db", -6.0)),
                   lead=float(raw.get("lead", 0.20)),
-                  beats=int(raw.get("beats", 3)))
+                  beats=beats)
     duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
     master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
     return AudioMix(bed=bed,
@@ -928,8 +975,14 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
                 zip(sfx_indexes,
                     beat_boundaries(cuts, runtime, mix.sfx.beats)), start=1):
             delay = max(0, round((float(at) - mix.sfx.lead) * 1000))
-            steps.append(f"[{index}:a]volume={mix.sfx.gain_db:g}dB,"
-                         f"adelay={delay}|{delay}[s{n}]")
+            # aformat FIRST: adelay takes one delay per channel, so `adelay=2747|2747` on a
+            # mono whoosh delays the one channel it has and silently discards the second
+            # value. atrim and apad LAST: amix ends with its longest input, so a whoosh
+            # delayed near the end would otherwise run the music bus past the last frame.
+            steps.append(f"[{index}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                         f"volume={mix.sfx.gain_db:g}dB,adelay={delay}|{delay},"
+                         f"atrim=0:{float(runtime):.3f},"
+                         f"apad=whole_dur={float(runtime):.3f}[s{n}]")
             labels.append(f"s{n}")
     steps.append("".join(f"[{label}]" for label in labels)
                  + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
