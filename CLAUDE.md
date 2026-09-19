@@ -152,7 +152,10 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     src: media/earth/magic-kingdom.mp4   # repo-relative to the SPEC FILE's own repo root
 #                                          # (nearest .git / pyproject.toml above it), or
 #                                          # absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
-#     motion: clip | kenburns | hold       # default: kenburns for a still, clip for footage
+#     motion: punch | push | pan_left | pan_right | burst | kenburns | hold | clip
+#             # the five new ones are image-only, pre-scale to 2x and run zoompan on a
+#             # 2160x3840 canvas; kenburns is unchanged and is what every older spec uses
+#             # default: kenburns for a still, clip for footage
 #       clip      play it, trimmed to the narration (+0.6 s like cards), looped if shorter.
 #                 VIDEO ONLY — on a still it hangs ffmpeg forever (0 bytes out), so it is
 #                 refused.
@@ -160,6 +163,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                 footage it silently encodes a freeze frame; refused.
 #       hold      both kinds. On a still: one static frame. On a VIDEO: plays the clip
 #                 through ONCE, then freezes the last frame for the rest of the scene.
+#       punch     1.00 -> 1.15, cubic ease-out over 9 frames, then dead still. The shove.
+#       push      1.00 -> 1.10, linear across the whole beat. The slow one.
+#       pan_left  a fixed 1.12 crop travelling edge to edge, left or right.
+#       pan_right
+#       burst     a 4-frame hit to 1.08, settled back to 1.03 by frame 12. For a whoosh.
+#                 STILLS ONLY, all five, and for the same reason kenburns is: they are
+#                 zoompans. Each covers to 2x the render size first and runs zoompan onto
+#                 media.ZOOMPAN_W x ZOOMPAN_H before the lanczos downscale — zoompan
+#                 truncates x/y to whole INPUT pixels, so at the rates kenburns uses it
+#                 freezes for up to 9 frames and then jumps one; the pre-scale halves that.
+#                 kenburns keeps its own chain byte for byte, so no existing render moves.
 #     Bad kind/motion pairings are rejected by media.check_motion, and the whole spec is
 #     validated by media.validate_spec BEFORE anything renders — so a typo on scene 7 costs
 #     nothing, instead of surfacing after six scenes have been narrated and encoded.

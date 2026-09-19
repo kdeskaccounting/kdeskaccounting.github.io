@@ -56,12 +56,16 @@ import pathlib
 
 import cards
 
-MOTIONS = ("clip", "kenburns", "hold")
+#: The motions that move enough to read as footage rather than as a JPEG. All of them are
+#: image-only and all of them run on the 2x pre-scale below.
+HIGH_MOTIONS: tuple[str, ...] = ("punch", "push", "pan_left", "pan_right", "burst")
+
+MOTIONS = ("clip", "kenburns", "hold", *HIGH_MOTIONS)
 
 #: Which motions actually work on which kind of source. `clip` needs frames to play and
-#: `kenburns` needs a single frame to zoom; the wrong pairing hangs ffmpeg or silently
-#: freezes the footage. See check_motion() for the mechanics of each failure.
-MOTIONS_FOR = {"image": ("kenburns", "hold"), "video": ("clip", "hold")}
+#: every zoompan motion needs a single frame to move over; the wrong pairing hangs ffmpeg or
+#: silently freezes the footage. See check_motion() for the mechanics of each failure.
+MOTIONS_FOR = {"image": ("kenburns", "hold", *HIGH_MOTIONS), "video": ("clip", "hold")}
 
 VIDEO_SUFFIXES = (".mp4", ".mov", ".m4v")
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png")
@@ -73,7 +77,32 @@ ROOT_MARKERS = (".git", "pyproject.toml")
 FPS = 30
 
 #: Ken Burns end zoom. 8% over the scene reads as motion without ever looking like a shove.
+#: Over a 32 s scene that is also 0.6 px/s, which reads as a still that is slightly unwell —
+#: hence HIGH_MOTIONS. Unchanged, because every existing spec's render depends on it.
 KENBURNS_ZOOM = 1.08
+
+#: zoompan truncates x/y to whole INPUT pixels, so at the slow rates this pipeline uses it
+#: freezes for up to 9 frames and then jumps one -- that is the stutter. Measured by
+#: tracking a 1 px feature through each chain: pre-scaling the source to 2x the render size
+#: and running zoompan onto a 2160x3840 canvas before the final downscale takes the longest
+#: frozen run from 9 frames to 4. The cost is memory (a 2592x4608 RGB frame is ~36 MB), not
+#: time: the 12.8 s capstone rendered in 11.5 s.
+PRESCALE = 2
+ZOOMPAN_W, ZOOMPAN_H = 2160, 3840
+
+#: Punch-in: 1.00 -> 1.15 with a cubic ease-out over 9 frames, then a dead hold. Measured
+#: displacement: 38.1 px in the first 9 frames, 0.02 px over the remaining 80.
+PUNCH_ZOOM = 0.15
+PUNCH_FRAMES = 9
+#: Slow push: 1.0 -> 1.10, linear over the whole beat.
+PUSH_ZOOM = 0.10
+#: Pan: a fixed crop, travelling edge to edge.
+PAN_ZOOM = 1.12
+#: Zoom burst for a beat that coincides with a whoosh: a 4-frame hit, settled by frame 12.
+BURST_PEAK = 1.08
+BURST_SETTLE = 1.03
+BURST_HIT_FRAMES = 4
+BURST_SETTLE_FRAMES = 12
 
 #: Width/height at which a source stops being cropped to fill the 9:16 frame and starts being
 #: letterboxed over a blurred copy of itself.
@@ -176,8 +205,9 @@ def check_motion(kind: str, motion: str) -> None:
                            on every pass, so `trim=duration=` is never reached and `-t` never
                            fires: ffmpeg writes 0 bytes and runs forever.
       kenburns on footage  zoompan's `d=` counts INPUT frames, not output frames, so on a
-                           video it consumes frame 0 and holds it — the scene is a freeze
-                           frame that looks like a still by mistake.
+      (or any HIGH_MOTION) video it consumes frame 0 and holds it — the scene is a freeze
+                           frame that looks like a still by mistake. Every HIGH_MOTION is a
+                           zoompan too, so `punch` on an .mp4 fails in exactly that way.
 
     `hold` is the one motion both kinds share: on a still it clones the frame, on footage it
     plays the clip through and then freezes the last frame for the rest of the scene.
@@ -192,7 +222,7 @@ def check_motion(kind: str, motion: str) -> None:
     why = ("`clip` plays frames and a still has only one: looped at the input it never "
            "reaches the trim point, so ffmpeg writes nothing and runs forever"
            if motion == "clip" else
-           "zoompan counts INPUT frames, so on footage `kenburns` consumes frame 0 and "
+           f"zoompan counts INPUT frames, so on footage `{motion}` consumes frame 0 and "
            "holds it — the scene comes out a freeze frame")
     article = "an" if kind[0] in "aeiou" else "a"
     raise ValueError(f"motion {motion!r} cannot be used with {article} {kind} src: {why}. "
@@ -433,12 +463,57 @@ def cover_chain(w: int, h: int, fx: float = 0.5, fy: float = 0.5) -> str:
     return f"{cover},crop={w}:{h}:x=(iw-{w})*{float(fx):.3f}:y=(ih-{h})*{float(fy):.3f}"
 
 
+def zoom_expr(motion: str, frames: int) -> str:
+    """The `z=` expression for one high motion, as a function of `on`.
+
+    Always a function of `on`, never `min(zoom+dz,...)`: the accumulator compounds rounding
+    and the end zoom drifts away from the nominal value.
+    """
+    if motion == "punch":
+        return f"'1+{PUNCH_ZOOM}*(1-pow(1-min(1,on/{PUNCH_FRAMES}),3))'"
+    if motion == "push":
+        return f"'1+{PUSH_ZOOM}*on/{frames}'"
+    if motion in ("pan_left", "pan_right"):
+        return f"'{PAN_ZOOM}'"
+    if motion == "burst":
+        return (f"'if(lt(on,{BURST_HIT_FRAMES}), 1+{BURST_PEAK - 1.0:.2f}*on/"
+                f"{BURST_HIT_FRAMES}, if(lt(on,{BURST_SETTLE_FRAMES}), {BURST_PEAK}-"
+                f"{BURST_PEAK - BURST_SETTLE:.2f}*(on-{BURST_HIT_FRAMES})/"
+                f"{BURST_SETTLE_FRAMES - BURST_HIT_FRAMES}, {BURST_SETTLE}))'")
+    raise ValueError(f"{motion!r} is not a high motion; known: {', '.join(HIGH_MOTIONS)}")
+
+
+def crop_chain(w: int, h: int, crop: dict | None) -> str:
+    """Re-frame a covered `w`x`h` picture, then scale it back up to `w`x`h`.
+
+    This is how four beats can be four different shots of ONE photograph: `{zoom, fx, fy}`
+    keeps 1/zoom of the frame around (fx, fy) and blows it back to full size, so the same
+    still is a wide, then a detail, then another detail. It runs on the 2x pre-scale (see
+    ffmpeg_video_steps), so a 1.45x crop of a 2592x4608 pre-scale is 1788x3178 — still wider
+    than the 1296 px the Short is finally rendered at, which is why a re-framed shot does not
+    go soft. `zoom` at or below 1.0, or no crop at all, is a no-op: the whole picture.
+    """
+    if not crop or float(crop.get("zoom", 1.0)) <= 1.0:
+        return ""
+    zoom = float(crop["zoom"])
+    cw, ch = round(w / zoom), round(h / zoom)
+    fx, fy = float(crop.get("fx", 0.5)), float(crop.get("fy", 0.5))
+    return (f"crop={cw}:{ch}:x=(iw-{cw})*{fx:.3f}:y=(ih-{ch})*{fy:.3f},"
+            f"scale={w}:{h}:flags=lanczos,")
+
+
 def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str:
-    """The motion half of the chain, on a source that already fills the `w`x`h` frame.
+    """The motion half of the chain, on a source that already fills the frame.
 
       clip      trim the footage to the narration (looped at the input, see CLIP_INPUT_ARGS)
       kenburns  zoompan 1.0 -> 1.08 over the scene, centred; the default for a still
       hold      one frame, padded out by cloning it
+      HIGH_     punch/push/pan_left/pan_right/burst: zoompan onto the ZOOMPAN_W x ZOOMPAN_H
+      MOTIONS   canvas (the frame the caller pre-scaled to, see ffmpeg_video_steps), then
+                lanczos down to `w`x`h`. The zoom is zoom_expr()'s function of `on`.
+
+    The first three branches emit exactly the strings they always did, so no existing render
+    moves. A high motion's `w`x`h` is the FINAL size — its input is the 2x pre-scale.
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
@@ -449,6 +524,20 @@ def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str
         dz = (KENBURNS_ZOOM - 1.0) / n
         return (f"zoompan=z='min(zoom+{dz:.7f},{KENBURNS_ZOOM})':"
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={w}x{h}:fps={fps}")
+    if motion in HIGH_MOTIONS:
+        n = max(1, math.ceil(dur * fps))
+        # `on` runs 0..n-1, so the travel divides by the LAST frame index; a one-frame beat
+        # has nowhere to travel and must not divide by zero.
+        span = max(1, n - 1)
+        if motion == "pan_right":
+            x, y = f"'(iw-iw/zoom)*(on/{span})'", "'ih/2-(ih/zoom/2)'"
+        elif motion == "pan_left":
+            x, y = f"'(iw-iw/zoom)*(1-on/{span})'", "'ih/2-(ih/zoom/2)'"
+        else:
+            x, y = "'iw/2-(iw/zoom/2)'", "'ih/2-(ih/zoom/2)'"
+        return (f"zoompan=z={zoom_expr(motion, n)}:x={x}:y={y}:d={n}:"
+                f"s={ZOOMPAN_W}x{ZOOMPAN_H}:fps={fps},"
+                f"scale={w}:{h}:flags=lanczos")
     return f"fps={fps},tpad=stop_mode=clone:stop_duration={dur:.3f}"
 
 
@@ -505,7 +594,8 @@ def blur_fill_steps(src_label: str, out_label: str, w: int, h: int) -> list[str]
 def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
                        src_w: int | None = None, src_h: int | None = None,
                        src_label: str = "0:v", out_label: str = "m0",
-                       fill: str | None = None, focus: tuple = (0.5, 0.5)) -> list[str]:
+                       fill: str | None = None, focus: tuple = (0.5, 0.5),
+                       crop: dict | None = None) -> list[str]:
     """The filter-graph chains that turn one media source into `dur` seconds of `w`x`h`.
 
     A list of chains rather than one string because the blur fill needs a `split`, which
@@ -516,12 +606,22 @@ def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
     instead of the source's ratio, so a landscape hero can cover-crop on `focus` rather than
     sit at 35% of frame height over blur. Absent — which is every existing spec —
     wants_blur_fill() decides exactly as before.
+
+    A HIGH_MOTION covers to PRESCALE x the render size and runs its zoompan there (see
+    ZOOMPAN_W), which is what stops the stutter. `crop` re-frames that covered picture
+    first, so one still can be several shots — it is an image re-frame, so a beat that
+    carries one on `clip` or on a blur fill is ignored rather than refused.
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
     if fill is not None and fill not in FILLS:
         raise ValueError(f"unknown media fill {fill!r}; known: {', '.join(FILLS)}")
     blur = wants_blur_fill(src_w, src_h) if fill is None else (fill == "blur")
+    if not blur and motion in HIGH_MOTIONS:
+        cw, ch = w * PRESCALE, h * PRESCALE
+        return [f"[{src_label}]{cover_chain(cw, ch, focus[0], focus[1])},"
+                f"{crop_chain(cw, ch, crop)}"
+                f"{motion_chain(motion, dur, w, h, fps)}[{out_label}]"]
     if not blur:
         return [f"[{src_label}]"
                 f"{ffmpeg_video_filter(motion, dur, w, h, fps, focus)}[{out_label}]"]

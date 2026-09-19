@@ -69,8 +69,9 @@ def test_is_media_detects_the_kind():
     assert media.is_media({}) is False
 
 
-def test_the_three_motions_are_the_ones_the_contract_names():
-    assert media.MOTIONS == ("clip", "kenburns", "hold")
+def test_the_motions_are_the_ones_the_contract_names():
+    assert media.MOTIONS == ("clip", "kenburns", "hold",
+                             "punch", "push", "pan_left", "pan_right", "burst")
 
 
 def test_a_still_defaults_to_kenburns_and_footage_to_clip():
@@ -180,7 +181,10 @@ def test_a_video_may_omit_the_credit():
 # silently freezes frame 0, because zoompan's `d=` counts INPUT frames, not output ones.
 
 def test_the_motions_allowed_for_each_kind():
-    assert media.MOTIONS_FOR == {"image": ("kenburns", "hold"), "video": ("clip", "hold")}
+    assert media.MOTIONS_FOR == {
+        "image": ("kenburns", "hold", "punch", "push", "pan_left", "pan_right", "burst"),
+        "video": ("clip", "hold"),
+    }
 
 
 @pytest.mark.parametrize("kind,motion", [
@@ -793,3 +797,117 @@ def test_ffmpeg_video_steps_refuses_an_unknown_fill_the_way_it_refuses_a_motion(
         media.ffmpeg_video_steps("kenburns", 4.0, 1296, 2304, fill="stretch")
     assert "stretch" in str(excinfo.value)
     assert "crop" in str(excinfo.value) and "blur" in str(excinfo.value)
+
+
+# --- the new motions ---------------------------------------------------------------------
+
+def _zoom_at(expr: str, on: int, frames: int) -> float:
+    """Evaluate a zoompan `z` expression in Python. ffmpeg's `if`/`lt`/`min`/`pow` map 1:1."""
+    scope = {"on": on, "n": frames, "min": min, "pow": pow,
+             "lt": lambda a, b: 1 if a < b else 0}
+    body = expr.replace("if(", "_if(")
+    scope["_if"] = lambda cond, a, b=0.0: a if cond else b
+    return float(eval(body, {"__builtins__": {}}, scope))
+
+
+@pytest.mark.parametrize("motion", media.HIGH_MOTIONS)
+def test_every_motion_chain_sets_both_the_size_and_the_fps_zoompan_defaults_wrong(motion):
+    """zoompan defaults to s=hd720 and fps=25. Both are wrong for a 1080x1920 30 fps Short."""
+    chain = media.motion_chain(motion, 3.0, 1296, 2304)
+    assert f"s={media.ZOOMPAN_W}x{media.ZOOMPAN_H}" in chain
+    assert "fps=30" in chain
+    assert chain.endswith("scale=1296:2304:flags=lanczos")
+
+
+@pytest.mark.parametrize("motion", media.HIGH_MOTIONS)
+def test_every_high_motion_pre_scales_to_twice_the_render_size(motion):
+    steps = media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=4000, src_h=6000)
+    assert "scale=2592:4608" in steps[0]
+
+
+def test_the_punch_reaches_its_full_zoom_within_the_ramp_and_never_moves_again():
+    expr = media.zoom_expr("punch", 90).strip("'")
+    start = _zoom_at(expr, 0, 90)
+    ramped = _zoom_at(expr, media.PUNCH_FRAMES, 90)
+    later = _zoom_at(expr, 89, 90)
+    assert start == pytest.approx(1.0, abs=1e-6)
+    assert ramped == pytest.approx(1.0 + media.PUNCH_ZOOM, abs=1e-3)
+    assert later == pytest.approx(ramped, abs=1e-6), "a punch shoves, then holds dead still"
+    # and it decelerates: the first frame moves further than the last of the ramp
+    first = _zoom_at(expr, 1, 90) - start
+    last = ramped - _zoom_at(expr, media.PUNCH_FRAMES - 1, 90)
+    assert first > last
+
+
+def test_a_push_climbs_all_the_way_through_the_beat():
+    expr = media.zoom_expr("push", 90).strip("'")
+    assert _zoom_at(expr, 0, 90) == pytest.approx(1.0)
+    assert _zoom_at(expr, 90, 90) == pytest.approx(1.0 + media.PUSH_ZOOM, abs=1e-3)
+
+
+def test_a_pan_starts_at_one_edge_and_ends_at_the_other():
+    right = media.motion_chain("pan_right", 3.0, 1296, 2304)
+    left = media.motion_chain("pan_left", 3.0, 1296, 2304)
+    assert f"z='{media.PAN_ZOOM}'" in right and f"z='{media.PAN_ZOOM}'" in left
+    assert "x='(iw-iw/zoom)*(on/89)'" in right
+    assert "x='(iw-iw/zoom)*(1-on/89)'" in left
+
+
+def test_the_burst_hits_and_settles():
+    expr = media.zoom_expr("burst", 90).strip("'")
+    assert _zoom_at(expr, 4, 90) == pytest.approx(media.BURST_PEAK, abs=1e-3)
+    assert _zoom_at(expr, 12, 90) == pytest.approx(media.BURST_SETTLE, abs=1e-3)
+    assert _zoom_at(expr, 89, 90) == pytest.approx(media.BURST_SETTLE, abs=1e-3)
+
+
+def test_kenburns_is_untouched_so_every_existing_render_is_untouched():
+    assert media.KENBURNS_ZOOM == 1.08
+    chain = media.motion_chain("kenburns", 4.0, 1296, 2304)
+    assert "min(zoom+" in chain
+    assert f"s=1296x2304" in chain
+    assert "scale=" not in chain
+
+
+def test_the_new_motions_are_image_only():
+    for motion in media.HIGH_MOTIONS:
+        assert motion in media.MOTIONS_FOR["image"]
+        assert motion not in media.MOTIONS_FOR["video"]
+
+
+# --- the crop table ----------------------------------------------------------------------
+
+def test_a_crop_reframes_the_still_before_the_motion_runs():
+    crop = {"zoom": 1.45, "fx": 0.62, "fy": 0.70}
+    steps = media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000,
+                                     crop=crop)
+    assert "crop=1788:3178:x=(iw-1788)*0.620:y=(ih-3178)*0.700" in steps[0]
+    assert steps[0].index("crop=1788") < steps[0].index("zoompan")
+
+
+def test_the_widest_crop_is_a_no_op():
+    steps = media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000,
+                                     crop={"zoom": 1.00, "fx": 0.5, "fy": 0.5})
+    assert "crop=2592:4608:x=" not in steps[0]
+
+
+def test_no_crop_is_the_chain_a_scene_without_beats_gets():
+    assert media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000) == \
+        media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000, crop=None)
+
+
+def test_a_crop_on_a_clip_beat_is_ignored_rather_than_refused():
+    """ParkSheet writes one `crop` per beat for a uniform shape; a footage beat carries it
+    too. `crop` re-frames a still, so on `clip` it is a no-op, not an error."""
+    crop = {"zoom": 1.45, "fx": 0.62, "fy": 0.70}
+    assert media.ffmpeg_video_steps("clip", 3.0, 1296, 2304, src_w=1080, src_h=1920,
+                                    crop=crop) == \
+        media.ffmpeg_video_steps("clip", 3.0, 1296, 2304, src_w=1080, src_h=1920)
+
+
+def test_a_high_motion_on_footage_is_refused_by_name_in_the_preflight():
+    for motion in media.HIGH_MOTIONS:
+        with pytest.raises(ValueError) as e:
+            media.check_motion("video", motion)
+        text = str(e.value)
+        assert motion in text and "video" in text
+        assert "clip" in text and "hold" in text
