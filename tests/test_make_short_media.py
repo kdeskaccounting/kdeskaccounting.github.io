@@ -515,3 +515,222 @@ def test_the_scenes_fill_and_focus_reach_its_encode(stub_main, monkeypatch):
         _media_cmds(stub_main)[0].index("-filter_complex") + 1]
     assert "crop=1296:2304:x=(iw-1296)*0.500:y=(ih-2304)*0.420" in chain
     assert "boxblur" not in chain
+
+
+# --- beats -------------------------------------------------------------------------------
+
+BEATS = [
+    {"src": "assets/still.png", "seconds": 1.5, "motion": "punch",
+     "crop": {"zoom": 1.00, "fx": 0.50, "fy": 0.50}},
+    {"src": "assets/still.png", "seconds": 1.5, "motion": "push",
+     "crop": {"zoom": 1.30, "fx": 0.28, "fy": 0.32}},
+    {"src": "assets/still.png", "seconds": 1.0, "motion": "pan_right",
+     "crop": {"zoom": 1.45, "fx": 0.62, "fy": 0.70}},
+]
+
+#: What scene 0's beats are actually rescaled to: its narration plus the scene pad.
+BEAT_DUR = DURATIONS["0"] + M.SCENE_PAD
+
+
+def _beaten(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [dict(beat) for beat in BEATS]
+    M.main()
+    return _media_cmds(stub_main)[0]
+
+
+def test_a_scene_with_beats_concatenates_them_against_one_wav(stub_main):
+    cmd = _beaten(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "concat=n=3:v=1:a=0[m0]" in chain
+    assert "[b0][b1][b2]concat=" in chain
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert inputs[:3] == [str((stub_main.assets / "still.png").resolve())] * 3
+    assert inputs[3] == str(stub_main.build / "audio" / "scene_00.wav")
+    assert chain.count("[3:a]") == 1, "one WAV, mapped exactly as a scene without beats"
+
+
+def test_each_beat_trims_and_resets_pts_so_concat_does_not_overrun(stub_main):
+    """Without this, concat inherits zoompan's d= frame count and the beats overrun."""
+    cmd = _beaten(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    for index, span in enumerate(M.beat_spans(BEATS, BEAT_DUR)):
+        assert f"trim=duration={span:.3f},setpts=PTS-STARTPTS[b{index}]" in chain
+
+
+def test_every_beat_chain_ends_at_the_render_size_so_concat_accepts_them(stub_main):
+    chain = _beaten(stub_main)[_beaten(stub_main).index("-filter_complex") + 1]
+    for step in chain.split(";"):
+        if step.endswith(("[b0]", "[b1]", "[b2]")):
+            assert f"scale={M.RW}:{M.RH}" in step or f"crop={M.RW}:{M.RH}" in step
+
+
+def test_the_layers_sit_after_the_beats_and_the_wav_in_the_input_list(stub_main):
+    cmd = _beaten(stub_main)
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert inputs[4:] == [str(stub_main.work / "overlay_0.png"),
+                          str(stub_main.work / "credit_0.png")]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "[m0][4:v]overlay=x=0:y=0" in chain
+
+
+def test_the_beats_are_rescaled_to_the_scenes_real_duration(stub_main):
+    """ParkSheet estimates the seconds from the word count before narrate.py has run, so
+    the renderer -- which knows the encoded length -- is what makes them add up."""
+    assert M.beat_spans(BEATS, 8.0) == pytest.approx([3.0, 3.0, 2.0], abs=1e-3)
+    assert sum(M.beat_spans(BEATS, 8.0)) == pytest.approx(8.0, abs=1e-3)
+    assert sum(M.beat_spans(BEATS, 4.25)) == pytest.approx(4.25, abs=1e-3)
+
+
+def test_a_scene_with_no_beats_builds_the_graph_it_always_built(stub_main):
+    """Golden guard: one input, one motion chain, layers at 2 and 3."""
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "concat=" not in chain
+    assert chain.startswith("[0:v]")
+    assert "[1:a]" in chain
+
+
+def test_a_single_beat_is_refused_because_it_is_just_the_scene(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [dict(BEATS[0])]
+    with pytest.raises(SystemExit) as excinfo:
+        M.main()
+    assert "beats" in str(excinfo.value)
+
+
+def test_a_beat_with_no_source_is_refused_by_name(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [{"seconds": 1.0, "motion": "punch"},
+                                            dict(BEATS[1])]
+    with pytest.raises(SystemExit) as excinfo:
+        M.main()
+    assert "src" in str(excinfo.value)
+
+
+def test_more_beats_than_the_backstop_allows_is_refused(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [
+        {**BEATS[0], "seconds": M.MAX_PICTURE_S + 1.0}, dict(BEATS[1])]
+    with pytest.raises(SystemExit) as excinfo:
+        M.main()
+    assert str(M.MAX_PICTURE_S) in str(excinfo.value)
+
+
+def _beat_chain(chain, index):
+    """The one step of `chain` that ends at `[b<index>]` — that beat's whole sub-shot."""
+    return next(s for s in chain.split(";") if s.endswith(f"[b{index}]"))
+
+
+def test_a_beats_motion_is_preflighted_against_its_own_source_kind(stub_main):
+    """A beat carries its own src, so `punch` on an .mp4 freezes THAT beat, not the scene."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/clip.mp4", "seconds": 1.5, "motion": "punch"}, dict(BEATS[1])]
+    with pytest.raises(ValueError) as excinfo:
+        M.main()
+    assert "punch" in str(excinfo.value) and "video" in str(excinfo.value)
+    assert "scene 0" in str(excinfo.value) and "beats[0]" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_a_beats_missing_source_is_named_at_preflight(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [{**BEATS[0], "src": "assets/gone.png"},
+                                            dict(BEATS[1])]
+    with pytest.raises(FileNotFoundError) as excinfo:
+        M.main()
+    assert "assets/gone.png" in str(excinfo.value) and "scene 0" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+@pytest.mark.parametrize("crop, word", [({"zoom": 0.8}, "zoom"),
+                                        ({"zoom": 1.2, "fx": 1.4}, "fx")])
+def test_a_beat_crop_outside_the_picture_is_refused_by_name(stub_main, crop, word):
+    """crop_chain refuses these; the preflight is where a spec hears about it."""
+    stub_main.spec["scenes"][0]["beats"] = [{**BEATS[0], "crop": crop}, dict(BEATS[1])]
+    with pytest.raises(ValueError) as excinfo:
+        M.main()
+    assert word in str(excinfo.value) and "beats[0]" in str(excinfo.value)
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_beats_on_a_scene_the_render_has_not_reached_yet_stop_it_first(stub_main):
+    """Same rule as every other media key: a typo costs nothing, not an encoded scene 0."""
+    stub_main.spec["scenes"][1]["beats"] = [dict(BEATS[0])]
+    with pytest.raises(SystemExit):
+        M.main()
+    assert not stub_main.cmds and not stub_main.shots
+
+
+def test_a_beat_with_no_motion_takes_its_own_sources_default(stub_main):
+    """`punch` is not a safe blanket default: it freezes footage. default_motion() knows."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/still.png", "seconds": 1.5},
+        {"src": "assets/clip.mp4", "seconds": 1.5}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "zoompan" in _beat_chain(chain, 0)                    # kenburns, the still default
+    assert "zoompan" not in _beat_chain(chain, 1)                # clip, the footage default
+    assert "-stream_loop" in cmd                                 # which only `clip` asks for
+
+
+def test_only_a_clip_beat_loops_its_source_at_the_input(stub_main):
+    """Exactly the rule a scene without beats follows: `hold` on footage plays it through
+    and then freezes the last frame, which -stream_loop would turn into a replay."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/clip.mp4", "seconds": 1.5, "motion": "hold"},
+        {"src": "assets/clip.mp4", "seconds": 1.5, "motion": "clip"}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    assert cmd.count("-stream_loop") == 1
+    assert cmd[cmd.index("-stream_loop") + 2:cmd.index("-stream_loop") + 4] == \
+        ["-i", str((stub_main.assets / "clip.mp4").resolve())]
+    assert cmd.index("-stream_loop") > cmd.index("-i")           # the SECOND beat's input
+
+
+def test_a_hold_beat_on_footage_is_not_reframed(stub_main):
+    """`hold` is the one motion both kinds share, and footage is never re-framed: a clip
+    beat is the shot the clip already is. Only the still's crop survives."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/clip.mp4", "seconds": 1.5, "motion": "hold",
+         "crop": {"zoom": 1.30, "fx": 0.28, "fy": 0.32}},
+        dict(BEATS[1])]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "crop=iw/" not in _beat_chain(chain, 0)
+    assert "crop=iw/1.300" in _beat_chain(chain, 1)
+
+
+def test_the_beats_reach_ffmpeg_through_the_one_chain_builder(stub_main):
+    """Every beat is media.ffmpeg_video_steps' output, so the crop, the 2x pre-scale and the
+    blur fill behave for a beat exactly as they do for a whole scene."""
+    cmd = _beaten(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    spans = M.beat_spans(BEATS, BEAT_DUR)
+    for index, (beat, span) in enumerate(zip(BEATS, spans)):
+        built = media.ffmpeg_video_steps(beat["motion"], span, M.RW, M.RH, M.FPS,
+                                         src_label=f"{index}:v", out_label=f"b{index}",
+                                         crop=beat["crop"])
+        assert built[-1].removesuffix(f"[b{index}]") in _beat_chain(chain, index)
+
+
+def test_beat_spans_of_nothing_is_nothing(stub_main):
+    """Task 11's cut list calls this for every scene, beats or not."""
+    assert M.beat_spans([], 4.0) == []
+    assert M.scene_beats({}) == [] and M.scene_beats({"kind": "media"}) == []
+
+
+def test_every_beat_is_normalised_so_concat_can_join_unlike_sources(stub_main):
+    """Measured, not defensive: the demo JPEG decodes yuvj444p and the demo clip yuv420p,
+    and concat of those two is `Error reinitializing filters!`, exit 234, no output file.
+    concat wants identical size, PIXEL FORMAT and SAR, and a beats scene is the first thing
+    this renderer builds that puts two different sources into one graph."""
+    stub_main.spec["scenes"][0]["beats"] = [dict(BEATS[0]),
+                                            {"src": "assets/clip.mp4", "seconds": 1.5,
+                                             "motion": "clip"}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    for index in range(2):
+        span = M.beat_spans(stub_main.spec["scenes"][0]["beats"], BEAT_DUR)[index]
+        assert _beat_chain(chain, index).endswith(
+            f"format=yuv420p,setsar=1,trim=duration={span:.3f},setpts=PTS-STARTPTS[b{index}]")
+        assert _beat_chain(chain, index).count("trim=duration=") == 1

@@ -188,6 +188,16 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     fill: crop            # optional; crop | blur. Absent: the source's ratio decides
 #                           # (media.BLUR_FILL_RATIO), which is today's behaviour.
 #     focus: [0.50, 0.42]   # optional; what to keep when cropping. Default [0.5, 0.5].
+#     beats:                # optional; TWO OR MORE sub-shots sharing this scene's one WAV.
+#                           # Only the picture cuts — the narration and the caption cues are
+#                           # untouched, because it is still one scene and one encode.
+#       - {src: media/photos/a.jpg, seconds: 2.6, motion: punch,
+#          crop: {zoom: 1.00, fx: 0.50, fy: 0.50}}
+#       - {src: media/photos/b.jpg, seconds: 2.4, motion: push,
+#          crop: {zoom: 1.30, fx: 0.28, fy: 0.32}}
+#                           # `seconds` is an ESTIMATE (the author counts words before
+#                           # narrate.py has run); make_short.beat_spans rescales them to the
+#                           # scene's real encoded duration so they sum to it exactly.
 # By default the SOURCE's shape decides the fill: at or below media.BLUR_FILL_RATIO (0.8) it is
 # scaled and cropped to FILL the 9:16 frame — no letterbox bars — and above it the whole picture
 # is fitted inside the frame over a blurred, darkened copy of itself. `fill:` overrides that per
@@ -198,6 +208,25 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # `fx` aims it and `fy` multiplies zero — `focus: [0.50, 0.42]` on a landscape hero is still a
 # centre-height crop, and `fy` only bites on a source TALLER than 9:16. Both keys are validated
 # in the media preflight, so a bad value stops the run before anything renders.
+# `beats:` is the fix for the defect the v4 change set exists to remove — day 3 held ONE still
+# for 32 s. The same scene as beats is nineteen pictures, none on screen for more than three
+# seconds, against the same narration. Each beat becomes its own ffmpeg input and its own
+# motion chain (the crop, the 2x pre-scale and the blur fill all behave exactly as they do for
+# a whole scene), and the chains are joined by the `concat` FILTER inside one graph — so it is
+# still one encode, one part and one WAV. Three things are load-bearing and all three were
+# measured, not assumed: every chain ends at the render size, in `format=yuv420p` and at
+# `setsar=1`, because concat refuses inputs that disagree on size, pixel format or SAR (a JPEG
+# decodes yuvj444p and an .mp4 yuv420p: mixing them without this is `Error reinitializing
+# filters!`, exit 234, no output file); and each chain closes on `trim=duration=,setpts=` or
+# concat inherits zoompan's `d=` frame count and the beats overrun their WAV.
+# Each beat's `src` and `motion` are its OWN — the motion is checked against THAT file's kind
+# in the preflight and defaults per kind, so `punch` on an .mp4 beat is refused by name — and
+# `crop: {zoom, fx, fy}` re-frames the source before it is covered, which is how several beats
+# can be several shots of ONE photograph. Footage is never re-framed: a video beat's crop is
+# dropped (`hold` is the one motion both kinds take, so it is the one that can arrive carrying
+# a still's crop). The renderer refuses a one-entry list (one picture IS the scene) and any
+# beat longer than make_short.MAX_PICTURE_S (6.0 s), both in the preflight. A scene with no
+# `beats:` builds the graph it always built, input order included.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end

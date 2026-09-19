@@ -79,14 +79,15 @@ DEFAULT_JOIN = "fade"
 DEFAULT_XFADE_S = 0.12
 DEFAULT_XFADE_STYLE = "fade"
 
-#: FORWARD DECLARATION — nothing reads this yet, and NO render is capped by it today. Same
-#: footnote as `xfade` above: a name a later task will build on, not a check that runs.
+#: The renderer's backstop on how long ONE picture may stay on screen, read by scene_beats().
+#: Deliberately generous against the author-side cards.MAX_SCENE_S (3.0 s lore / 4.0 s data),
+#: so it catches a spec built by something other than parksheet/cards.py rather than second-
+#: guessing one that was.
 #:
-#: Task 10 (the `beats:` branch) is the intended consumer. What it is meant to become: a
-#: renderer-side backstop on how long one picture may stay on screen, deliberately generous
-#: against the author-side cards.MAX_SCENE_S (3.0 s lore / 4.0 s data), so that it catches a
-#: spec built by something other than parksheet/cards.py. Until that lands, a spec may hold a
-#: picture for as long as it likes and nothing here objects.
+#: It bounds a BEAT, not a scene: a scene without `beats:` is one picture for as long as its
+#: narration runs and nothing here objects, because capping that would refuse every spec that
+#: already renders. The defect this change set exists to remove — day 3's 32 s still — is
+#: removed by splitting the scene into beats, and this is what stops a "split" that is not one.
 MAX_PICTURE_S = 6.0
 
 
@@ -149,6 +150,79 @@ def scene_pad(short: dict) -> float:
         raise SystemExit(f"short.scene_pad must be in (0, 1.0]; got {pad!r}. Some pad has "
                          f"to survive or the last word of every scene is clipped.")
     return pad
+
+
+def scene_beats(scene: dict) -> list:
+    """One media scene's `beats:`, validated and normalised. `[]` when it has none.
+
+    A beat is a SUB-SHOT: it shares the scene's single narration WAV and its caption cues,
+    and only the picture cuts. Day 3 held one still for 32 s; the same scene as beats is
+    nineteen pictures, none of them on screen for more than three seconds, against the same
+    audio — which is the whole point of the key.
+
+    What is checked here is the SHAPE, and it raises SystemExit because a malformed spec is
+    the operator's problem, not an exception to catch. The media half — does each beat's file
+    exist, is its motion legal for that kind of source, is its crop a crop — is checked by
+    media.validate_spec(), which already asks those questions of a scene's own `src:` and can
+    answer them in the same preflight pass. Both run before a frame is rendered.
+
+    One beat is not a beat — it is the scene — and is refused rather than silently flattened,
+    because ParkSheet's `_scene` already declines to emit a one-entry list, so a spec that
+    carries one was built by something that did not know the contract.
+
+    `motion` is left as the spec wrote it (possibly ""): the default depends on whether the
+    beat's own `src` is a still or footage, which is resolved where the path is. Defaulting
+    blind would put a zoompan on footage and freeze it.
+    """
+    beats = (scene or {}).get("beats")
+    if not beats:
+        return []
+    if not isinstance(beats, list):
+        raise SystemExit(f"a scene's `beats:` must be a list, got {type(beats).__name__}")
+    if len(beats) < 2:
+        raise SystemExit("a scene's `beats:` has one entry; one picture IS the scene. Drop "
+                         "the key, or give it two.")
+    out = []
+    for index, beat in enumerate(beats):
+        if not isinstance(beat, dict):
+            raise SystemExit(f"beats[{index}] is {type(beat).__name__}, expected a mapping")
+        src = str(beat.get("src") or "").strip()
+        if not src:
+            raise SystemExit(f"beats[{index}] has no `src`; a beat is a picture")
+        try:
+            seconds = float(beat.get("seconds") or 0.0)
+        except (TypeError, ValueError):
+            raise SystemExit(f"beats[{index}] `seconds` must be a number, got "
+                             f"{beat.get('seconds')!r}") from None
+        if not 0.0 < seconds <= MAX_PICTURE_S:
+            raise SystemExit(
+                f"beats[{index}] is {seconds:.2f}s and the renderer's backstop is "
+                f"{MAX_PICTURE_S}s. One picture held longer than that is the defect this "
+                f"whole change set exists to remove.")
+        out.append({"src": src, "seconds": seconds,
+                    "motion": str(beat.get("motion") or "").strip(),
+                    "crop": dict(beat.get("crop") or {})})
+    return out
+
+
+def beat_spans(beats, dur: float) -> list:
+    """The beats' seconds rescaled to the scene's REAL duration, summing exactly to it.
+
+    ParkSheet writes the spec before narrate.py runs, so its `seconds` are an estimate from
+    the word count. The renderer knows what the scene actually encodes to, so it is what
+    makes the beats add up — otherwise a 5% estimate error compounds across nineteen beats
+    into a picture that outlives its WAV, or a last beat that never gets to the screen.
+
+    The last span absorbs the rounding rather than being rounded itself, so the sum is `dur`
+    to the millisecond and the concat cannot drift against `-t`.
+    """
+    nominal = [float(beat["seconds"]) for beat in beats]
+    if not nominal:
+        return []
+    total = sum(nominal) or 1.0
+    spans = [round(float(dur) * value / total, 3) for value in nominal]
+    spans[-1] = round(float(dur) - sum(spans[:-1]), 3)
+    return spans
 
 
 def xfade_offsets(durations, t: float) -> list:
@@ -234,9 +308,60 @@ def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
          "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
     return out
 
+
+#: What every beat chain agrees on before the `concat` filter will join them, on top of the
+#: RWxRH size the chains already end at.
+#:
+#: MEASURED, not defensive: the media-demo JPEG decodes yuvj444p and the demo clip yuv420p,
+#: and concatenating those two beats is `Error reinitializing filters!`, exit 234, no output
+#: file — concat demands identical size, PIXEL FORMAT and SAR, and a beats scene is the first
+#: thing in this renderer that puts two different sources into one graph. `format=yuv420p` is
+#: the format the finished part is written in anyway (see the `[v]` step below), so a beat is
+#: converted once here instead of once there. `setsar=1` pins the other half of it: a source
+#: with a non-square SAR would otherwise join one that has square pixels.
+BEAT_TAIL = "format=yuv420p,setsar=1,"
+
+
+def beat_steps(beats, dur: float, fill=None, focus=(0.5, 0.5)) -> list:
+    """The filter-graph chains that cut several pictures together into one `dur`-long `[m0]`.
+
+    One input and one chain per beat, each ending at RWxRH, then the `concat` FILTER — not
+    the demuxer, which would mean encoding every beat to its own file first. `concat` demands
+    every input agree on size, pixel format and SAR, which is why each chain finishes on the
+    render size the way a scene without beats finishes on it.
+
+    `trim=duration=` + `setpts=PTS-STARTPTS` closes each beat. Without it `concat` inherits
+    zoompan's `d=` frame count — zoompan declares the frames it MIGHT emit, not the ones it
+    did — and the beats overrun: the scene runs past its WAV and `-t` guillotines the last
+    ones. It rides on the end of the motion chain rather than in a step of its own so that
+    every `[b<i>]` is a single linear chain from input to render size.
+
+    Returns the chains; the caller owns the inputs, in the same order (see encode_media_scene).
+    """
+    steps = []
+    for index, (beat, span) in enumerate(zip(beats, beat_spans(beats, dur))):
+        size = probe_size(beat["src"])
+        chains = media.ffmpeg_video_steps(
+            beat["motion"], span, RW, RH, FPS,
+            src_w=size[0] if size else None, src_h=size[1] if size else None,
+            src_label=f"{index}:v", out_label=f"b{index}",
+            fill=fill, focus=focus, crop=beat.get("crop"))
+        trim = f"trim=duration={span:.3f},setpts=PTS-STARTPTS"
+        # `clip` ends on exactly this trim already — it is how motion_chain bounds footage
+        # that is looped at the input — so the normalisation is spliced in front of that one
+        # rather than trimming an already-trimmed stream a second time. Every beat therefore
+        # ends the same way, whatever its motion and whatever its source.
+        body = chains[-1].removesuffix(f"[b{index}]").removesuffix(trim).rstrip(",")
+        chains[-1] = f"{body},{BEAT_TAIL}{trim}[b{index}]"
+        steps += chains
+    steps.append("".join(f"[b{i}]" for i in range(len(beats)))
+                 + f"concat=n={len(beats)}:v=1:a=0[m0]")
+    return steps
+
+
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
-                       fill=None, focus=(0.5, 0.5)):
-    """One media file + its layer PNGs + one narration WAV -> an mp4. Returns `out`.
+                       fill=None, focus=(0.5, 0.5), beats=()):
+    """One media file — or several beat sources — + layer PNGs + one WAV -> an mp4.
 
     The composite is three things stacked: the footage or still, put through the motion's
     filter chain; then each layer PNG - a full-frame transparent screenshot - laid over it at
@@ -250,29 +375,48 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     aim the crop with `focus` (media.scene_fill). Either way the fill ends at RWxRH, so the
     layer geometry above is unchanged.
 
+    `beats` (media.resolve_src'd, scene_beats-validated) cuts the picture into sub-shots over
+    the same WAV: the beat sources become inputs 0..n-1, the WAV input n, the layers n+1 on,
+    and beat_steps() concatenates them into the `[m0]` a single source would have produced.
+    Empty — which is every existing spec — and the graph is the one it has always been, from
+    the input order out.
+
     The output flags are encode_scene's, byte for byte, because the parts are concatenated
     with `-c:v copy`: a media scene that encoded differently would break the concat.
     """
-    args = list(media.CLIP_INPUT_ARGS) if motion == "clip" else []
-    args += ["-i", str(src), "-i", str(wav)]
+    beats = list(beats or ())
+    args = []
+    if beats:
+        for beat in beats:
+            # Only `clip` loops, exactly as below: `hold` on footage is meant to play the
+            # shot through and freeze its last frame, and a looped input never reaches tpad.
+            if beat["motion"] == "clip":
+                args += list(media.CLIP_INPUT_ARGS)
+            args += ["-i", str(beat["src"])]
+        steps = beat_steps(beats, dur, fill=fill, focus=focus)
+    else:
+        args = list(media.CLIP_INPUT_ARGS) if motion == "clip" else []
+        args += ["-i", str(src)]
+        size = probe_size(src)
+        steps = media.ffmpeg_video_steps(motion, dur, RW, RH, FPS,
+                                         src_w=size[0] if size else None,
+                                         src_h=size[1] if size else None,
+                                         fill=fill, focus=focus)
+    audio = len(beats) if beats else 1
+    args += ["-i", str(wav)]
     for layer in layers:
         args += ["-i", str(layer)]
-    size = probe_size(src)
-    steps = media.ffmpeg_video_steps(motion, dur, RW, RH, FPS,
-                                     src_w=size[0] if size else None,
-                                     src_h=size[1] if size else None,
-                                     fill=fill, focus=focus)
     stage = "m0"
     for i, _layer in enumerate(layers):
         # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
-        steps.append(f"[{stage}][{i + 2}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
+        steps.append(f"[{stage}][{i + audio + 1}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
         stage = f"m{i + 1}"
     # out_range=tv because a JPEG still decodes full-range: without it that scene encodes
     # yuvj420p while every card and sheet scene encodes yuv420p, and `-c:v copy` concat
     # would put a brightness jump at the cut.
     steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv,"
                  f"{fade_steps(dur, join)}format=yuv420p[v]")
-    steps.append("[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+    steps.append(f"[{audio}:a]apad=pad_dur=2,afade=t=in:d=0.05,"
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
@@ -559,8 +703,13 @@ def main():
     slug = safe_slug(a.slug) if a.slug else None
     spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
     spec = yaml.safe_load(open(spec_path))
-    # Preflight: every media scene is checked here, before a single frame is rendered.
+    # Preflight: every media scene is checked here, before a single frame is rendered. The
+    # shape of a scene's `beats:` belongs to this module (it is the render that consumes it),
+    # so it is checked in the same pass rather than when the loop below reaches that scene.
     media.validate_spec(spec, spec_path)
+    for _scene in spec.get("scenes") or []:
+        if media.is_media(_scene or {}):
+            scene_beats(_scene)
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     tr = transitions(spec)
@@ -636,9 +785,20 @@ def main():
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
             fill, focus = media.scene_fill(sc)
+            # A beat's `src` is spec-relative like the scene's, and its motion and crop both
+            # depend on what that file turns out to be. Footage is never re-framed: `hold` is
+            # the one motion legal on both kinds, so it is the one that can arrive carrying a
+            # crop meant for a still, and media.ffmpeg_video_steps cannot see the kind.
+            beats = scene_beats(sc)
+            for beat in beats:
+                beat["src"] = media.resolve_src(spec_path, beat["src"])
+                bkind = media.media_kind(beat["src"])
+                beat["motion"] = beat["motion"] or media.default_motion(bkind)
+                if bkind == "video":
+                    beat["crop"] = {}
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4", join=tr.join,
-                                     fill=fill, focus=focus)
+                                     fill=fill, focus=focus, beats=beats)
             add_part(out, idx)
             print(f"scene {idx:02d}: media {kind}/{motion} {dur:.1f}s -> {out.name}", flush=True)
             continue

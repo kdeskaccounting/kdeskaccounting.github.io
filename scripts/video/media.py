@@ -311,8 +311,39 @@ def validate_spec(spec: dict, spec_path) -> None:
             check_credit(kind, scene.get("credit"))
             check_motion(kind, scene.get("motion") or default_motion(kind))
             scene_fill(scene)
+            check_beats(scene, spec_path)
         except (ValueError, FileNotFoundError) as exc:
             raise type(exc)(f"{where}: {exc}") from exc
+
+
+def check_beats(scene: dict, spec_path) -> None:
+    """The media half of a scene's `beats:`, asked of every beat in the preflight.
+
+    A beat carries its own `src`, so every question this module already asks of a scene's
+    source has to be asked again per beat: `punch` on an .mp4 freezes THAT beat into a still
+    the way `motion: punch` freezes a whole scene, a missing file stops the render four
+    scenes in, and a crop outside the picture is a crop ffmpeg refuses mid-graph.
+
+    The SHAPE of the list — two or more entries, each with a src and a sane `seconds` — is
+    make_short.scene_beats()'s, which runs in the same preflight and raises SystemExit; an
+    entry that has not got that far is skipped here rather than reported twice. A beat's
+    `credit:` is the scene's: the plate is one layer over the whole scene, so the beats of a
+    credited scene are credited.
+    """
+    for index, beat in enumerate(scene.get("beats") or []):
+        if not isinstance(beat, dict):
+            continue                              # make_short.scene_beats names this one
+        src = str(beat.get("src") or "").strip()
+        if not src:
+            continue                              # and this one
+        try:
+            kind = media_kind(resolve_src(spec_path, src))
+            check_motion(kind, beat.get("motion") or default_motion(kind))
+            # crop_chain's w/h are the frame the crop will be covered TO and are not part of
+            # the clause it returns (it is all iw/ih-relative), so any frame validates it.
+            crop_chain(1, 1, beat.get("crop"))
+        except (ValueError, FileNotFoundError) as exc:
+            raise type(exc)(f"beats[{index}]: {exc}") from exc
 
 
 def check_credit(kind: str, credit: str | None) -> None:
