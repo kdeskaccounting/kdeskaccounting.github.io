@@ -128,8 +128,11 @@ def transitions(spec: dict) -> Transitions:
 def fade_steps(dur: float, join: str) -> str:
     """The `fade=` clauses for one part, ending in a comma so it prefixes `format=yuv420p`.
 
-    Empty under `join: cut`. This is the ONLY place in the renderer that builds the string,
-    so there is one thing to read when asking whether a part fades.
+    Empty under `join: cut`. Every SCENE part's pair of fades is built here and nowhere else,
+    so there is one thing to read when asking whether a scene fades. The closing CTA plate is
+    the one exception, and it is one because it is not a pair: the plate ramps up from black
+    and has never ramped down (nothing follows it), so main() builds its lone in-fade inline
+    and drops it under `join: cut` exactly as this does.
     """
     if join == "cut":
         return ""
@@ -426,6 +429,43 @@ def beat_steps(beats, dur: float, fill=None, focus=(0.5, 0.5)) -> list:
     return steps
 
 
+def focus_notice(idx: int, fill, focus, sources) -> str | None:
+    """The line that says a scene's `focus:` is aiming nothing, or None when it aims.
+
+    `focus` aims a CROP — which column (or row) of an over-wide source survives the cover.
+    The blur fill crops nothing: the whole picture is fitted INSIDE the frame over a blurred
+    copy of itself, so there is no overflow to choose from and media.blur_fill_steps takes no
+    focus at all. That is correct, and it is also invisible — the key is accepted by
+    media.scene_fill, validated to two fractions in [0, 1], and then silently dropped, which
+    is the one outcome an author cannot see in the render. So it is said out loud, once, by
+    scene, in the style of the `captions: position ... overridden` notice.
+
+    `fill` is the scene's override (None = the source's ratio decides, exactly as
+    media.ffmpeg_video_steps decides it) and `sources` is every file this scene actually
+    renders: its own `src`, or its beats'. One blur-filled source is enough — the focus is
+    the scene's, and it aims none of that picture.
+
+    Nothing is probed unless the scene asked for an off-centre focus, so no existing spec —
+    all of which are the default centre — pays an ffprobe for this.
+    """
+    if tuple(focus) == (0.5, 0.5):
+        return None
+    if fill is None:
+        sizes = [probe_size(src) or (None, None) for src in sources]
+        if not any(media.wants_blur_fill(w, h) for w, h in sizes):
+            return None
+        why = (f"its source is wider than media.BLUR_FILL_RATIO ({media.BLUR_FILL_RATIO}), "
+               f"so it blur-fills")
+    elif fill != "blur":
+        return None
+    else:
+        why = "it says `fill: blur`"
+    return (f"scene {idx:02d}: focus [{focus[0]:.2f}, {focus[1]:.2f}] is aiming nothing — "
+            f"{why}, which letterboxes the whole picture over a blurred copy of itself and "
+            f"crops nothing for a focus to choose. Say `fill: crop` on this scene to crop to "
+            f"that point instead.")
+
+
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
                        fill=None, focus=(0.5, 0.5), beats=()):
     """One media file — or several beat sources — + layer PNGs + one WAV -> an mp4.
@@ -641,13 +681,21 @@ def caption_plan_json(cues, overlays, box, cfg):
     render, and it would need a YAML parser the bare `uv run --with pytest` environment does
     not have. It also answers "which word was on screen at 12.3 s?" without re-running
     anything. `overlays` came straight from word_windows(cues), so the two zip exactly.
+
+    The settings are recorded beside the band because the band alone cannot say what drew
+    it: `size` and `position` chose the geometry, `pop` and `hook_seconds` chose the type
+    and the phrasing, and a sidecar that named the PNGs without naming those could not tell
+    a `large` render from a `default` one. `band` is where the captions actually LANDED
+    (a full-frame card overrides `position` back to the top); `position` is what was asked.
     """
     rows = []
     for (png, start, end), win in zip(overlays, captions.word_windows(cues)):
         cue = cues[win.cue]
         rows.append({"start": round(start, 3), "end": round(end, 3), "text": cue.text,
                      "lit": cue.words[win.word].text, "png": pathlib.Path(png).name})
-    return {"band": list(box), "accent": cfg.accent, "windows": rows}
+    return {"band": list(box), "accent": cfg.accent, "position": cfg.position,
+            "size": cfg.size, "pop": cfg.pop, "hook_seconds": cfg.hook_seconds,
+            "windows": rows}
 
 
 def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
@@ -1227,8 +1275,14 @@ def main():
             layers = media_layers(sc, btokens, work, k)
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
-            fill, focus = media.scene_fill(sc)
+            # `scene_focus`, not `focus`: the name at this scope is the sheet pipeline's
+            # frames/focus.json dict, which a later legacy scene still reads.
+            fill, scene_focus = media.scene_fill(sc)
             beats = prepare_beats(scene_beats(sc), spec_path)
+            note = focus_notice(idx, fill, scene_focus,
+                                [beat["src"] for beat in beats] or [src])
+            if note:
+                print(note, flush=True)
             # The SAME spans beat_steps() trims each beat to — rescaled against the `dur` this
             # part was encoded with, not against what it probed to. Those trims are the picture
             # changes that are actually on screen, so re-deriving them from the probed duration
@@ -1237,7 +1291,7 @@ def main():
             spans = beat_spans(beats, dur)
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4", join=tr.join,
-                                     fill=fill, focus=focus, beats=beats)
+                                     fill=fill, focus=scene_focus, beats=beats)
             add_part(out, idx, spans)
             shot = f"{len(beats)} beats" if beats else f"{kind}/{motion}"
             print(f"scene {idx:02d}: media {shot} {dur:.1f}s -> {out.name}", flush=True)
@@ -1293,8 +1347,15 @@ def main():
     if end_card_wanted(sh, a.end_card):
         hp = work / "end.html"; hp.write_text(end_html(sh.get("cta"), brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
         out = work / "end.mp4"; n = int(1.5 * FPS)
+        # The plate's own fade, and the ONE clause fade_steps does not build: it ramps up
+        # from black and never ramps down, because it is the last frame of the Short rather
+        # than a part something follows. `join: cut` means no part dips to black, and this
+        # plate is a part — left in, it put the dip back at the one join most likely to be
+        # watched to the end of. fade_steps(1.5, join) is NOT the way to say that: it would
+        # add the fade-out this plate has never had and move every default render.
+        fade = "" if tr.join == "cut" else "fade=t=in:st=0:d=0.3,"
         run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-filter_complex",
-             f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
+             f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},{fade}format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", "1.5",
              "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS), "-c:a", "aac", "-b:a", "128k", str(out)])
         add_part(out)
     lst = work / "concat.txt"; lst.write_text("".join(f"file '{p.resolve()}'\n" for p in parts))
@@ -1320,7 +1381,24 @@ def main():
         cuts = cut_plan_json(cut_rows, tr.join, runtime, cut_extras)["cuts"]
         if mix.sfx is not None:
             boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
-    if overlays:
+    if cap.enabled and not overlays:
+        # A spec that asked for captions and got none is almost always a narration problem,
+        # not a caption one — and an uncaptioned Short that nobody was warned about is how a
+        # broken narrate.py run reaches a publish queue. Said HERE rather than in the stream
+        # copy below, because a plate keeps the filter pass alive with no window in it, and
+        # that render needs the warning just as much.
+        print("captions: enabled, but no scene produced a window — every selected scene "
+              "was either skipped (its own layout owns the top of the frame) or has no "
+              "word timings. Re-run narrate.py to write the scene_NN.words.json files; "
+              + ("the hook plate is still drawn, so the pass runs for it alone."
+                 if plate is not None else
+                 "there is no hook plate either, so nothing is burned in at all."),
+              flush=True)
+    # `or plate is not None`: the plate is rendered and queued inside this branch, and it is
+    # NOT caption collateral — it is the frame the feed judges. With `if overlays:` alone, a
+    # Short whose narration produced no word timings lost the plate as well, silently, and
+    # became the stream copy behind a warning that talked only about captions.
+    if overlays or plate is not None:
         (work / "captions.json").write_text(
             json.dumps(caption_plan_json(cap_cues, overlays, cap_box, cap), indent=1),
             encoding="utf-8")
@@ -1358,14 +1436,6 @@ def main():
         print(f"captions: {len(overlays)} word windows burned in "
               f"(accent {cap.accent}, band y={cap_box[1]}-{cap_box[3]})", flush=True)
     else:
-        if cap.enabled:
-            # A spec that asked for captions and got none is almost always a narration
-            # problem, not a caption one — and an uncaptioned Short that nobody was warned
-            # about is how a broken narrate.py run reaches a publish queue.
-            print("captions: enabled, but no scene produced a window — every selected scene "
-                  "was either skipped (its own layout owns the top of the frame) or has no "
-                  "word timings. Re-run narrate.py to write the scene_NN.words.json files; "
-                  "rendering without captions.", flush=True)
         if mixed:
             # -c:v copy: the video is untouched, so the whole mix costs 0.81 s for 12.8 s of
             # output. This is exactly the command the filtergraph was verified with.

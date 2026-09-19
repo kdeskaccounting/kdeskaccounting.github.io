@@ -436,6 +436,26 @@ def test_every_plan_row_names_the_png_that_ffmpeg_was_given(stub):
     assert [(row["start"], row["end"]) for row in plan["windows"]] == _windows(_final(stub))
 
 
+def test_the_plan_records_the_caption_settings_that_were_burned_in(stub):
+    """`band` is where the captions landed; these are what they were drawn with. Without
+    them the sidecar cannot say which settings produced the PNGs it names."""
+    stub.spec["captions"] = {"enabled": True, "accent": "#ffe234", "position": "center",
+                             "size": "large", "pop": 1.14, "hook_seconds": 3.0}
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text(encoding="utf-8"))
+    assert plan["position"] == "center"
+    assert plan["size"] == "large"
+    assert plan["pop"] == 1.14
+    assert plan["hook_seconds"] == 3.0
+
+
+def test_the_plan_records_the_defaults_when_the_spec_asked_for_none(stub):
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text(encoding="utf-8"))
+    assert (plan["position"], plan["size"], plan["pop"], plan["hook_seconds"]) == \
+        ("top", "default", 1.0, 0.0)
+
+
 def test_no_plan_is_written_when_nothing_was_burned_in(stub):
     stub.spec = _spec()
     stub.go()
@@ -675,6 +695,48 @@ def test_a_plate_over_a_media_scene_zero_is_drawn(stub, capsys):
     cmd = _final(stub)
     inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
     assert pathlib.Path(inputs[1]).name == "plate.png"
+
+
+def test_the_plate_is_still_drawn_when_no_scene_produced_a_caption_window(stub, capsys):
+    """The plate rode inside `if overlays:`, so a Short whose narration carried no word
+    timings lost the hook plate too — silently, behind a warning that talked only about
+    captions. The plate is the frame the feed judges; it is not caption collateral."""
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.words = {0: None, 1: None, 2: None}
+    stub.go()
+    cmd = _final(stub)
+    inputs = [cmd[i + 1] for i, tok in enumerate(cmd) if tok == "-i"]
+    assert pathlib.Path(inputs[1]).name == "plate.png"
+    steps = _chain(cmd)
+    assert steps[0] == ("[0:v][1:v]overlay=x=0:y=0:format=auto:"
+                        "enable='between(t,0,1.40)'[p0]")
+    assert "[p0]format=yuv420p[vout]" in steps, "and nothing else is overlaid"
+    assert cmd[cmd.index("-c:v") + 1] == "libx264", "a stream copy has nowhere to put it"
+    out = capsys.readouterr().out
+    assert "no scene produced a window" in out
+    assert "plate is still drawn" in out
+
+
+def test_the_windowless_warning_says_the_plate_was_not_drawn_either(stub, capsys):
+    """Same warning, opposite fact: with no plate the render really is text-free, and the
+    pass stays the stream copy every uncaptioned Short has always been."""
+    stub.words = {0: None, 1: None, 2: None}
+    stub.go()
+    out = capsys.readouterr().out
+    assert "no scene produced a window" in out
+    assert "no hook plate either" in out
+    cmd = _final(stub)
+    assert cmd[cmd.index("-c:v") + 1] == "copy"
+    assert "-filter_complex" not in cmd
+
+
+def test_a_plate_only_render_still_writes_the_plan_it_burned_in(stub):
+    stub.spec["short"]["plate"] = {"text": "HIDDEN MICKEYS", "seconds": 1.4}
+    stub.words = {0: None, 1: None, 2: None}
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text(encoding="utf-8"))
+    assert plan["windows"] == []
+    assert plan["band"] == list(M.caption_plan(stub.spec, stub.spec["short"])[0])
 
 
 def test_a_card_scene_that_is_not_scene_zero_keeps_the_plate(stub):

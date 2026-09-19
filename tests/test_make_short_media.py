@@ -444,7 +444,33 @@ def test_join_cut_leaves_no_fade_filter_in_any_scene_chain(stub_main):
         assert "afade=t=in:d=0.05" in chain    # the audio ramp is not a video fade
 
 
-def test_fade_steps_is_the_only_place_the_fade_string_is_built():
+def _end_card_cmd(stub):
+    """The closing CTA plate's encode: the one part built from silence, not from a WAV."""
+    return next(c for c in stub.cmds if any("anullsrc" in tok for tok in c))
+
+
+def test_the_default_join_keeps_the_closing_plates_lone_in_fade(stub_main):
+    """Golden guard: the plate ramps UP from black and has never ramped down."""
+    M.main()
+    cmd = _end_card_cmd(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert f"fps={M.FPS},fade=t=in:st=0:d=0.3,format=yuv420p[v]" in chain
+    assert "fade=t=out" not in chain
+
+
+def test_join_cut_leaves_the_closing_plate_unfaded_too(stub_main):
+    """`join: cut` means NOTHING dips to black. The CTA plate is a part like any other, and
+    a plate that still ramped up from black put a dip back in the one join a viewer is most
+    likely to watch to the end of."""
+    stub_main.spec["transitions"] = {"join": "cut"}
+    M.main()
+    cmd = _end_card_cmd(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert "fade=t=" not in chain
+    assert f"fps={M.FPS},format=yuv420p[v]" in chain
+
+
+def test_fade_steps_builds_every_scene_parts_pair_of_fades():
     assert M.fade_steps(4.0, "cut") == ""
     assert M.fade_steps(4.0, "fade") == "fade=t=in:st=0:d=0.3,fade=t=out:st=3.700:d=0.3,"
     assert M.fade_steps(0.2, "fade") == "fade=t=in:st=0:d=0.3,fade=t=out:st=0.000:d=0.3,"
@@ -515,6 +541,58 @@ def test_the_scenes_fill_and_focus_reach_its_encode(stub_main, monkeypatch):
         _media_cmds(stub_main)[0].index("-filter_complex") + 1]
     assert "crop=1296:2304:x=(iw-1296)*0.500:y=(ih-2304)*0.420" in chain
     assert "boxblur" not in chain
+
+
+# --- a focus the fill cannot aim -------------------------------------------------------------
+#
+# `focus:` aims a CROP. The blur fill crops nothing — media.blur_fill_steps takes no focus at
+# all — so a focus on a blur-filled scene is accepted, validated, and then inert, which is the
+# one outcome the author cannot see in the render.
+
+def test_a_focus_under_a_blur_fill_is_announced_rather_than_silently_ignored(stub_main, capsys):
+    stub_main.spec["scenes"][0]["fill"] = "blur"
+    stub_main.spec["scenes"][0]["focus"] = [0.80, 0.30]
+    M.main()
+    out = capsys.readouterr().out
+    assert "scene 00" in out and "focus" in out
+    assert "fill: crop" in out, "the notice has to name the key that would honour it"
+
+
+def test_a_focus_the_crop_fill_really_aims_is_not_second_guessed(stub_main, capsys):
+    stub_main.spec["scenes"][0]["fill"] = "crop"
+    stub_main.spec["scenes"][0]["focus"] = [0.80, 0.30]
+    M.main()
+    assert "is aiming nothing" not in capsys.readouterr().out
+
+
+def test_a_blur_fill_with_no_focus_of_its_own_says_nothing(stub_main, capsys):
+    stub_main.spec["scenes"][0]["fill"] = "blur"
+    M.main()
+    assert "is aiming nothing" not in capsys.readouterr().out
+
+
+def test_a_source_that_letterboxes_on_its_own_ratio_gets_the_same_notice(monkeypatch):
+    """No `fill:` at all: wants_blur_fill decides, so the notice has to decide with it."""
+    monkeypatch.setattr(M, "probe_size", lambda p: (1920, 1080))
+    assert M.focus_notice(3, None, (0.80, 0.30), ["a.jpg"])
+    monkeypatch.setattr(M, "probe_size", lambda p: (1080, 1920))
+    assert M.focus_notice(3, None, (0.80, 0.30), ["a.jpg"]) is None
+
+
+def test_one_blur_filled_beat_is_enough_to_earn_the_notice(monkeypatch):
+    """A beat list is several sources; the focus is the scene's, and it aims none of them."""
+    sizes = {"wide.jpg": (1920, 1080), "tall.jpg": (1080, 1920)}
+    monkeypatch.setattr(M, "probe_size", lambda p: sizes[pathlib.Path(p).name])
+    assert M.focus_notice(3, None, (0.80, 0.30), ["tall.jpg", "wide.jpg"])
+    assert M.focus_notice(3, None, (0.80, 0.30), ["tall.jpg", "tall.jpg"]) is None
+
+
+def test_the_centre_focus_every_existing_spec_has_probes_nothing(monkeypatch):
+    """The default focus asked for nothing, so it may not cost an ffprobe to say so."""
+    monkeypatch.setattr(M, "probe_size",
+                        lambda p: pytest.fail("probed for a default, centred focus"))
+    assert M.focus_notice(3, None, (0.5, 0.5), ["a.jpg"]) is None
+    assert M.focus_notice(3, "blur", (0.5, 0.5), ["a.jpg"]) is None
 
 
 # --- beats -------------------------------------------------------------------------------
