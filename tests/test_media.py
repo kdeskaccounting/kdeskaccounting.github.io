@@ -803,7 +803,7 @@ def test_ffmpeg_video_steps_refuses_an_unknown_fill_the_way_it_refuses_a_motion(
 
 def _zoom_at(expr: str, on: int, frames: int) -> float:
     """Evaluate a zoompan `z` expression in Python. ffmpeg's `if`/`lt`/`min`/`pow` map 1:1."""
-    scope = {"on": on, "n": frames, "min": min, "pow": pow,
+    scope = {"on": on, "n": frames, "min": min, "max": max, "pow": pow,
              "lt": lambda a, b: 1 if a < b else 0}
     body = expr.replace("if(", "_if(")
     scope["_if"] = lambda cond, a, b=0.0: a if cond else b
@@ -825,18 +825,26 @@ def test_every_high_motion_pre_scales_to_twice_the_render_size(motion):
     assert "scale=2592:4608" in steps[0]
 
 
-def test_the_punch_reaches_its_full_zoom_within_the_ramp_and_never_moves_again():
+def test_the_punch_hits_its_full_zoom_in_the_ramp_and_then_keeps_creeping():
+    """A punch that HELD was measured at 0.00 per-frame motion for most of a 3 s beat and
+    was the whole of a 17.4% still_frame_fraction. This replaces the assertion that it
+    "holds dead still" after the ramp: the hit still lands in PUNCH_FRAMES, and a slow push
+    runs under it from there so no frame is ever a repeat of the one before it.
+    """
     expr = media.zoom_expr("punch", 90).strip("'")
     start = _zoom_at(expr, 0, 90)
     ramped = _zoom_at(expr, media.PUNCH_FRAMES, 90)
-    later = _zoom_at(expr, 89, 90)
+    last = _zoom_at(expr, 89, 90)
     assert start == pytest.approx(1.0, abs=1e-6)
-    assert ramped == pytest.approx(1.0 + media.PUNCH_ZOOM, abs=1e-3)
-    assert later == pytest.approx(ramped, abs=1e-6), "a punch shoves, then holds dead still"
-    # and it decelerates: the first frame moves further than the last of the ramp
-    first = _zoom_at(expr, 1, 90) - start
-    last = ramped - _zoom_at(expr, media.PUNCH_FRAMES - 1, 90)
-    assert first > last
+    assert ramped == pytest.approx(1.0 + media.PUNCH_ZOOM, abs=1e-3), "the hit still lands"
+    assert last == pytest.approx(1.0 + media.PUNCH_ZOOM + media.PUNCH_DRIFT, abs=1e-3), \
+        "and the drift arrives on the LAST RENDERED frame, on = n-1"
+    # the ramp still decelerates: the first frame moves further than the last of the ramp
+    assert (_zoom_at(expr, 1, 90) - start) > (ramped - _zoom_at(expr, 8, 90))
+    # and the drift is far slower than the ramp — a creep, not a second move
+    assert (last - ramped) / (90 - media.PUNCH_FRAMES) < (ramped - start) / media.PUNCH_FRAMES
+    zs = [_zoom_at(expr, on, 90) for on in range(90)]
+    assert all(b > a for a, b in zip(zs, zs[1:])), "a punch never decreases, and never holds"
 
 
 def test_a_push_climbs_all_the_way_through_the_beat():
@@ -855,11 +863,37 @@ def test_a_pan_starts_at_one_edge_and_ends_at_the_other():
     assert "x='(iw-iw/zoom)*(1-on/89)'" in left
 
 
-def test_the_burst_hits_and_settles():
+def test_the_burst_hits_settles_and_then_creeps_back_out():
+    """Replaces the assertion that the burst sits at BURST_SETTLE to the end of the beat:
+    holding is what the punch was measured doing wrong, and the burst held the same way.
+    The settle is the only place it goes DOWN, and after it nothing holds."""
     expr = media.zoom_expr("burst", 90).strip("'")
     assert _zoom_at(expr, 4, 90) == pytest.approx(media.BURST_PEAK, abs=1e-3)
     assert _zoom_at(expr, 12, 90) == pytest.approx(media.BURST_SETTLE, abs=1e-3)
-    assert _zoom_at(expr, 89, 90) == pytest.approx(media.BURST_SETTLE, abs=1e-3)
+    assert _zoom_at(expr, 89, 90) == pytest.approx(media.BURST_SETTLE + media.PUNCH_DRIFT,
+                                                   abs=1e-3)
+    after = [_zoom_at(expr, on, 90) for on in range(media.BURST_SETTLE_FRAMES, 90)]
+    assert all(b > a for a, b in zip(after, after[1:])), "and it climbs the whole way back"
+
+
+@pytest.mark.parametrize("motion", ["punch", "push", "burst"])
+def test_no_zooming_motion_ever_renders_the_same_frame_twice(motion):
+    """The guard behind the ruling: still_frame_fraction is measured on the OUTPUT, and two
+    frames at the same `z` with the same `x` are the same frame. The pans are not here
+    because their `z` is constant by design — their motion is in `x`, which travels every
+    frame (see test_a_pan_starts_at_one_edge_and_ends_at_the_other)."""
+    expr = media.zoom_expr(motion, 90).strip("'")
+    zs = [_zoom_at(expr, on, 90) for on in range(90)]
+    assert all(b != a for a, b in zip(zs, zs[1:]))
+
+
+@pytest.mark.parametrize("motion", media.HIGH_MOTIONS)
+def test_a_beat_shorter_than_its_own_ramp_is_still_a_valid_expression(motion):
+    """A one-frame beat has no room to drift and must not divide by zero."""
+    for frames in (1, 2, 9, 13):
+        expr = media.zoom_expr(motion, frames).strip("'")
+        assert "/0" not in expr.replace("/0.", "@")
+        assert _zoom_at(expr, frames - 1, frames) >= 1.0
 
 
 def test_kenburns_is_untouched_so_every_existing_render_is_untouched():

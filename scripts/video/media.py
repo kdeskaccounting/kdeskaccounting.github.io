@@ -90,15 +90,27 @@ KENBURNS_ZOOM = 1.08
 PRESCALE = 2
 ZOOMPAN_W, ZOOMPAN_H = 2160, 3840
 
-#: Punch-in: 1.00 -> 1.15 with a cubic ease-out over 9 frames, then a dead hold. Measured
-#: displacement: 38.1 px in the first 9 frames, 0.02 px over the remaining 80.
+#: Punch-in: 1.00 -> 1.15 with a cubic ease-out over 9 frames, then a slow push under it.
+#: Measured displacement in the first 9 frames: 38.1 px.
 PUNCH_ZOOM = 0.15
 PUNCH_FRAMES = 9
+
+#: The slow push that runs UNDER a punch once the hit lands, and under a burst once it has
+#: settled: +0.05 spread linearly over whatever is left of the beat.
+#:
+#: The punch used to hold dead still after its ramp, which is exactly what it looks like —
+#: a still. MEASURED on the first full engagement render: the closing punch beat (3.0 s)
+#: averaged 0.67 per-frame motion with a minimum of 0.00, and those held frames were the
+#: whole of a 17.4% still_frame_fraction against a 10% target. A hit that keeps creeping
+#: reads as a camera; a hit that stops reads as a JPEG. 0.05 over ~2.7 s is far too slow to
+#: see as a second move and enough that no two frames are ever identical.
+PUNCH_DRIFT = 0.05
 #: Slow push: 1.0 -> 1.10, linear over the whole beat.
 PUSH_ZOOM = 0.10
 #: Pan: a fixed crop, travelling edge to edge.
 PAN_ZOOM = 1.12
-#: Zoom burst for a beat that coincides with a whoosh: a 4-frame hit, settled by frame 12.
+#: Zoom burst for a beat that coincides with a whoosh: a 4-frame hit, settled by frame 12,
+#: then the same PUNCH_DRIFT creep back out to BURST_PEAK so it never holds either.
 BURST_PEAK = 1.08
 BURST_SETTLE = 1.03
 BURST_HIT_FRAMES = 4
@@ -552,14 +564,32 @@ def _travel_span(frames: int) -> int:
     return max(1, frames - 1)
 
 
+def _drift_span(frames: int, after: int) -> int:
+    """Rendered frames left once the hit is over — what PUNCH_DRIFT is spread across.
+
+    `max(1, ...)` for the beat that is over before its own ramp is: there the drift term's
+    `max(0, on - after)` is zero on every rendered frame anyway, so the divisor only has to
+    not be zero.
+    """
+    return max(1, _travel_span(frames) - after)
+
+
 def zoom_expr(motion: str, frames: int) -> str:
     """The `z=` expression for one high motion, as a function of `on`.
 
     Always a function of `on`, never `min(zoom+dz,...)`: the accumulator compounds rounding
     and the end zoom drifts away from the nominal value.
+
+    NOTHING here ever stops moving. A `punch` that reached 1.15 and held was measured at
+    0.00 per-frame motion for most of a three-second beat — a shot that holds is a still,
+    whatever it did in its first nine frames — so the hit is followed by PUNCH_DRIFT spread
+    over the rest of the beat, and the burst's settle by the same. The pans hold `z` on
+    purpose: their motion is in `x`, which travels every frame.
     """
     if motion == "punch":
-        return f"'1+{PUNCH_ZOOM}*(1-pow(1-min(1,on/{PUNCH_FRAMES}),3))'"
+        return (f"'1+{PUNCH_ZOOM}*(1-pow(1-min(1,on/{PUNCH_FRAMES}),3))"
+                f"+{PUNCH_DRIFT}*max(0,on-{PUNCH_FRAMES})/"
+                f"{_drift_span(frames, PUNCH_FRAMES)}'")
     if motion == "push":
         return f"'1+{PUSH_ZOOM}*on/{_travel_span(frames)}'"
     if motion in ("pan_left", "pan_right"):
@@ -568,7 +598,9 @@ def zoom_expr(motion: str, frames: int) -> str:
         return (f"'if(lt(on,{BURST_HIT_FRAMES}), 1+{BURST_PEAK - 1.0:.2f}*on/"
                 f"{BURST_HIT_FRAMES}, if(lt(on,{BURST_SETTLE_FRAMES}), {BURST_PEAK}-"
                 f"{BURST_PEAK - BURST_SETTLE:.2f}*(on-{BURST_HIT_FRAMES})/"
-                f"{BURST_SETTLE_FRAMES - BURST_HIT_FRAMES}, {BURST_SETTLE}))'")
+                f"{BURST_SETTLE_FRAMES - BURST_HIT_FRAMES}, {BURST_SETTLE}+"
+                f"{PUNCH_DRIFT}*(on-{BURST_SETTLE_FRAMES})/"
+                f"{_drift_span(frames, BURST_SETTLE_FRAMES)}))'")
     raise ValueError(f"{motion!r} is not a high motion; known: {', '.join(HIGH_MOTIONS)}")
 
 
