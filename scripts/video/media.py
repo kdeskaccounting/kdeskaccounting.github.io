@@ -463,6 +463,16 @@ def cover_chain(w: int, h: int, fx: float = 0.5, fy: float = 0.5) -> str:
     return f"{cover},crop={w}:{h}:x=(iw-{w})*{float(fx):.3f}:y=(ih-{h})*{float(fy):.3f}"
 
 
+def _travel_span(frames: int) -> int:
+    """What anything that must ARRIVE by the end of the beat divides by.
+
+    zoompan's `on` runs 0..frames-1, so a move that divides by `frames` stops one frame
+    short of where it was aimed. A one-frame beat has nowhere to travel and must not divide
+    by zero.
+    """
+    return max(1, frames - 1)
+
+
 def zoom_expr(motion: str, frames: int) -> str:
     """The `z=` expression for one high motion, as a function of `on`.
 
@@ -472,7 +482,7 @@ def zoom_expr(motion: str, frames: int) -> str:
     if motion == "punch":
         return f"'1+{PUNCH_ZOOM}*(1-pow(1-min(1,on/{PUNCH_FRAMES}),3))'"
     if motion == "push":
-        return f"'1+{PUSH_ZOOM}*on/{frames}'"
+        return f"'1+{PUSH_ZOOM}*on/{_travel_span(frames)}'"
     if motion in ("pan_left", "pan_right"):
         return f"'{PAN_ZOOM}'"
     if motion == "burst":
@@ -484,22 +494,43 @@ def zoom_expr(motion: str, frames: int) -> str:
 
 
 def crop_chain(w: int, h: int, crop: dict | None) -> str:
-    """Re-frame a covered `w`x`h` picture, then scale it back up to `w`x`h`.
+    """Re-frame the SOURCE before it is covered to `w`x`h`. The clause, or "".
 
     This is how four beats can be four different shots of ONE photograph: `{zoom, fx, fy}`
-    keeps 1/zoom of the frame around (fx, fy) and blows it back to full size, so the same
-    still is a wide, then a detail, then another detail. It runs on the 2x pre-scale (see
-    ffmpeg_video_steps), so a 1.45x crop of a 2592x4608 pre-scale is 1788x3178 — still wider
-    than the 1296 px the Short is finally rendered at, which is why a re-framed shot does not
-    go soft. `zoom` at or below 1.0, or no crop at all, is a no-op: the whole picture.
+    keeps 1/zoom of the picture around (fx, fy), and the cover that follows blows that back
+    up to the frame — so the same still is a wide, then a detail, then another detail.
+
+    It runs BEFORE the cover and in `iw`/`ih` terms, which is why nothing here is in pixels:
+    cropping the COVERED frame would mean scale-down, crop, scale-up — three resamples, and
+    the detail thrown away by the first one is gone for good. Cropping the source keeps its
+    own pixels: `zoom` 1.45 of a 3376 px-wide still is 2328 real px. That is sharp while
+    `src_w / zoom` stays above the rendered width (1296 here, before the motion's own zoom),
+    i.e. up to about 2.6x on a 3376 px source and only about 1.5x on a 1920 px one — past
+    that the re-frame is a real upscale and will go soft. It is the SPEC's job to point a
+    deep crop at a big enough still.
+
+    `zoom` 1.0, or no crop at all, is a no-op and emits nothing, so the chain is byte for
+    byte the one a scene without beats gets. `w`/`h` are the frame this will be covered to;
+    they are the caller's contract (see ffmpeg_video_steps), not part of the clause.
     """
-    if not crop or float(crop.get("zoom", 1.0)) <= 1.0:
+    if not crop:
         return ""
-    zoom = float(crop["zoom"])
-    cw, ch = round(w / zoom), round(h / zoom)
-    fx, fy = float(crop.get("fx", 0.5)), float(crop.get("fy", 0.5))
-    return (f"crop={cw}:{ch}:x=(iw-{cw})*{fx:.3f}:y=(ih-{ch})*{fy:.3f},"
-            f"scale={w}:{h}:flags=lanczos,")
+    try:
+        zoom = float(crop.get("zoom", 1.0))
+        fx, fy = float(crop.get("fx", 0.5)), float(crop.get("fy", 0.5))
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError(
+            f"media crop must be a mapping of {{zoom, fx, fy}} numbers; got {crop!r}"
+        ) from None
+    if zoom < 1.0:
+        raise ValueError(f"media crop zoom must be at least 1.0 — 1.0 is the whole picture "
+                         f"and there is nothing wider to crop to; got {zoom}")
+    if not (0.0 <= fx <= 1.0 and 0.0 <= fy <= 1.0):
+        raise ValueError(f"media crop fx/fy must be two fractions in [0, 1]; got [{fx}, {fy}]")
+    if zoom == 1.0:
+        return ""
+    return (f"crop=iw/{zoom:.3f}:ih/{zoom:.3f}:"
+            f"x=(iw-iw/{zoom:.3f})*{fx:.3f}:y=(ih-ih/{zoom:.3f})*{fy:.3f},")
 
 
 def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str:
@@ -526,9 +557,7 @@ def motion_chain(motion: str, dur: float, w: int, h: int, fps: int = FPS) -> str
                 f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={n}:s={w}x{h}:fps={fps}")
     if motion in HIGH_MOTIONS:
         n = max(1, math.ceil(dur * fps))
-        # `on` runs 0..n-1, so the travel divides by the LAST frame index; a one-frame beat
-        # has nowhere to travel and must not divide by zero.
-        span = max(1, n - 1)
+        span = _travel_span(n)
         if motion == "pan_right":
             x, y = f"'(iw-iw/zoom)*(on/{span})'", "'ih/2-(ih/zoom/2)'"
         elif motion == "pan_left":
@@ -608,19 +637,24 @@ def ffmpeg_video_steps(motion: str, dur: float, w: int, h: int, fps: int = FPS,
     wants_blur_fill() decides exactly as before.
 
     A HIGH_MOTION covers to PRESCALE x the render size and runs its zoompan there (see
-    ZOOMPAN_W), which is what stops the stutter. `crop` re-frames that covered picture
-    first, so one still can be several shots — it is an image re-frame, so a beat that
-    carries one on `clip` or on a blur fill is ignored rather than refused.
+    ZOOMPAN_W), which is what stops the stutter. `crop` re-frames the source first, so one
+    still can be several shots; it applies to every IMAGE motion — `kenburns` and `hold`
+    included, at their own frame size rather than the 2x one — and is IGNORED rather than
+    refused on `clip`, which has footage to play rather than a frame to re-frame, and under
+    a blur fill, whose picture is the whole source by definition. (`hold` is the one motion
+    both kinds share, so a `hold` beat carrying a crop re-frames footage too. That is a
+    zoom-in on the clip, which is what the beat asked for.) Without a crop every one of
+    these chains is byte for byte the one it has always been.
     """
     if motion not in MOTIONS:
         raise ValueError(f"unknown media motion {motion!r}; known: {', '.join(MOTIONS)}")
     if fill is not None and fill not in FILLS:
         raise ValueError(f"unknown media fill {fill!r}; known: {', '.join(FILLS)}")
     blur = wants_blur_fill(src_w, src_h) if fill is None else (fill == "blur")
-    if not blur and motion in HIGH_MOTIONS:
-        cw, ch = w * PRESCALE, h * PRESCALE
-        return [f"[{src_label}]{cover_chain(cw, ch, focus[0], focus[1])},"
-                f"{crop_chain(cw, ch, crop)}"
+    if not blur and motion != "clip":
+        cw, ch = (w * PRESCALE, h * PRESCALE) if motion in HIGH_MOTIONS else (w, h)
+        return [f"[{src_label}]{crop_chain(cw, ch, crop)}"
+                f"{cover_chain(cw, ch, focus[0], focus[1])},"
                 f"{motion_chain(motion, dur, w, h, fps)}[{out_label}]"]
     if not blur:
         return [f"[{src_label}]"

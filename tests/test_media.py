@@ -840,9 +840,11 @@ def test_the_punch_reaches_its_full_zoom_within_the_ramp_and_never_moves_again()
 
 
 def test_a_push_climbs_all_the_way_through_the_beat():
+    """And ARRIVES: zoompan's `on` runs 0..n-1, so a push that divided by `n` would stop a
+    frame short of PUSH_ZOOM and never reach the zoom the beat was written for."""
     expr = media.zoom_expr("push", 90).strip("'")
     assert _zoom_at(expr, 0, 90) == pytest.approx(1.0)
-    assert _zoom_at(expr, 90, 90) == pytest.approx(1.0 + media.PUSH_ZOOM, abs=1e-3)
+    assert _zoom_at(expr, 89, 90) == pytest.approx(1.0 + media.PUSH_ZOOM, abs=1e-3)
 
 
 def test_a_pan_starts_at_one_edge_and_ends_at_the_other():
@@ -876,23 +878,82 @@ def test_the_new_motions_are_image_only():
 
 # --- the crop table ----------------------------------------------------------------------
 
-def test_a_crop_reframes_the_still_before_the_motion_runs():
-    crop = {"zoom": 1.45, "fx": 0.62, "fy": 0.70}
+CROP = {"zoom": 1.45, "fx": 0.62, "fy": 0.70}
+
+#: `kenburns` and `hold` are image motions too, so a beat re-frames them as well. Only the
+#: five high ones pre-scale.
+IMAGE_MOTIONS = ("kenburns", "hold", *media.HIGH_MOTIONS)
+
+
+def test_a_crop_reframes_the_source_before_anything_resamples_it():
+    """The crop is of the SOURCE, in iw/ih terms, and comes first.
+
+    Cropping the covered frame would be scale-down, crop, scale-up: three resamples, and the
+    detail the first one threw away is gone. Cropping the source keeps its own pixels, so a
+    1.45x re-frame of a 3376 px-wide still is 2328 real px.
+    """
     steps = media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000,
-                                     crop=crop)
-    assert "crop=1788:3178:x=(iw-1788)*0.620:y=(ih-3178)*0.700" in steps[0]
-    assert steps[0].index("crop=1788") < steps[0].index("zoompan")
+                                     crop=CROP)
+    assert steps[0].startswith(
+        "[0:v]crop=iw/1.450:ih/1.450:x=(iw-iw/1.450)*0.620:y=(ih-ih/1.450)*0.700,")
+    assert steps[0].index("crop=iw/") < steps[0].index("scale=2592:4608")
+    assert steps[0].index("crop=iw/") < steps[0].index("zoompan")
+    assert "scale=2592:4608" in steps[0]      # and the 2x cover still happens, after it
 
 
-def test_the_widest_crop_is_a_no_op():
-    steps = media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000,
-                                     crop={"zoom": 1.00, "fx": 0.5, "fy": 0.5})
-    assert "crop=2592:4608:x=" not in steps[0]
+@pytest.mark.parametrize("motion", IMAGE_MOTIONS)
+def test_every_image_motion_is_re_framed_not_just_the_high_ones(motion):
+    """`kenburns` and `hold` are stills too. A beat that re-frames them is the cheapest way
+    to get three shots out of one photograph without a zoompan on every one."""
+    steps = media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=3376, src_h=6000,
+                                     crop=CROP)
+    assert steps[0].startswith("[0:v]crop=iw/1.450:")
 
 
-def test_no_crop_is_the_chain_a_scene_without_beats_gets():
-    assert media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000) == \
-        media.ffmpeg_video_steps("punch", 3.0, 1296, 2304, src_w=3376, src_h=6000, crop=None)
+@pytest.mark.parametrize("motion", IMAGE_MOTIONS)
+def test_the_widest_crop_is_a_no_op(motion):
+    """zoom 1.00 is the whole picture, so it must emit the chain no crop at all emits —
+    not a crop of the full frame, which is a resample for nothing."""
+    assert media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=3376, src_h=6000,
+                                    crop={"zoom": 1.00, "fx": 0.5, "fy": 0.5}) == \
+        media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=3376, src_h=6000)
+
+
+@pytest.mark.parametrize("motion", IMAGE_MOTIONS)
+def test_no_crop_is_the_chain_a_scene_without_beats_gets(motion):
+    assert media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=3376, src_h=6000) == \
+        media.ffmpeg_video_steps(motion, 3.0, 1296, 2304, src_w=3376, src_h=6000, crop=None)
+
+
+@pytest.mark.parametrize("motion", ["kenburns", "hold"])
+def test_an_uncropped_kenburns_or_hold_is_byte_for_byte_the_chain_it_always_was(motion):
+    """The whole of Task 9 rests on this: every spec rendered before today re-renders
+    identically."""
+    assert media.ffmpeg_video_steps(motion, 5.0, 1296, 2304, 30, 1080, 1920) == \
+        [f"[0:v]{media.ffmpeg_video_filter(motion, 5.0, 1296, 2304, 30)}[m0]"]
+
+
+def test_a_crop_under_a_blur_fill_is_ignored_rather_than_refused():
+    """The blur fill's whole point is that the WHOLE picture stays on screen; re-framing it
+    would throw away the thing it exists to keep."""
+    assert media.ffmpeg_video_steps("kenburns", 3.0, 1296, 2304, src_w=4000, src_h=2250,
+                                    crop=CROP) == \
+        media.ffmpeg_video_steps("kenburns", 3.0, 1296, 2304, src_w=4000, src_h=2250)
+
+
+@pytest.mark.parametrize("crop,bad", [
+    ({"zoom": 0.8}, "0.8"),                                  # wider than the picture
+    ({"zoom": 1.4, "fx": 1.4, "fy": 0.5}, "1.4"),            # off the frame
+    ({"zoom": 1.4, "fx": 0.5, "fy": -0.1}, "-0.1"),
+    ({"zoom": "wide"}, "wide"),                              # not a number
+    ([1.4, 0.5, 0.5], "1.4"),                                # not a mapping
+])
+def test_a_bad_crop_is_refused_by_name(crop, bad):
+    """Task 10 feeds this straight from the spec, so a typo has to stop the render rather
+    than hand ffmpeg an expression that quietly evaluates to nonsense."""
+    with pytest.raises(ValueError) as e:
+        media.crop_chain(2592, 4608, crop)
+    assert "crop" in str(e.value) and bad in str(e.value)
 
 
 def test_a_crop_on_a_clip_beat_is_ignored_rather_than_refused():

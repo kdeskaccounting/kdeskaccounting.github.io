@@ -153,8 +153,9 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                                          # (nearest .git / pyproject.toml above it), or
 #                                          # absolute. .mp4/.mov/.m4v or .jpg/.jpeg/.png.
 #     motion: punch | push | pan_left | pan_right | burst | kenburns | hold | clip
-#             # the five new ones are image-only, pre-scale to 2x and run zoompan on a
-#             # 2160x3840 canvas; kenburns is unchanged and is what every older spec uses
+#             # the five new ones are image-only and (unless the scene blur-fills) pre-scale
+#             # to 2x and run zoompan on a 2160x3840 canvas; kenburns is unchanged and is
+#             # what every older spec uses
 #             # default: kenburns for a still, clip for footage
 #       clip      play it, trimmed to the narration (+0.6 s like cards), looped if shorter.
 #                 VIDEO ONLY — on a still it hangs ffmpeg forever (0 bytes out), so it is
@@ -174,6 +175,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                 truncates x/y to whole INPUT pixels, so at the rates kenburns uses it
 #                 freezes for up to 9 frames and then jumps one; the pre-scale halves that.
 #                 kenburns keeps its own chain byte for byte, so no existing render moves.
+#                 EXCEPT under a blur fill: a landscape source (or `fill: blur`) is
+#                 composited at the render size first and the motion then runs on that
+#                 finished 1296x2304 frame, so it gets none of the pre-scale's benefit and
+#                 stutters the way kenburns does. A landscape hero that wants a punch should
+#                 say `fill: crop` with a `focus:`, which puts it back on the 2x path.
 #     Bad kind/motion pairings are rejected by media.check_motion, and the whole spec is
 #     validated by media.validate_spec BEFORE anything renders — so a typo on scene 7 costs
 #     nothing, instead of surfacing after six scenes have been narrated and encoded.
