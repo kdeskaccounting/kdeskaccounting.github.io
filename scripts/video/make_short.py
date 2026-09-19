@@ -636,6 +636,41 @@ def caption_plan_json(cues, overlays, box, cfg):
     return {"band": list(box), "accent": cfg.accent, "windows": rows}
 
 
+def cut_plan_json(rows, join: str, total: float) -> dict:
+    """Where the picture changes, according to the renderer rather than to a detector.
+
+    `scdet` cannot see our joins: it returns ZERO cuts on the published day-3 Short and on
+    a hand-made hard-cut concat of two of its parts, because every part fades to black at
+    its own edges and a black-meeting-black join has no discontinuity to find. So the
+    authoritative list is written here, beside captions.json, and the pixel detectors stay
+    what they are -- smoke tests.
+
+    Two clocks, and they are not the same one. A row's `start` and `seconds` are ABSOLUTE
+    seconds on the finished Short's timeline, measured from the encoded parts; its `beats`
+    are the SPANS the renderer cut that part into — durations, summing to the part — because
+    that is what beat_spans() hands the filter graph. `cuts` is the absolute list the two
+    produce together: every picture change after frame 0, in time order. Each part boundary
+    is one (under `join: fade` the dip to black IS the join, so it still counts), and so is
+    every beat boundary INSIDE a part — which is every span but the last, whose end is the
+    part boundary already counted, or the end of the video.
+
+    One part deliberately has no row and therefore no cut: the closing CTA plate, which is a
+    sign-off rather than a scene and carries no scene index to put in one. The last scene's
+    hold consequently reads as running to the end of the Short — long rather than short,
+    which is the direction a cadence gate should be wrong in.
+    """
+    cuts = []
+    for row in rows:
+        at = float(row["start"])
+        for span in row["beats"][:-1]:
+            at += float(span)
+            cuts.append(round(at, 3))
+        if float(row["start"]) > 0:
+            cuts.append(round(float(row["start"]), 3))
+    return {"join": join, "duration_s": round(float(total), 3),
+            "cuts": sorted(cuts), "scenes": list(rows)}
+
+
 def caption_filter(overlays, y, plate_seconds=None):
     """The filter graph that burns the word PNGs into the concatenated video.
 
@@ -821,17 +856,22 @@ def main():
     # Where each scene lands in the finished Short. Measured from the ENCODED part rather than
     # from the `dur` asked for: `-t 4.633` at 30 fps lands on a frame boundary, and one frame
     # of drift per scene is visible on a caption that is meant to light up on a syllable.
-    # Probed only when captions are on — an uncaptioned render must not grow an ffprobe a scene.
+    # Probed on EVERY render, captioned or not: cuts.json below is the authoritative cut list
+    # (nothing else can see a join that dips to black), and a nominal one would be a re-derivation
+    # of the spec rather than a record of the render. One ffprobe a part is what that costs.
     timeline = [0.0]
     cap_scenes = []
+    cut_rows = []
 
-    def add_part(path, idx=None):
+    def add_part(path, idx=None, spans=()):
+        """Append an encoded part, and record where it landed. `spans` are its beat lengths."""
         parts.append(path)
-        if not cap.enabled:
-            return
         seconds = dur_of(path)
         if idx is not None:
-            cap_scenes.append((idx, timeline[0], timeline[0] + seconds))
+            cut_rows.append({"scene": idx, "start": round(timeline[0], 3),
+                             "seconds": round(seconds, 3), "beats": list(spans)})
+            if cap.enabled:
+                cap_scenes.append((idx, timeline[0], timeline[0] + seconds))
         timeline[0] += seconds
 
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
@@ -849,10 +889,16 @@ def main():
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
             fill, focus = media.scene_fill(sc)
             beats = prepare_beats(scene_beats(sc), spec_path)
+            # The SAME spans beat_steps() trims each beat to — rescaled against the `dur` this
+            # part was encoded with, not against what it probed to. Those trims are the picture
+            # changes that are actually on screen, so re-deriving them from the probed duration
+            # would move the cut list off the cuts (and, on a stub or a mismeasure, trip the
+            # backstop against a length nothing rendered).
+            spans = beat_spans(beats, dur)
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4", join=tr.join,
                                      fill=fill, focus=focus, beats=beats)
-            add_part(out, idx)
+            add_part(out, idx, spans)
             shot = f"{len(beats)} beats" if beats else f"{kind}/{motion}"
             print(f"scene {idx:02d}: media {shot} {dur:.1f}s -> {out.name}", flush=True)
             continue
@@ -958,6 +1004,13 @@ def main():
                   "rendering without captions.", flush=True)
         run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
     total = dur_of(final)
+    # Beside captions.json, and written on every render: a `scdet` pass over a Short whose
+    # joins dip to black finds nothing, so this file — not a pixel detector — is what a
+    # cadence check reads. Written before the length check below, because a Short that came
+    # out too long is exactly the one whose cut list someone wants to look at.
+    cut_plan = cut_plan_json(cut_rows, tr.join, total)
+    (work / "cuts.json").write_text(json.dumps(cut_plan, indent=1), encoding="utf-8")
+    print(f"cuts: {len(cut_plan['cuts'])} picture changes in {total:.1f}s", flush=True)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
     rev = paths.review; rev.mkdir(exist_ok=True)
     for name, t in (("t01", 1.0), ("mid", total / 2), ("end", max(0.0, total - 1.0))):

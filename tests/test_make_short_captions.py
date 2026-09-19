@@ -186,19 +186,22 @@ def test_nothing_is_rendered_or_read_for_a_spec_with_captions_off(stub):
     assert _caption_pngs(stub) == []
 
 
-def test_captions_off_never_calls_ffprobe_on_the_parts(stub, monkeypatch):
-    """dur_of is ffprobe. Uncaptioned, the only probe is the length check on the finished
-    Short, exactly as before; captioned, each part is measured so the offsets cannot drift."""
+def test_every_part_is_measured_whether_or_not_the_short_is_captioned(stub, monkeypatch):
+    """dur_of is ffprobe. It used to be skipped on an uncaptioned render — that render had
+    nothing to measure for — and make_short.cut_plan_json gave it something: cuts.json is
+    written every time, and a cut list built from the `dur` the spec asked for rather than
+    from the encoded part would be a re-derivation of the spec, not a record of the render.
+    Captioned, the same probe keeps the word offsets from drifting off the syllable."""
     probed = []
     monkeypatch.setattr(M, "dur_of", lambda p: probed.append(pathlib.Path(p).name) or 6.0)
+    parts = ["scene_0.mp4", "scene_1.mp4", "scene_2.mp4", "end.mp4", "cap-demo-short.mp4"]
     stub.spec = _spec()
     stub.go()
-    assert probed == ["cap-demo-short.mp4"]
+    assert probed == parts
     probed.clear()
     stub.spec = _spec({"enabled": True})
     stub.go()
-    assert probed == ["scene_0.mp4", "scene_1.mp4", "scene_2.mp4", "end.mp4",
-                      "cap-demo-short.mp4"]
+    assert probed == parts
 
 
 # --- the caption pass ---------------------------------------------------------------------

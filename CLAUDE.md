@@ -390,6 +390,12 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # It answers "which word was on screen at 12.3 s?", and tests/test_captions_e2e.py reads it to
 # check the real render against real pixels; those two tests SKIP until the demo below has been
 # rendered in this checkout, so render it before trusting a green suite on caption geometry.
+# EVERY render — captions or not — also writes scripts/video/build/<slug>/short/cuts.json:
+# the renderer's own cut list (`join`, `duration_s`, `cuts`, and a row per scene with its beat
+# spans). `scdet` cannot see a dip-to-black join — it finds ZERO cuts on the published day-3
+# Short — so this file is what any cadence check should read; the pixel detectors are smoke
+# tests. `cuts` is absolute seconds, every picture change after frame 0; a scene row's `beats`
+# are the spans it was cut into. The closing CTA plate is not a scene and gets no cut.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
   --spec marketing/video/media-demo/scenes.yaml            # captions: on in that spec
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --no-captions

@@ -856,3 +856,75 @@ def test_a_beats_scene_reports_its_beat_count_rather_than_the_src_it_never_rende
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("scene 00")]
     assert lines and "3 beats" in lines[0]
     assert "kenburns" not in lines[0], "the scene's own motion never reaches the screen"
+
+
+# --- the cut list ------------------------------------------------------------------------
+
+def test_the_cut_list_is_every_picture_change_after_frame_zero():
+    rows = [{"scene": 0, "start": 0.0, "seconds": 3.0, "beats": [1.5, 1.5]},
+            {"scene": 1, "start": 3.0, "seconds": 2.0, "beats": []}]
+    plan = M.cut_plan_json(rows, "cut", 5.0)
+    assert plan["cuts"] == [1.5, 3.0]
+    assert plan["duration_s"] == 5.0
+    assert plan["join"] == "cut"
+    assert plan["scenes"] == rows
+
+
+def test_a_video_of_one_unbeaten_scene_has_no_cuts_at_all():
+    plan = M.cut_plan_json([{"scene": 0, "start": 0.0, "seconds": 9.0, "beats": []}],
+                           "cut", 9.0)
+    assert plan["cuts"] == []
+
+
+def test_the_cut_list_is_written_beside_the_captions_plan(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [dict(beat) for beat in BEATS]
+    M.main()
+    plan = json.loads((stub_main.work / "cuts.json").read_text())
+    assert plan["join"] == "fade"
+    assert len(plan["scenes"]) == 2
+    assert plan["scenes"][0]["beats"], "a beaten scene records where its pictures change"
+    assert plan["cuts"] == sorted(plan["cuts"])
+    assert all(cut > 0 for cut in plan["cuts"])
+
+
+def test_an_uncaptioned_render_still_writes_the_cut_list(stub_main):
+    """The gate reads this file whether or not the Short carries captions."""
+    M.main()
+    assert (stub_main.work / "cuts.json").exists()
+
+
+def test_the_cut_list_records_the_spans_ffmpeg_was_actually_given(stub_main):
+    """The whole point of the file: it is the RENDER's list, not a second derivation of the
+    spec. A span that disagreed with the `trim=duration=` in the filter graph would be the
+    same class of answer a pixel detector gives — a guess about what is on screen."""
+    cmd = _beaten(stub_main)
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    plan = json.loads((stub_main.work / "cuts.json").read_text())
+    spans = plan["scenes"][0]["beats"]
+    assert len(spans) == len(BEATS)
+    for index, span in enumerate(spans):
+        assert f"trim=duration={span:.3f}" in _beat_chain(chain, index)
+    assert sum(spans) == pytest.approx(BEAT_DUR, abs=1e-3), "the encode's clock, not ffprobe's"
+    assert plan["cuts"][:2] == pytest.approx([spans[0], spans[0] + spans[1]], abs=1e-3)
+    assert len(plan["cuts"]) == 3, "two beat boundaries inside scene 0, plus the one join"
+
+
+def test_the_part_boundaries_are_measured_and_the_closing_plate_is_not_a_scene(stub_main):
+    """`start` accumulates what each part PROBED to rather than the `dur` it was asked for.
+
+    The closing CTA plate is a part but not a scene: no row, and no cut at its join. The last
+    scene's hold therefore reads as running to the end of the Short, which is the direction a
+    cadence gate should err in — long, not short.
+    """
+    M.main()                                             # dur_of is stubbed at 30.0 a part
+    plan = json.loads((stub_main.work / "cuts.json").read_text())
+    assert [row["scene"] for row in plan["scenes"]] == [0, 1]
+    assert [row["start"] for row in plan["scenes"]] == [0.0, 30.0]
+    assert [row["seconds"] for row in plan["scenes"]] == [30.0, 30.0]
+    assert plan["cuts"] == [30.0]
+
+
+def test_the_cut_list_is_announced_so_a_render_log_carries_the_number(stub_main, capsys):
+    M.main()
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("cuts:")]
+    assert lines == ["cuts: 1 picture changes in 30.0s"]
