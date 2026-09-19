@@ -863,10 +863,11 @@ def test_a_pan_starts_at_one_edge_and_ends_at_the_other():
     assert "x='(iw-iw/zoom)*(1-on/89)'" in left
 
 
-def test_the_burst_hits_settles_and_then_creeps_back_out():
+def test_the_burst_hits_settles_and_then_keeps_creeping_in():
     """Replaces the assertion that the burst sits at BURST_SETTLE to the end of the beat:
     holding is what the punch was measured doing wrong, and the burst held the same way.
-    The settle is the only place it goes DOWN, and after it nothing holds."""
+    The settle is the only place it goes DOWN; after it the same PUNCH_DRIFT creeps on
+    through BURST_PEAK to the end of the beat, and nothing holds."""
     expr = media.zoom_expr("burst", 90).strip("'")
     assert _zoom_at(expr, 4, 90) == pytest.approx(media.BURST_PEAK, abs=1e-3)
     assert _zoom_at(expr, 12, 90) == pytest.approx(media.BURST_SETTLE, abs=1e-3)

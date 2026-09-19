@@ -164,7 +164,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                 footage it silently encodes a freeze frame; refused.
 #       hold      both kinds. On a still: one static frame. On a VIDEO: plays the clip
 #                 through ONCE, then freezes the last frame for the rest of the scene.
-#       punch     1.00 -> 1.15, cubic ease-out over 9 frames, then a slow creep on to 1.20
+#       punch     1.00 -> 1.15, cubic ease-out over 9 frames, then a slow creep on to 1.25
 #                 over the rest of the beat (media.PUNCH_DRIFT). The shove. It does NOT
 #                 hold: a punch that held was measured at 0.00 per-frame motion for most of
 #                 a 3 s beat, which is a still with extra steps.
@@ -172,7 +172,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #       pan_left  a fixed 1.12 crop travelling edge to edge, left or right.
 #       pan_right
 #       burst     a 4-frame hit to 1.08, settled back to 1.03 by frame 12, then the same
-#                 creep back out to 1.08 over the rest of the beat. For a whoosh.
+#                 creep on to 1.13 over the rest of the beat. For a whoosh.
 #                 STILLS ONLY, all five, and for the same reason kenburns is: they are
 #                 zoompans. Each covers to 2x the render size first and runs zoompan onto
 #                 media.ZOOMPAN_W x ZOOMPAN_H before the lanczos downscale — zoompan

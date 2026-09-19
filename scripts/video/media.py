@@ -96,21 +96,28 @@ PUNCH_ZOOM = 0.15
 PUNCH_FRAMES = 9
 
 #: The slow push that runs UNDER a punch once the hit lands, and under a burst once it has
-#: settled: +0.05 spread linearly over whatever is left of the beat.
+#: settled: +0.10 spread linearly over whatever is left of the beat.
 #:
 #: The punch used to hold dead still after its ramp, which is exactly what it looks like —
 #: a still. MEASURED on the first full engagement render: the closing punch beat (3.0 s)
 #: averaged 0.67 per-frame motion with a minimum of 0.00, and those held frames were the
-#: whole of a 17.4% still_frame_fraction against a 10% target. A hit that keeps creeping
-#: reads as a camera; a hit that stops reads as a JPEG. 0.05 over ~2.7 s is far too slow to
-#: see as a second move and enough that no two frames are ever identical.
-PUNCH_DRIFT = 0.05
+#: whole of a 17.4% still_frame_fraction against a 10% target.
+#:
+#: The SIZE is measured too, on a 3 s beat scored with parksheet
+#: scripts/measure_short.py::measure_motion (tblend=difference + signalstats YAVG, 10 fps
+#: sampling), which counts a frame as still below YAVG 1.0. Drift 0.05 stopped the dead
+#: frames (minimum 0.00 -> 0.71) but left the MEDIAN at 0.839, under the threshold, so a
+#: punch-only stretch still scored 93% still; 0.08 cleared it at 1.262; 0.10 medians 1.531,
+#: which is level with a `push` (1.489) and above kenburns over the same beat (1.285).
+#: Hence 0.10: a creep nobody reads as a second move, and no frame the metric calls dead.
+PUNCH_DRIFT = 0.10
 #: Slow push: 1.0 -> 1.10, linear over the whole beat.
 PUSH_ZOOM = 0.10
 #: Pan: a fixed crop, travelling edge to edge.
 PAN_ZOOM = 1.12
 #: Zoom burst for a beat that coincides with a whoosh: a 4-frame hit, settled by frame 12,
-#: then the same PUNCH_DRIFT creep back out to BURST_PEAK so it never holds either.
+#: then the same PUNCH_DRIFT creep (1.03 -> 1.13, i.e. on past BURST_PEAK) so the tail of
+#: the beat never holds either.
 BURST_PEAK = 1.08
 BURST_SETTLE = 1.03
 BURST_HIT_FRAMES = 4
