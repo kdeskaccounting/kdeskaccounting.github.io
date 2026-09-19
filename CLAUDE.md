@@ -215,6 +215,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # `fx` aims it and `fy` multiplies zero — `focus: [0.50, 0.42]` on a landscape hero is still a
 # centre-height crop, and `fy` only bites on a source TALLER than 9:16. Both keys are validated
 # in the media preflight, so a bad value stops the run before anything renders.
+# `focus:` DOES NOTHING UNDER A BLUR FILL, and make_short says so on stdout by scene rather
+# than dropping it quietly: the blur fill letterboxes the whole picture over a blurred copy of
+# itself, so nothing overflows the frame and there is no column for a focus to choose
+# (media.blur_fill_steps takes no focus argument at all). That is true both for `fill: blur`
+# and for a source the ratio alone blur-fills. The notice names the scene and says `fill: crop`,
+# which is the key that makes the focus bite. make_short.focus_notice, and it probes nothing
+# for the default centre focus — no existing spec pays an ffprobe for the check.
 # `beats:` is the fix for the defect the v4 change set exists to remove — day 3 held ONE still
 # for 32 s. The same scene as beats is nineteen pictures, none on screen for more than three
 # seconds, against the same narration. Each beat becomes its own ffmpeg input and its own
@@ -264,15 +271,24 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # OPTIONAL and every existing spec — and every golden — renders byte-identically without them.
 #   transitions:            # optional; absent == {join: fade}, today's 0.3 s dips to black
 #     join: cut             # cut | fade   (xfade is a known value and refuses: not built)
+#     duration: 0.12        # INERT. Parsed and coerced onto make_short.Transitions and read
+#     style: fade           # by nothing: their only consumer is the `xfade` pass that
+#                           # refuses above, so they are forward declarations and are
+#                           # unvalidated beyond the coercion. Whoever builds that pass
+#                           # bounds-checks them then.
 #   short:
 #     scene_pad: 0.10       # optional; frames held after the narration, default 0.25
 #   tts:
 #     lead_in_s: 0.05       # optional; silence prepended to every scene WAV, default 0.3
 # `join: fade` fades every part from and to black over 0.3 s, so frame 0 is black and every
 # join is black meeting black — `scdet` finds ZERO cuts in such a file. `join: cut` drops both
-# `fade=` clauses (make_short.fade_steps is the only place that string is built); the parts
-# still encode identically, so the concat demuxer still stream-copies them. `join: xfade` is
-# accepted as a NAME and then refused: it needs every part as its own ffmpeg input with an
+# `fade=` clauses; the parts still encode identically, so the concat demuxer still
+# stream-copies them. make_short.fade_steps builds every SCENE part's PAIR of fades and is
+# the only place that pair is built. The closing CTA plate is the one exception, because it
+# is not a pair: it ramps up from black and has never ramped down (nothing follows it), so
+# main() builds its lone `fade=t=in:st=0:d=0.3` inline — and drops it under `join: cut` too,
+# since a plate that still dipped would put the dip back at the last join in the Short.
+# `join: xfade` is accepted as a NAME and then refused: it needs every part as its own ffmpeg input with an
 # explicit offset, which replaces the concat stream copy — make_short.xfade_offsets() is the
 # arithmetic that rewrite will need. The silence a viewer hears at a join is this scene's
 # `scene_pad` plus the NEXT scene's `lead_in_s`: 0.25 + 0.3 = 0.55 s at the defaults, 0.15 s
@@ -298,14 +314,21 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #       fade_out: 1.2
 #     duck: {threshold: 0.03, ratio: 8, attack: 5, release: 300}   # ~10-11 dB, measured
 #     sfx:
-#       on_cut: media/audio/mixkit-cinematic-whoosh-1492.wav
+#       on_cut: media/audio/mixkit-cinematic-whoosh-1492.wav   # `src:` is an accepted alias
+#                           # (`on_cut` is the research's name for the file, `src` the
+#                           # spelling every other block here uses; on_cut wins if both)
 #       gain_db: -6
 #       lead: 0.20          # start this far before the boundary so it peaks on it
 #       beats: 3            # whooshes land on the 2 boundaries between 3 beats, not on cuts
 #     master: {lufs: -16, tp: -1.5, lra: 11}
 # The whole mix rides the pass that already re-encodes the audio, so it costs almost nothing:
-# measured at 3.4 s for 43.6 s of output with `-c:v copy`. The graph is make_short.audio_steps
-# and every stage earns its place — two of them are traps:
+# measured at 3.4 s for 43.6 s of output with `-c:v copy`. A mixed render also ships AAC at
+# `-b:a 160k` instead of the 128k every voice-only Short encodes at — bed plus voice plus a
+# whoosh is a denser signal than one dry voice, and 128k is where it starts to smear. Both
+# final passes do it, the captioned filter graph and the `-c:v copy` stream copy; the parts
+# themselves (and the closing plate) are still 128k, and a spec with no `audio:` block is
+# byte-identical.
+# The graph is make_short.audio_steps and every stage earns its place — two of them are traps:
 #   * `sidechaincompress` is `[main][sidechain]`: the BED is the main and the VOICE is the key.
 #     Reversed, it ducks the narration under the music.
 #   * `amix=...:normalize=0` is essential. With the default normalize=1 ffmpeg divides every
@@ -412,6 +435,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # overflow:hidden page that cannot break inside a word, so an 8-character word is CLIPPED at
 # the frame edge rather than shrunk. "HIDDEN MICKEYS" clears it by one character. Move a long
 # word to the `kicker:`, which is a fifth of the size.
+# THE PLATE DOES NOT DEPEND ON A CAPTION WINDOW SURVIVING. A captioned spec whose scenes
+# produced no word timings at all still takes the filter pass for the plate alone (it is the
+# frame the feed judges, not caption collateral), and the "no scene produced a window"
+# warning says whether a plate was drawn. Only a spec with neither falls back to the
+# byte-identical stream copy.
 # A PLATE OVER A `kind: card` FIRST SCENE IS SKIPPED, with a line on stdout: that card IS the
 # frame-0 text, and the plate — which places itself on captions.BAND_CENTER_FRAC, knowing
 # nothing of scene 0's layout — would print the Short's biggest type through the card's own
@@ -457,7 +485,10 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # not a second pass. Scene offsets are measured from the encoded parts (one ffprobe each) so a
 # frame of rounding per scene cannot drift the highlight off the syllable.
 # A captioned render writes scripts/video/build/<slug>/short/captions.json — the plan it
-# actually burned in (band, accent, one row per word window with its cue, lit word and PNG).
+# actually burned in (band, accent, position, size, pop, hook_seconds, and one row per word
+# window with its cue, lit word and PNG). `band` is where the captions LANDED and `position`
+# is what the spec asked for — a full-frame card scene overrides the one and not the other —
+# so the sidecar can say which settings produced the PNGs it names.
 # It answers "which word was on screen at 12.3 s?", and tests/test_captions_e2e.py reads it to
 # check the real render against real pixels; those two tests SKIP until the demo below has been
 # rendered in this checkout, so render it before trusting a green suite on caption geometry.
