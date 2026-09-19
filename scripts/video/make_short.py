@@ -636,7 +636,7 @@ def caption_plan_json(cues, overlays, box, cfg):
     return {"band": list(box), "accent": cfg.accent, "windows": rows}
 
 
-def cut_plan_json(rows, join: str, total: float) -> dict:
+def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
     """Where the picture changes, according to the renderer rather than to a detector.
 
     `scdet` cannot see our joins: it returns ZERO cuts on the published day-3 Short and on
@@ -654,12 +654,18 @@ def cut_plan_json(rows, join: str, total: float) -> dict:
     every beat boundary INSIDE a part — which is every span but the last, whose end is the
     part boundary already counted, or the end of the video.
 
-    One part deliberately has no row and therefore no cut: the closing CTA plate, which is a
-    sign-off rather than a scene and carries no scene index to put in one. The last scene's
-    hold consequently reads as running to the end of the Short — long rather than short,
-    which is the direction a cadence gate should be wrong in.
+    `extra_cuts` is for a part that changes the picture without being a scene: today that is
+    the closing CTA plate, which carries no scene index to put in a row. Its boundary is a
+    picture change like any other and belongs in `cuts` — a gate that measured the last
+    scene's hold as running through the plate would be measuring a picture that is not on
+    screen, and can hard-fail on it. So `scenes` stays scene-only and `cuts` stays complete.
+
+    Which means: `sum(scenes[].seconds)` is NOT `duration_s` when a plate is present — it is
+    short by the plate's 1.5 s. Anything that needs the finished runtime (an audio bed's
+    length, a fade-out offset) reads `duration_s`, which is the probed file; the rows are
+    where the SCENES are, not what the Short adds up to.
     """
-    cuts = []
+    cuts = [round(float(at), 3) for at in extra_cuts if float(at) > 0]
     for row in rows:
         at = float(row["start"])
         for span in row["beats"][:-1]:
@@ -862,12 +868,26 @@ def main():
     timeline = [0.0]
     cap_scenes = []
     cut_rows = []
+    cut_extras = []
 
     def add_part(path, idx=None, spans=()):
-        """Append an encoded part, and record where it landed. `spans` are its beat lengths."""
+        """Append an encoded part, and record where it landed. `spans` are its beat lengths.
+
+        A part with no `idx` is not a scene — it is the closing CTA plate — so it gets no row.
+        It still gets its boundary into the cut list: the picture changes there whatever the
+        part is called.
+        """
         parts.append(path)
         seconds = dur_of(path)
-        if idx is not None:
+        if seconds <= 0:
+            # ffprobe answering nothing (a missing or unreadable part) reads as 0.0 here, and
+            # a 0.0 in the timeline silently stacks every later scene on top of this one.
+            raise SystemExit(f"ffprobe measured {path} at {seconds:.3f}s. Every part of the "
+                             f"Short has a duration, so this is a failed probe, and the "
+                             f"caption offsets and cuts.json below are built on it.")
+        if idx is None:
+            cut_extras.append(round(timeline[0], 3))
+        else:
             cut_rows.append({"scene": idx, "start": round(timeline[0], 3),
                              "seconds": round(seconds, 3), "beats": list(spans)})
             if cap.enabled:
@@ -1008,9 +1028,11 @@ def main():
     # joins dip to black finds nothing, so this file — not a pixel detector — is what a
     # cadence check reads. Written before the length check below, because a Short that came
     # out too long is exactly the one whose cut list someone wants to look at.
-    cut_plan = cut_plan_json(cut_rows, tr.join, total)
+    cut_plan = cut_plan_json(cut_rows, tr.join, total, cut_extras)
     (work / "cuts.json").write_text(json.dumps(cut_plan, indent=1), encoding="utf-8")
-    print(f"cuts: {len(cut_plan['cuts'])} picture changes in {total:.1f}s", flush=True)
+    changes = len(cut_plan["cuts"])
+    print(f"cuts: {changes} picture change{'' if changes == 1 else 's'} in {total:.1f}s",
+          flush=True)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
     rev = paths.review; rev.mkdir(exist_ok=True)
     for name, t in (("t01", 1.0), ("mid", total / 2), ("end", max(0.0, total - 1.0))):

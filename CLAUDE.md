@@ -394,8 +394,10 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # the renderer's own cut list (`join`, `duration_s`, `cuts`, and a row per scene with its beat
 # spans). `scdet` cannot see a dip-to-black join — it finds ZERO cuts on the published day-3
 # Short — so this file is what any cadence check should read; the pixel detectors are smoke
-# tests. `cuts` is absolute seconds, every picture change after frame 0; a scene row's `beats`
-# are the spans it was cut into. The closing CTA plate is not a scene and gets no cut.
+# tests. `cuts` is absolute seconds, every picture change after frame 0 — part boundaries and
+# beat boundaries alike; a scene row's `beats` are the spans it was cut into. The closing CTA
+# plate has no scene index and so no row, but its join IS in `cuts`: read `duration_s` for the
+# runtime, never the sum of the rows, which is short by the plate.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
   --spec marketing/video/media-demo/scenes.yaml            # captions: on in that spec
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --slug asc842 --no-captions

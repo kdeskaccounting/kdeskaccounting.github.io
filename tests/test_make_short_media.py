@@ -906,25 +906,61 @@ def test_the_cut_list_records_the_spans_ffmpeg_was_actually_given(stub_main):
         assert f"trim=duration={span:.3f}" in _beat_chain(chain, index)
     assert sum(spans) == pytest.approx(BEAT_DUR, abs=1e-3), "the encode's clock, not ffprobe's"
     assert plan["cuts"][:2] == pytest.approx([spans[0], spans[0] + spans[1]], abs=1e-3)
-    assert len(plan["cuts"]) == 3, "two beat boundaries inside scene 0, plus the one join"
+    assert len(plan["cuts"]) == 4, ("two beat boundaries inside scene 0, the join into "
+                                    "scene 1, and the join into the closing plate")
 
 
-def test_the_part_boundaries_are_measured_and_the_closing_plate_is_not_a_scene(stub_main):
+def test_the_part_boundaries_are_measured_and_the_closing_plate_is_one_of_them(stub_main):
     """`start` accumulates what each part PROBED to rather than the `dur` it was asked for.
 
-    The closing CTA plate is a part but not a scene: no row, and no cut at its join. The last
-    scene's hold therefore reads as running to the end of the Short, which is the direction a
-    cadence gate should err in — long, not short.
+    The closing CTA plate is a part but not a scene: it gets no ROW, because it has no scene
+    index to put in one — but its join IS a picture change, so it is in `cuts`. Leaving it
+    out would make the last scene's hold read as running through the plate, and a cadence
+    gate would then measure a picture that is not on screen.
     """
     M.main()                                             # dur_of is stubbed at 30.0 a part
     plan = json.loads((stub_main.work / "cuts.json").read_text())
     assert [row["scene"] for row in plan["scenes"]] == [0, 1]
     assert [row["start"] for row in plan["scenes"]] == [0.0, 30.0]
     assert [row["seconds"] for row in plan["scenes"]] == [30.0, 30.0]
+    assert plan["cuts"] == [30.0, 60.0]
+
+
+def test_a_short_that_signs_off_in_scene_has_no_plate_boundary_to_cut_at(stub_main):
+    """The other half of the pair: script v2 drops the CTA plate, and nothing invents a cut
+    where the last scene simply ends."""
+    stub_main.spec["short"].pop("cta")
+    M.main()
+    plan = json.loads((stub_main.work / "cuts.json").read_text())
+    assert not any(str(p).endswith("end.mp4")
+                   for p in (stub_main.work / "concat.txt").read_text().splitlines())
     assert plan["cuts"] == [30.0]
+
+
+def test_the_row_seconds_do_not_add_up_to_the_runtime_when_a_plate_closes_the_short(stub_main):
+    """So a bed length, a fade-out offset or a runtime check reads `duration_s` — the probed
+    file — and never the sum of the scene rows, which is short by the plate."""
+    M.main()
+    plan = json.loads((stub_main.work / "cuts.json").read_text())
+    assert plan["duration_s"] == 30.0                    # dur_of(final), the finished file
+    assert [row["scene"] for row in plan["scenes"]] == [0, 1]   # and no row for the plate
+
+
+def test_a_part_ffprobe_cannot_measure_stops_the_render_rather_than_landing_at_zero(
+        stub_main, monkeypatch):
+    """dur_of answers 0.0 when ffprobe says nothing. Carried into the timeline that stacks
+    every later scene on top of this one, silently, in both captions.json and cuts.json."""
+    monkeypatch.setattr(M, "dur_of", lambda p: 0.0)
+    with pytest.raises(SystemExit) as excinfo:
+        M.main()
+    assert "ffprobe" in str(excinfo.value) and "scene_0.mp4" in str(excinfo.value)
 
 
 def test_the_cut_list_is_announced_so_a_render_log_carries_the_number(stub_main, capsys):
     M.main()
     lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("cuts:")]
-    assert lines == ["cuts: 1 picture changes in 30.0s"]
+    assert lines == ["cuts: 2 picture changes in 30.0s"]
+    stub_main.spec["short"].pop("cta")
+    M.main()
+    lines = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("cuts:")]
+    assert lines == ["cuts: 1 picture change in 30.0s"], "one change is not one changes"
