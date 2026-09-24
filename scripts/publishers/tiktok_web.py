@@ -756,7 +756,17 @@ class TikTokWebPublisher(Publisher):
         """
         radio = page.get_by_role("radio", name=S.SCHEDULE_RADIO_NAME, exact=True)
         if not radio.is_checked():
-            radio.click()
+            # The <input> is visually hidden behind a custom control (verified 2026-09-23,
+            # run tiktok_web-191713: Playwright resolved it and then waited 30 s for it to be
+            # visible). The <label for=…> is what a person clicks, so click that; if the
+            # label cannot be found, a forced check() skips the visibility wait and still
+            # verifies the radio ended up checked.
+            radio_id = radio.get_attribute("id")
+            label = page.locator(f"label[for='{radio_id}']") if radio_id else None
+            if label is not None and label.count():
+                label.first.click()
+            else:
+                radio.check(force=True)
         page.locator(S.SCHEDULE_DATE_INPUT).first.wait_for(
             state="visible", timeout=ANCHOR_TIMEOUT_MS)
 
@@ -811,9 +821,33 @@ class TikTokWebPublisher(Publisher):
         self._click_exact(page, S.CALENDAR_DAY, str(when.day))
 
     def _set_time(self, page, time_loc, when: dt.datetime) -> None:
+        """Open the time picker with the input centred in the viewport, then pick hour and
+        minute by scrolling the picker's OWN list, never the page.
+
+        Verified 2026-09-23 (run tiktok_web-192503): the picker is a popover that closes when
+        the page scrolls, and Playwright's click scrolls the page to reach an option that is
+        below the fold — so the option click landed on nothing and the field kept its default
+        (it read 16:40 for a 14:00 request). Centring the input first keeps the whole popover
+        on screen; scrolling the list container keeps the popover open.
+        """
+        time_loc.evaluate("el => el.scrollIntoView({block: 'center'})")
         time_loc.click()
-        self._click_exact(page, S.TIME_HOUR_OPTION, f"{when:%H}")
-        self._click_exact(page, S.TIME_MINUTE_OPTION, f"{(when.minute // 5) * 5:02d}")
+        self._click_option_in_list(page, S.TIME_HOUR_OPTION, f"{when:%H}")
+        if not page.locator(S.TIME_MINUTE_OPTION).count():
+            time_loc.click()  # the hour click closed the popover; reopen for the minute
+        self._click_option_in_list(page, S.TIME_MINUTE_OPTION, f"{(when.minute // 5) * 5:02d}")
+
+    def _click_option_in_list(self, page, selector: str, text: str) -> None:
+        """_click_exact for an option inside a scrollable list: bring the option into the
+        list's view by setting the list's scrollTop, then click it where it is."""
+        pattern = re.compile(rf"^{re.escape(text)}$")
+        option = page.locator(selector).filter(has_text=pattern).first
+        option.evaluate(
+            "el => { let p = el.parentElement;"
+            " while (p && !(/(auto|scroll)/.test(getComputedStyle(p).overflowY)"
+            " && p.scrollHeight > p.clientHeight)) p = p.parentElement;"
+            " if (p) p.scrollTop = Math.max(0, el.offsetTop - p.clientHeight / 2); }")
+        option.click()
 
     def _goto_month(self, page, when: dt.datetime, *, max_steps: int = 24) -> None:
         """Click CALENDAR_NEXT/CALENDAR_PREV until the header names `when`'s month and year."""

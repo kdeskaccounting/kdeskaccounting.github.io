@@ -49,6 +49,17 @@ class _Loc:
     def is_visible(self):
         return self.count() > 0
 
+    def evaluate(self, js, *a):
+        self.page.calls.append(f"evaluate:{self.key}")
+        return None
+
+    def get_attribute(self, name):
+        return self.page.attrs.get((self.key, name))
+
+    def check(self, **kw):
+        self.page.calls.append(f"check:{self.key}")
+        self.page.checked[self.key] = True
+
     def is_checked(self):
         return self.page.checked.get(self.key, False)
 
@@ -111,6 +122,7 @@ class _Page:
         self.counts = {}
         self.values = {}
         self.checked = {}
+        self.attrs = {}
         self.texts = {}
         self.readonly = set()
         self.on_click = {}
@@ -537,10 +549,20 @@ def test_with_no_schedule_at_it_posts_now_and_never_touches_the_date_fields(pub,
 RADIO_KEY = f"role:radio:{S.SCHEDULE_RADIO_NAME}"
 
 
-def test_the_schedule_radio_is_clicked_when_it_is_not_checked():
+def test_the_schedule_radio_is_selected_through_its_label_when_it_is_not_checked():
+    """The radio input is hidden behind a custom control; its <label for=…> is the click."""
+    page = _Page()
+    page.attrs[(RADIO_KEY, "id")] = "radio-x1"
+    tw.TikTokWebPublisher().enable_schedule(page)
+    assert "click:label[for='radio-x1']" in page.calls
+    assert f"click:{RADIO_KEY}" not in page.calls
+
+
+def test_the_schedule_radio_is_force_checked_when_it_has_no_label():
     page = _Page()
     tw.TikTokWebPublisher().enable_schedule(page)
-    assert f"click:{RADIO_KEY}" in page.calls
+    assert f"check:{RADIO_KEY}" in page.calls
+    assert f"click:{RADIO_KEY}" not in page.calls
 
 
 def test_the_schedule_radio_is_left_alone_when_already_checked():
@@ -548,12 +570,13 @@ def test_the_schedule_radio_is_left_alone_when_already_checked():
     page.checked[RADIO_KEY] = True
     tw.TikTokWebPublisher().enable_schedule(page)
     assert f"click:{RADIO_KEY}" not in page.calls
+    assert f"check:{RADIO_KEY}" not in page.calls
 
 
 def test_enable_schedule_waits_for_the_date_input_after_the_radio_click():
     page = _Page()
     tw.TikTokWebPublisher().enable_schedule(page)
-    assert (page.calls.index(f"click:{RADIO_KEY}")
+    assert (page.calls.index(f"check:{RADIO_KEY}")
             < page.calls.index(f"wait_for:{S.SCHEDULE_DATE_INPUT}"))
 
 
