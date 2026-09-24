@@ -646,6 +646,50 @@ def test_a_long_single_word_is_never_measured_as_half_a_word():
         assert size >= C.MIN_FONT_PX
 
 
+#: Cues the 2026-W38 v4 renders burned in, read back from their captions.json. Every one of
+#: them was clipped in the finished Short: the three-word cues wrapped to THREE lines in a
+#: band that holds two (ink on the band's top and bottom rows), and the long single words
+#: ran past both edges of the 1080 px frame. All at size large, position center, pop 1.14.
+CLIPPED_IN_W38 = (
+    "what changed their", "walk-through with", "119 life-size figures,", "guests travel 1,838",
+    "three-circle shapes", "could agree whether", "The neighboring Test", "reopened in December",
+    "Technological", "sophisticated", "combination.", "under construction.", "sponsorship on",
+)
+
+
+@pytest.mark.parametrize("text", CLIPPED_IN_W38)
+def test_a_cue_is_sized_so_the_band_page_wraps_it_into_the_lines_the_band_holds(text):
+    """The width model has to be the one Chrome lays the band page out with: Arial Bold
+    capitals (no @font-face reaches the band page), letter-spacing, the pop's span margins,
+    and greedy wrapping at word boundaries. Sized any other way, "119 LIFE-SIZE FIGURES,"
+    goes to three lines of 123 px in a 355 px band and loses the top of the 119."""
+    box = C.caption_box(1080, 1920, position="center", size="large")
+    usable, band_h = box[2] - box[0], box[3] - box[1]
+    rows = C.size_rules("large")[2]
+    px = C.font_size(text, box, size="large", pop=1.14)
+    lines = C.wrap(text.split(), px, usable, pop=1.14)
+    assert len(lines) <= rows, (text, px, lines)
+    assert len(lines) * 1.06 * px <= band_h, (text, px)
+    for line in lines:
+        # At the size the page will actually be given — caption_html writes it to one
+        # decimal, which rounds up half the time — the line still fits the box. That is
+        # what FIT_SLACK_FRAC buys: a line fitted to the last pixel wrapped on the rounding.
+        assert C.line_em(line, pop=1.14) * round(px + 0.05, 1) <= usable, (text, px, line)
+    assert px >= C.MIN_FONT_PX
+
+
+def test_the_advance_table_is_arial_bold():
+    """The table is pinned to the face Chrome actually falls through to. Re-measured with
+    FreeType wherever Pillow and the system font exist; elsewhere the numbers stand."""
+    ImageFont = pytest.importorskip("PIL.ImageFont")
+    font = pathlib.Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
+    if not font.exists():
+        pytest.skip("no system Arial Bold to measure")
+    face = ImageFont.truetype(str(font), 1000)
+    for ch, em in C.ADVANCE_EM.items():
+        assert face.getlength(ch) / 1000 == pytest.approx(em, abs=0.001), ch
+
+
 # --- the hook plate ----------------------------------------------------------------------
 
 PLATE = {"text": "HIDDEN MICKEYS", "kicker": "EPCOT", "seconds": 1.4, "position": "center"}

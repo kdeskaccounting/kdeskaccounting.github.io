@@ -145,9 +145,41 @@ SIZE_TABLE = {
 }
 SIZES = tuple(SIZE_TABLE)
 
-#: Average advance width of a bold sans glyph, in em. Used to step a long cue down so it fits
-#: its lines AND its longest word — the same trick cards._heading_size uses on a card headline.
+#: Average advance width of a bold sans glyph, in em — the PLATE's width model
+#: (`plate_max_word_chars`). Cues stopped using it on 2026-09-23: measured against what the
+#: band page actually renders it is an underestimate (see ADVANCE_EM), and a cue sized to it
+#: wrapped to three lines in a two-line band, or ran a long word off the frame.
 FONT_EM_PER_CHAR = 0.58
+
+#: Advance widths, in em, of the face the captions ACTUALLY render in: system Arial Bold.
+#: The brand stack names Carlito first, but caption_html carries no @font-face (only
+#: render_sheets.BASE_CSS does, and the band page never includes it), so Chrome falls
+#: through to Arial. Measured with FreeType from /System/Library/Fonts/Supplemental/Arial
+#: Bold.ttf; the suite re-measures it wherever Pillow and that file exist. The page is
+#: `text-transform: uppercase`, so only capitals, digits and punctuation are on screen.
+ADVANCE_EM = {
+    "A": 0.722, "B": 0.722, "C": 0.722, "D": 0.722, "E": 0.667, "F": 0.611, "G": 0.778,
+    "H": 0.722, "I": 0.278, "J": 0.556, "K": 0.722, "L": 0.611, "M": 0.833, "N": 0.722,
+    "O": 0.778, "P": 0.667, "Q": 0.778, "R": 0.722, "S": 0.667, "T": 0.611, "U": 0.722,
+    "V": 0.667, "W": 0.944, "X": 0.667, "Y": 0.667, "Z": 0.611,
+    "0": 0.556, "1": 0.556, "2": 0.556, "3": 0.556, "4": 0.556, "5": 0.556, "6": 0.556,
+    "7": 0.556, "8": 0.556, "9": 0.556,
+    ".": 0.278, ",": 0.278, ":": 0.333, ";": 0.333, "!": 0.333, "?": 0.611, "'": 0.238,
+    '"': 0.474, "-": 0.333, "(": 0.333, ")": 0.333, "$": 0.556, "%": 0.889, "&": 0.722,
+    "/": 0.278, " ": 0.278,
+}
+#: A glyph the table does not list (a curly quote, an accented capital) is assumed as wide
+#: as an M: wrong only on the safe side.
+DEFAULT_ADVANCE_EM = 0.833
+SPACE_EM = ADVANCE_EM[" "]
+#: Mirrors `letter-spacing:.01em` in caption_html.
+LETTER_SPACING_EM = 0.01
+#: The band width a cue is fitted to is this much narrower than the box. Measured in the
+#: renderer's own headless Chrome (2026-09-23): a line sized to the box lands at 864.0 px of
+#: 864 exactly, and caption_html then writes the size to one decimal place — rounded UP
+#: half the time — so an exact fit wrapped "THE OUTSIDE WAS" to three lines. One percent is
+#: 8.6 px at 1080 wide: invisible, and more than any rounding this page does.
+FIT_SLACK_FRAC = 0.01
 #: Floor: below this a caption is unreadable on a phone, so the cue wraps instead.
 MIN_FONT_PX = 44.0
 
@@ -457,29 +489,89 @@ def caption_box(width: int, height: int, card_top: int | None = None,
 
 # --- type -------------------------------------------------------------------------------------
 
-def font_size(text: str, box, lines: int | None = None, size: str = "default") -> float:
+def word_em(word: str, pop: float = DEFAULT_POP) -> float:
+    """The layout width of one word, in em, as the band page sets it: its glyph advances in
+    capitals, the letter-spacing on each, and — when the pop is on — the inline-block
+    margin on both sides of its span."""
+    text = str(word).upper()
+    em = sum(ADVANCE_EM.get(ch, DEFAULT_ADVANCE_EM) for ch in text)
+    em += len(text) * LETTER_SPACING_EM
+    if float(pop) > DEFAULT_POP:
+        em += 2 * SPAN_MARGIN_EM
+    return em
+
+
+def line_em(words, pop: float = DEFAULT_POP) -> float:
+    """The layout width of one line of words, in em: the words and the spaces between."""
+    words = list(words)
+    gaps = max(0, len(words) - 1) * (SPACE_EM + LETTER_SPACING_EM)
+    return sum(word_em(w, pop) for w in words) + gaps
+
+
+def tightest_lines_em(words, rows: int, pop: float = DEFAULT_POP) -> float:
+    """The narrowest the WIDEST line can be, over every split of `words` into at most `rows`
+    consecutive lines. Chrome wraps greedily, and greedy first-fit wraps into the fewest
+    lines any split can, so type sized to this width wraps to `rows` lines or fewer — which
+    is the whole question, because the band holds exactly `rows` lines of it."""
+    words = list(words)
+    if not words:
+        return 0.0
+    whole = line_em(words, pop)
+    if rows <= 1 or len(words) == 1:
+        return whole
+    best = whole
+    for k in range(1, len(words)):
+        best = min(best, max(line_em(words[:k], pop), tightest_lines_em(words[k:], rows - 1, pop)))
+    return best
+
+
+def wrap(words, px: float, usable: float, pop: float = DEFAULT_POP) -> list:
+    """How the band page wraps `words` at `px` of type into `usable` px: greedy first-fit
+    at word boundaries. (A hyphen is one more place Chrome MAY break, which can only pack a
+    line fuller, never produce more lines than this.)"""
+    lines, current = [], []
+    for w in words:
+        trial = current + [w]
+        if current and line_em(trial, pop) * px > usable:
+            lines.append(current)
+            current = [w]
+        else:
+            current = trial
+    if current:
+        lines.append(current)
+    return lines
+
+
+def font_size(text: str, box, lines: int | None = None, size: str = "default",
+              pop: float = DEFAULT_POP) -> float:
     """Type size for one cue: as big as the band allows, wrapped over at most `lines`.
 
     `size` picks the font fraction and the default line count out of SIZE_TABLE; `lines`
     overrides the line count alone. Measuring over more than one line is what lets the type
     stay big: a two-word cue that wraps reads better than the same cue shrunk onto one line.
 
-    The width model is the longest WORD, not the average line: CSS cannot break inside a word
-    (there is no overflow-wrap or hyphens in caption_html) and the page is overflow:hidden, so
-    a cue sized to `chars / lines` would simply have its longest word clipped — "IN
-    ADVENTURELAND" halves to 8 characters and then needs 1072 px of an 864 px band. The cap on
-    a cue's characters bounds the paragraph, not the word, so the word is measured directly;
-    MIN_FONT_PX is the floor below which the cue is unreadable anyway.
+    The width model is the band page's own layout (`tightest_lines_em`): Arial Bold capitals
+    at their real advances, the letter-spacing, the pop's span margins when `pop` is on, and
+    a greedy wrap at word boundaries into at most `lines` lines. It is sized to the split
+    whose widest line is narrowest — since CSS cannot break inside a word and the page is
+    overflow:hidden, the longest word is a line of its own in that measure, never halved.
+
+    Before 2026-09-23 this was `chars / lines` at a flat 0.58 em a glyph. Arial Bold
+    capitals average 0.66-0.75 em, so a cue measured as fitting two lines wrapped to three
+    (3 x 1.06 x 123 px in a 355 px band: the top of "119" and the bottom of "FIGURES," gone)
+    and a 13-character word sized to the 864 px box ran past both edges of the 1080 px
+    frame. MIN_FONT_PX is the floor below which the cue is unreadable anyway. The fit
+    leaves FIT_SLACK_FRAC of the box unused, because the page rounds the size it is given.
     """
     left, top, right, bottom = box
     band_h, usable = bottom - top, right - left
     band_frac, size_lines = size_rules(size)[1:]
-    text = str(text or "")
     rows = max(1, int(size_lines if lines is None else lines))
-    longest = max((len(word) for word in text.split()), default=1)
-    per_line = max(1.0, float(longest), max(len(text), 1) / rows)
-    return max(MIN_FONT_PX, min(band_frac * band_h,
-                                usable / (per_line * FONT_EM_PER_CHAR)))
+    words = str(text or "").split()
+    widest = tightest_lines_em(words, rows, pop)
+    room = usable * (1 - FIT_SLACK_FRAC)
+    fit = room / widest if widest > 0 else band_frac * band_h
+    return max(MIN_FONT_PX, min(band_frac * band_h, fit))
 
 
 def _checked_accent(value: object) -> str:
@@ -512,7 +604,7 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
     colour = _checked_accent(accent)
     left, top, _right, bottom = box
     band_h = bottom - top
-    fs = font_size(cue.text, box, size=size)
+    fs = font_size(cue.text, box, size=size, pop=pop)
     pop_css = "" if float(pop) <= DEFAULT_POP else (
         f"\n.line span{{display:inline-block;margin:0 {SPAN_MARGIN_EM}em}}"
         f"\n.lit{{transform:scale({float(pop):.2f});transform-origin:{POP_ORIGIN};"
