@@ -35,6 +35,10 @@ META = {"slug": "parksheet-day-1", "title": "Wait times fell 22% at Epcot",
 
 # --------------------------------------------------------------------------- the fake page
 
+class _FakeTimeout(Exception):
+    """Stands in for playwright.sync_api.TimeoutError (not the builtin)."""
+
+
 class _Loc:
     def __init__(self, page, key):
         self.page, self.key = page, key
@@ -65,6 +69,11 @@ class _Loc:
 
     def wait_for(self, **kw):
         self.page.calls.append(f"wait_for:{self.key}")
+        # A locator that the fake says is absent (counts == 0) behaves like Playwright: the
+        # wait times out. Only when a timeout was asked for, so existing tests that never set
+        # a count keep their "everything is there" default.
+        if kw.get("timeout") is not None and self.page.counts.get(self.key, 1) == 0:
+            raise _FakeTimeout(f"Timeout {kw['timeout']}ms exceeded waiting for {self.key}")
 
     def locator(self, sel):
         """A chained locator, e.g. the not-inside-a-button guard on a text match."""
@@ -578,6 +587,25 @@ def test_enable_schedule_waits_for_the_date_input_after_the_radio_click():
     tw.TikTokWebPublisher().enable_schedule(page)
     assert (page.calls.index(f"check:{RADIO_KEY}")
             < page.calls.index(f"wait_for:{S.SCHEDULE_DATE_INPUT}"))
+
+
+CONFIRM_KEY = f"role:button:{S.POST_CONFIRM_TEXT}"
+
+
+def test_a_post_now_confirmation_is_clicked_after_the_post_button():
+    page = _Page()
+    tw.TikTokWebPublisher().submit(page, None)
+    post_i = page.calls.index(f"click:role:button:{S.POST_BUTTON_TEXT}")
+    assert f"click:{CONFIRM_KEY}" in page.calls
+    assert post_i < page.calls.index(f"click:{CONFIRM_KEY}") < page.calls.index("wait_for_url")
+
+
+def test_a_missing_post_now_confirmation_is_not_an_error():
+    page = _Page()
+    page.counts[CONFIRM_KEY] = 0          # the dialog never appears: wait_for times out
+    tw.TikTokWebPublisher().submit(page, None)
+    assert f"click:{CONFIRM_KEY}" not in page.calls
+    assert "wait_for_url" in page.calls
 
 
 def test_the_submit_button_is_resolved_exactly_not_as_a_substring(pub, asset):

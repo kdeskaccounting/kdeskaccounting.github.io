@@ -149,7 +149,11 @@ TOO_SOON_TEXT = "Schedule at least 15 minutes in advance"   # verified 2026-09-2
 # the danger (see the old NOT_INSIDE_A_BUTTON guard, now gone): a text-only click could land on
 # either. get_by_role scopes by role first (radio vs button), so the two can never collide.
 POST_BUTTON_TEXT = "Post"                         # verified 2026-09-23: exact <button>Post</button>
-SCHEDULE_BUTTON_TEXT = "Schedule"                 # verified 2026-09-23: exact <button>Schedule</button>
+SCHEDULE_BUTTON_TEXT = "Schedule"
+# Verified 2026-09-23: clicking Post while TikTok's content check is still running opens a
+# "Continue to post?" dialog whose primary button is "Post now"; the post does not go through
+# until it is clicked. (Scheduling showed no such dialog that day; the driver tolerates both.)
+POST_CONFIRM_TEXT = "Post now"                 # verified 2026-09-23: exact <button>Schedule</button>
 
 # First-run account modals ("Turn on automatic content checks?", "New editing features added",
 # "Allow your video to be saved for scheduled posting?") were seen once, each with exactly one
@@ -226,6 +230,7 @@ POST_FILE_ONLY = (
     "TOO_SOON_TEXT",
     "POST_BUTTON_TEXT",
     "SCHEDULE_BUTTON_TEXT",
+    "POST_CONFIRM_TEXT",
 )
 
 # Every anchor above that has never been seen live. capabilities() publishes this list and

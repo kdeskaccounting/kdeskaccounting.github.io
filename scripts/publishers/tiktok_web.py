@@ -65,6 +65,8 @@ MIN_KEY_LEN = 12
 ELLIPSIS = ("\u2026", "...")
 NAV_TIMEOUT_MS = 60_000
 ANCHOR_TIMEOUT_MS = 30_000
+#: How long the optional "Continue to post?" confirmation gets to appear after Post is clicked.
+CONFIRM_TIMEOUT_MS = 8_000
 #: How long the caption editor gets to become click-stable before the driver falls back to
 #: keyboard focus (see Publisher.fill_caption). Short on purpose: the fallback is the normal
 #: path on a page that never settles, and a long wait here only delays the post.
@@ -898,7 +900,25 @@ class TikTokWebPublisher(Publisher):
                 timeout=UPLOAD_TIMEOUT_MS):
             self._submitted = True      # point of no return — never re-upload past here
             button.click()
+            self._confirm_post_if_asked(page)
         page.wait_for_url(lambda url: S.CONTENT_URL in url, timeout=NAV_TIMEOUT_MS)
+
+    def _confirm_post_if_asked(self, page) -> None:
+        """Click "Post now" in the "Continue to post?" dialog when TikTok raises it.
+
+        Verified 2026-09-23: with the automatic content check still running, Post opens a
+        confirmation instead of posting; the 20:22 run clicked Post, never saw that dialog,
+        and timed out waiting for the response while the video sat unposted. The dialog is
+        optional (it did not appear on a scheduled post), so its absence is not an error.
+        """
+        confirm = page.get_by_role("button", name=S.POST_CONFIRM_TEXT, exact=True).first
+        try:
+            confirm.wait_for(state="visible", timeout=CONFIRM_TIMEOUT_MS)
+        except Exception as exc:  # playwright's TimeoutError is not the builtin
+            if "Timeout" in type(exc).__name__ or "Timeout" in str(exc):
+                return
+            raise
+        confirm.click()
 
 
 # ----------------------------------------------------------------------------- the CLI
