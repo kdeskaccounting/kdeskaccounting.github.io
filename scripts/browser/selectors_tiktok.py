@@ -9,10 +9,20 @@ that does and does not cover is the thing to read before trusting a line below:
 * **Verified** anchors were counted on the live page by `tiktok_web.py --check` /
   `scripts/browser/runs/2026-09-15/selectors-*`. They carry `# verified 2026-09-15` plus how.
 * **Post-file only** anchors — the caption editor, the scheduler, the submit button — do not
-  exist in the DOM until a video has been handed to TikTok, and selecting a file *starts an
-  upload*. They cannot be confirmed read-only, so they stay `# UNVERIFIED` and are listed in
-  both `UNVERIFIED` and `POST_FILE_ONLY`. `--check` prints "post-file only" for them rather
-  than "MISSING", because a canary that cries wolf every run is a canary nobody reads.
+  exist in the DOM until a video has been handed to TikTok, and `--check` may not select a
+  file to see them, because that starts a real upload. They stay in `POST_FILE_ONLY` forever
+  for that reason, but that is no longer the same thing as being a guess: on 2026-09-23 a real
+  video was carried through the scheduler by hand, so most of this section now carries
+  `# verified 2026-09-23` instead of `# UNVERIFIED` — see the anchor-by-anchor notes below.
+  What is still genuinely unverified (never confirmed even by that pass) stays `# UNVERIFIED`
+  and in `UNVERIFIED`.
+
+**Status, 2026-09-23.** The "When to post" control turned out not to be a switch — it is two
+`<input type='radio' name='postSchedule'>`, so `SCHEDULE_RADIO_NAME` replaces the old
+`SCHEDULE_TOGGLE`/`SCHEDULE_TOGGLE_TEXT` guess (and the `NOT_INSIDE_A_BUTTON` guard that
+guess needed no longer exists — a role-scoped radio lookup cannot land on a button). The date
+and time fields are read-only text inputs told apart by the shape of their value, not by
+position. See the scheduler section below for the rest.
 
 Three things the 2026-09-15 pass established that the previous guesses had wrong:
 
@@ -80,31 +90,74 @@ CAPTION_MAX = 2200                                # UNVERIFIED (post-file only)
 # the element it actually needs rather than a label that may be reworded.
 UPLOAD_READY_TEXT = "Caption"                     # UNVERIFIED (post-file only)
 
-# The scheduler: a "Now" / "Schedule" pair plus a date and a time field. Tried as a switch
-# role first and as label text second — see NOT_INSIDE_A_BUTTON for why the text path is
-# guarded rather than clicked straight.
-SCHEDULE_TOGGLE = "[role='switch']"               # UNVERIFIED (post-file only)
-SCHEDULE_TOGGLE_TEXT = "Schedule"                 # UNVERIFIED (post-file only)
-POST_NOW_TOGGLE_TEXT = "Now"                      # UNVERIFIED (post-file only)
-SCHEDULE_DATE_INPUT = "input[placeholder*='-']"   # UNVERIFIED (post-file only)
-SCHEDULE_TIME_INPUT = "input[placeholder*=':']"   # UNVERIFIED (post-file only)
-# How the two fields want their values. Both are formatted by tiktok_web.format_date/_time,
-# which is unit-tested, so a wrong format here is a one-constant fix rather than a code change.
-DATE_FORMAT = "%Y-%m-%d"                          # UNVERIFIED (post-file only)
-TIME_FORMAT = "%H:%M"                             # UNVERIFIED (post-file only)
+# The scheduler, verified live 2026-09-23 in the post-file form (uploading a real video is
+# the only way to see any of this, so "post-file only" still applies to every line below even
+# where the value itself is no longer a guess).
+#
+# "When to post" is NOT a switch — the 2026-09-15 guess was wrong. It is two
+# `<input type='radio' name='postSchedule'>` with `<label for=…>` text "Now" / "Schedule".
+# The first `[role='switch']` on the page is the disabled, aria-hidden "High-quality uploads"
+# toggle: clicking it hangs the driver. get_by_role("radio", name=SCHEDULE_RADIO_NAME,
+# exact=True) is unambiguous because it is role-scoped — a radio lookup can never resolve to
+# the <button> that submits, so (unlike the old switch/text guess) no NOT_INSIDE_A_BUTTON-style
+# guard is needed here.
+SCHEDULE_RADIO_NAME = "Schedule"                  # verified 2026-09-23: <input type=radio>, labelled
+POST_NOW_RADIO_NAME = "Now"                       # verified 2026-09-23: the other radio, checked by default
+
+# Selecting Schedule reveals two READ-ONLY text inputs, both `input.TUXTextInputCore-input`
+# with no placeholder, no aria-label and no stable DOM-order guarantee (seen time-then-date
+# live, but that is TikTok's layout choice, not a contract) — so SCHEDULE_DATE_INPUT and
+# SCHEDULE_TIME_INPUT are deliberately the SAME selector. The driver tells them apart by
+# reading each one's current value against DATE_VALUE_RE / TIME_VALUE_RE, never by position.
+# Being read-only text inputs, `fill()` cannot set them — see tiktok_web.set_schedule.
+SCHEDULE_DATE_INPUT = "input.TUXTextInputCore-input"   # verified 2026-09-23: 2 matched, read-only
+SCHEDULE_TIME_INPUT = "input.TUXTextInputCore-input"   # verified 2026-09-23: 2 matched, read-only
+DATE_VALUE_RE = r"^\d{4}-\d{2}-\d{2}$"            # verified 2026-09-23: e.g. "2026-09-19"
+TIME_VALUE_RE = r"^\d{2}:\d{2}$"                  # verified 2026-09-23: e.g. "19:10", 24-hour
+# How the two fields want their values once found — tiktok_web.format_date/_time, unit-tested,
+# so a wrong format here is a one-constant fix rather than a code change.
+DATE_FORMAT = "%Y-%m-%d"                          # verified 2026-09-23
+TIME_FORMAT = "%H:%M"                             # verified 2026-09-23
+
+# Clicking the time input opens two columns of `.tiktok-timepicker-option-text`: hours 00-23
+# on the left, minutes on the right in 5-minute steps (00, 05, … 55). The active option adds
+# `tiktok-timepicker-is-active`, but the driver does not need that class — it clicks the
+# option whose own text equals the target hour/minute. A programmatic `.click()` scrolled an
+# option into view but did not select it; a real pointer click did (Playwright's default).
+TIME_HOUR_OPTION = ".tiktok-timepicker-option-text.tiktok-timepicker-left"    # verified 2026-09-23
+TIME_MINUTE_OPTION = ".tiktok-timepicker-option-text.tiktok-timepicker-right"  # verified 2026-09-23
+
+# Clicking the date input opens a calendar: `.month-title` header (e.g. "September / 2026"),
+# `‹`/`›` arrows either side of it, and day cells `.day.valid` (out-of-range / other-month days
+# are plain `.day`, with no `valid`, and must never be clicked). CALENDAR_NEXT/CALENDAR_PREV
+# are selected by POSITION relative to the title — the arrows carry no stable class or
+# accessible name that was found live — so this is a guess about structure, not about copy,
+# and stays UNVERIFIED until a real month change has been driven end to end.
+CALENDAR_MONTH_TITLE = ".month-title"             # verified 2026-09-23
+CALENDAR_DAY = ".day.valid"                       # verified 2026-09-23
+CALENDAR_NEXT = "xpath=//*[contains(concat(' ', normalize-space(@class), ' '), ' month-title ')]/following-sibling::*[1]"  # UNVERIFIED (position guess)
+CALENDAR_PREV = "xpath=//*[contains(concat(' ', normalize-space(@class), ' '), ' month-title ')]/preceding-sibling::*[1]"  # UNVERIFIED (position guess)
+
+# Shown under the pickers when the chosen datetime is too soon. The driver asserts this text
+# is ABSENT after setting the date and time, before it ever clicks submit.
+TOO_SOON_TEXT = "Schedule at least 15 minutes in advance"   # verified 2026-09-23
 
 # The submit button is labelled "Schedule" when the scheduler is on and "Post" when it is off.
 # Both are resolved with exact=True: "Post" as a substring also matches the sidebar's "Posts"
 # entry, which sorts FIRST in the DOM — `.first` would have clicked the nav, not the form.
-POST_BUTTON_TEXT = "Post"                         # UNVERIFIED (post-file only)
-SCHEDULE_BUTTON_TEXT = "Schedule"                 # UNVERIFIED (post-file only)
-# SCHEDULE_TOGGLE_TEXT and SCHEDULE_BUTTON_TEXT are the SAME WORD. If the scheduler's label
-# is ever rendered inside a <button>, or the submit button sorts before the toggle, then
-# "click the text 'Schedule'" is "click Post" — and because the toggle click happens before
-# the point-of-no-return flag is set, the failure would be retried into a SECOND upload. This
-# relative XPath is applied to the text match so an element inside a button can never be the
-# thing clicked. Verified as XPath (it is our guard, not TikTok's markup).
-NOT_INSIDE_A_BUTTON = "xpath=self::*[not(ancestor-or-self::button)]"   # verified 2026-09-15
+# SCHEDULE_RADIO_NAME and SCHEDULE_BUTTON_TEXT are the SAME WORD, "Schedule" — that used to be
+# the danger (see the old NOT_INSIDE_A_BUTTON guard, now gone): a text-only click could land on
+# either. get_by_role scopes by role first (radio vs button), so the two can never collide.
+POST_BUTTON_TEXT = "Post"                         # verified 2026-09-23: exact <button>Post</button>
+SCHEDULE_BUTTON_TEXT = "Schedule"                 # verified 2026-09-23: exact <button>Schedule</button>
+
+# First-run account modals ("Turn on automatic content checks?", "New editing features added",
+# "Allow your video to be saved for scheduled posting?") were seen once, each with exactly one
+# primary button, and dismissed by hand. They should not recur, but dismiss_first_run_dialogs
+# tolerates them by clicking a button with one of these exact names — never "Post", never
+# "Discard" — before the scheduler is touched.
+FIRST_RUN_DIALOG_BUTTONS = ("Allow", "Got it", "Turn on")   # verified 2026-09-23: literal copy
+
 # The XHR whose completion means "TikTok accepted it" (rule 6: wait_for_response, not a sleep).
 # The URL change to the content page is the second, independent confirmation, so a drifted
 # fragment here costs a retry rather than a wrong answer. Only a real post would show it.
@@ -161,11 +214,16 @@ CONTENT_HAS_SCHEDULED_TAB = False                 # verified 2026-09-15: no [rol
 POST_FILE_ONLY = (
     "CAPTION_EDITOR",
     "UPLOAD_READY_TEXT",
-    "SCHEDULE_TOGGLE",
-    "SCHEDULE_TOGGLE_TEXT",
-    "POST_NOW_TOGGLE_TEXT",
+    "SCHEDULE_RADIO_NAME",
     "SCHEDULE_DATE_INPUT",
     "SCHEDULE_TIME_INPUT",
+    "TIME_HOUR_OPTION",
+    "TIME_MINUTE_OPTION",
+    "CALENDAR_MONTH_TITLE",
+    "CALENDAR_DAY",
+    "CALENDAR_NEXT",
+    "CALENDAR_PREV",
+    "TOO_SOON_TEXT",
     "POST_BUTTON_TEXT",
     "SCHEDULE_BUTTON_TEXT",
 )
@@ -173,21 +231,17 @@ POST_FILE_ONLY = (
 # Every anchor above that has never been seen live. capabilities() publishes this list and
 # `--check` is what shortens it: delete a name here in the same commit that confirms it.
 # FILE_INPUT, POSTS_TABLE, SELECT_VIDEO_*, SCHEDULED_EMPTY_TEXT and the URLs left this list on
-# 2026-09-15; the rest are either post-file only or need a post on the account to exist.
+# 2026-09-15; the whole post-file scheduler (radio, date/time inputs, time picker, calendar day
+# cells, the too-soon text, both submit labels) left it 2026-09-23 — a real upload was driven
+# end to end. Only the calendar month arrows (guessed by position, never actually clicked to
+# change a month) and the anchors that still need a post on the account remain.
 UNVERIFIED = (
     "LOGIN_QR_TEXT",
     "CAPTION_EDITOR",
     "CAPTION_MAX",
     "UPLOAD_READY_TEXT",
-    "SCHEDULE_TOGGLE",
-    "SCHEDULE_TOGGLE_TEXT",
-    "POST_NOW_TOGGLE_TEXT",
-    "SCHEDULE_DATE_INPUT",
-    "SCHEDULE_TIME_INPUT",
-    "DATE_FORMAT",
-    "TIME_FORMAT",
-    "POST_BUTTON_TEXT",
-    "SCHEDULE_BUTTON_TEXT",
+    "CALENDAR_NEXT",
+    "CALENDAR_PREV",
     "POST_RESPONSE",
     "POST_ROW",
     "POST_ROW_FALLBACK",

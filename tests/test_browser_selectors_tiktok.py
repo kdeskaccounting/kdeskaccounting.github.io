@@ -23,12 +23,15 @@ def test_the_upload_and_content_urls_are_the_studio_urls_the_task_names():
 
 
 def test_every_anchor_the_driver_needs_exists():
-    for attr in ("FILE_INPUT", "CAPTION_EDITOR", "SCHEDULE_TOGGLE", "SCHEDULE_TOGGLE_TEXT",
-                 "SCHEDULE_DATE_INPUT", "SCHEDULE_TIME_INPUT", "POST_BUTTON_TEXT",
+    for attr in ("FILE_INPUT", "CAPTION_EDITOR", "SCHEDULE_RADIO_NAME",
+                 "SCHEDULE_DATE_INPUT", "SCHEDULE_TIME_INPUT", "DATE_VALUE_RE",
+                 "TIME_VALUE_RE", "TIME_HOUR_OPTION", "TIME_MINUTE_OPTION",
+                 "CALENDAR_MONTH_TITLE", "CALENDAR_DAY", "CALENDAR_NEXT", "CALENDAR_PREV",
+                 "TOO_SOON_TEXT", "FIRST_RUN_DIALOG_BUTTONS", "POST_BUTTON_TEXT",
                  "SCHEDULE_BUTTON_TEXT", "POST_ROW", "POST_ROW_FALLBACK", "LOGIN_MARKER",
                  "POST_RESPONSE", "SCHEDULED_EMPTY_TEXT", "UPLOAD_READY_TEXT",
                  "POSTS_TABLE", "UPLOAD_PAGE_READY", "CONTENT_PAGE_READY",
-                 "SELECT_VIDEO_BUTTON", "NOT_INSIDE_A_BUTTON"):
+                 "SELECT_VIDEO_BUTTON"):
         assert getattr(S, attr), attr
 
 
@@ -63,8 +66,8 @@ def test_max_schedule_days_is_ten_and_marked_unverified():
 
 def test_role_and_text_anchors_are_preferred_over_css_chains():
     """Rule 6: get_by_role / get_by_text first. A long descendant chain is the smell."""
-    for name in ("SCHEDULE_TOGGLE_TEXT", "POST_BUTTON_TEXT", "SCHEDULE_BUTTON_TEXT",
-                 "POST_NOW_TOGGLE_TEXT", "UPLOAD_READY_TEXT"):
+    for name in ("SCHEDULE_RADIO_NAME", "POST_BUTTON_TEXT", "SCHEDULE_BUTTON_TEXT",
+                 "POST_NOW_RADIO_NAME", "UPLOAD_READY_TEXT", "TOO_SOON_TEXT"):
         value = getattr(S, name)
         assert ">" not in value and "." not in value, f"{name} looks like a CSS chain"
 
@@ -127,10 +130,22 @@ def test_every_verified_anchor_says_when_it_was_verified():
         assert line and "verified 2026-09-15" in line, f"{name} does not say how it is known"
 
 
-def test_the_post_file_anchors_are_all_unverified_because_seeing_them_starts_an_upload():
+def test_the_post_file_anchors_all_exist():
+    """POST_FILE_ONLY is about *when* an anchor can be checked (never by `--check`, which may
+    not select a file), not about whether it is still a guess — 2026-09-23 verified most of
+    this section by actually driving a real upload through the scheduler. The two exceptions
+    are the calendar arrows, which stay in both POST_FILE_ONLY and UNVERIFIED because no month
+    change was ever driven end to end.
+    """
     for name in S.POST_FILE_ONLY:
         assert hasattr(S, name), f"POST_FILE_ONLY names {name!r}, which is not a selector here"
-        assert name in S.UNVERIFIED, f"{name} cannot be verified read-only; keep it UNVERIFIED"
+    for name in ("CALENDAR_NEXT", "CALENDAR_PREV"):
+        assert name in S.POST_FILE_ONLY and name in S.UNVERIFIED
+    for name in ("SCHEDULE_RADIO_NAME", "SCHEDULE_DATE_INPUT", "SCHEDULE_TIME_INPUT",
+                 "TIME_HOUR_OPTION", "TIME_MINUTE_OPTION", "CALENDAR_MONTH_TITLE",
+                 "CALENDAR_DAY", "TOO_SOON_TEXT", "POST_BUTTON_TEXT", "SCHEDULE_BUTTON_TEXT"):
+        assert name in S.POST_FILE_ONLY
+        assert name not in S.UNVERIFIED, f"{name} was verified live 2026-09-23; drop it from UNVERIFIED"
 
 
 def test_the_empty_state_copy_is_lowercase_because_that_is_how_it_is_matched():
@@ -162,12 +177,16 @@ def test_the_two_row_anchors_are_different_in_kind_not_near_copies():
     assert "data-tt" in S.POST_ROW and "data-tt" not in S.POST_ROW_FALLBACK
 
 
-def test_the_button_guard_is_an_xpath_that_rejects_anything_inside_a_button():
-    """SCHEDULE_TOGGLE_TEXT == SCHEDULE_BUTTON_TEXT, so the text click must never hit Post."""
-    assert S.SCHEDULE_TOGGLE_TEXT == S.SCHEDULE_BUTTON_TEXT, \
-        "if these ever differ, say so here — the guard exists because they are the same word"
-    assert S.NOT_INSIDE_A_BUTTON.startswith("xpath=")
-    assert "ancestor-or-self::button" in S.NOT_INSIDE_A_BUTTON
+def test_the_radio_and_the_submit_button_share_a_word_but_not_a_role():
+    """SCHEDULE_RADIO_NAME == SCHEDULE_BUTTON_TEXT ("Schedule"), the same collision risk the
+    old SCHEDULE_TOGGLE_TEXT/NOT_INSIDE_A_BUTTON guard existed for. That guard is gone because
+    it is no longer needed: get_by_role("radio", ...) is scoped by role and can never resolve
+    to the <button> that submits, unlike the old switch-or-text lookup it replaced.
+    """
+    assert S.SCHEDULE_RADIO_NAME == S.SCHEDULE_BUTTON_TEXT, \
+        "if these ever differ, say so here — the point is that they are the same word"
+    assert not hasattr(S, "NOT_INSIDE_A_BUTTON"), \
+        "a role-scoped radio lookup does not need a not-inside-a-button guard"
 
 
 def test_the_page_ready_anchors_are_ones_that_exist_before_anything_is_chosen():

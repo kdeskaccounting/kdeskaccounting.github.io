@@ -65,6 +65,10 @@ MIN_KEY_LEN = 12
 ELLIPSIS = ("\u2026", "...")
 NAV_TIMEOUT_MS = 60_000
 ANCHOR_TIMEOUT_MS = 30_000
+#: How long the caption editor gets to become click-stable before the driver falls back to
+#: keyboard focus (see Publisher.fill_caption). Short on purpose: the fallback is the normal
+#: path on a page that never settles, and a long wait here only delays the post.
+CAPTION_CLICK_TIMEOUT_MS = 10_000
 # An mp4 upload plus TikTok's own processing, not an API ping.
 UPLOAD_TIMEOUT_MS = 300_000
 LIST_TIMEOUT_MS = 45_000
@@ -361,10 +365,11 @@ def plan_lines(asset: pathlib.Path, meta: dict) -> list[str]:
 def manual_steps(asset: pathlib.Path, meta: dict, when: dt.datetime | None) -> list[str]:
     """The exact remaining manual step, for the queue card (spec Chrome rule 7)."""
     caption = caption_of(meta)
-    timing = (f"turn on {S.SCHEDULE_TOGGLE_TEXT} and set {format_date(when)} "
-              f"{format_time(when)} (UTC{when.strftime('%z')}), then click "
-              f"{S.SCHEDULE_BUTTON_TEXT}"
-              if when else f"leave the scheduler off and click {S.POST_BUTTON_TEXT}")
+    timing = (f"click the '{S.SCHEDULE_RADIO_NAME}' radio (next to 'Now'), set the date and "
+              f"time pickers to {format_date(when)} {format_time(when)} "
+              f"(UTC{when.strftime('%z')}), confirm the '{S.TOO_SOON_TEXT}' warning is gone, "
+              f"then click {S.SCHEDULE_BUTTON_TEXT}"
+              if when else f"leave '{S.POST_NOW_RADIO_NAME}' selected and click {S.POST_BUTTON_TEXT}")
     return [
         "Run: python3 scripts/browser/ensure_chrome.py",
         f"Open {S.UPLOAD_URL} — if it bounces to a login, sign in with "
@@ -408,7 +413,7 @@ def check_probes() -> tuple[tuple[str, str, str, str, str], ...]:
         (S.UPLOAD_URL, "file input", "css", S.FILE_INPUT, LIVE),
         (S.UPLOAD_URL, "select video", "css", S.SELECT_VIDEO_BUTTON, LIVE),
         (S.UPLOAD_URL, "caption editor", "css", S.CAPTION_EDITOR, POST_FILE),
-        (S.UPLOAD_URL, "schedule toggle", "css", S.SCHEDULE_TOGGLE, POST_FILE),
+        (S.UPLOAD_URL, "schedule radio", "role-radio", S.SCHEDULE_RADIO_NAME, POST_FILE),
         (S.UPLOAD_URL, "schedule date", "css", S.SCHEDULE_DATE_INPUT, POST_FILE),
         (S.UPLOAD_URL, "schedule time", "css", S.SCHEDULE_TIME_INPUT, POST_FILE),
         (S.UPLOAD_URL, "post button", "role", S.POST_BUTTON_TEXT, POST_FILE),
@@ -436,6 +441,8 @@ def _resolve(page, kind: str, value: str):
         # that sorts before the form — which is why --check used to report the Post button
         # present on a page that has no Post button at all.
         return page.get_by_role("button", name=value, exact=True)
+    if kind == "role-radio":
+        return page.get_by_role("radio", name=value, exact=True)
     if kind == "role-tab":
         return page.get_by_role("tab")
     return page.get_by_text(value, exact=True)
@@ -449,6 +456,43 @@ def _probe_count(page, kind: str, value: str) -> int:
         # would report the live "No posts yet" as missing. Same test as the driver makes.
         return ((page.inner_text("body") or "").lower()).count(value)
     return _resolve(page, kind, value).count()
+
+
+_MONTH_TITLE_RE = re.compile(r"([A-Za-z]+)\D+(\d{4})")
+
+
+def _parse_month_title(title: str) -> tuple[int, int] | None:
+    """(year, month) parsed from a CALENDAR_MONTH_TITLE header, or None if unrecognisable.
+
+    Written to survive TikTok's own formatting choice ("September / 2026" seen live
+    2026-09-23) rather than assume one: any month name followed eventually by a 4-digit year
+    is enough — a fixed strptime format would break the moment the separator changes.
+    """
+    m = _MONTH_TITLE_RE.search(title or "")
+    if not m:
+        return None
+    name, year = m.group(1), int(m.group(2))
+    for fmt in ("%B", "%b"):
+        try:
+            return (year, dt.datetime.strptime(name, fmt).month)
+        except ValueError:
+            continue
+    return None
+
+
+def dismiss_first_run_dialogs(page) -> None:
+    """Click the one first-run modal button, if one of the three known ones is showing.
+
+    Seen once each live on 2026-09-23 ("Turn on automatic content checks?", "New editing
+    features added", "Allow your video to be saved for scheduled posting?") and dismissed by
+    hand; they should not recur. This clicks a button ONLY when its name is exactly one of
+    FIRST_RUN_DIALOG_BUTTONS — never "Post", never "Discard" — so a dialog that is not one of
+    the three known first-run prompts is left alone rather than guessed at.
+    """
+    for name in S.FIRST_RUN_DIALOG_BUTTONS:
+        button = page.get_by_role("button", name=name, exact=True)
+        if button.count():
+            button.first.click()
 
 
 # --------------------------------------------------------------------------- the publisher
@@ -673,62 +717,132 @@ class TikTokWebPublisher(Publisher):
                                                       timeout=UPLOAD_TIMEOUT_MS)
         self.fill_caption(page, caption)
         if when is not None:
+            dismiss_first_run_dialogs(page)
             self.enable_schedule(page)
             self.set_schedule(page, when)
         self.submit(page, when)
 
     def fill_caption(self, page, caption: str) -> None:
-        """Clear TikTok's pre-filled caption (it seeds it from the file name), then type."""
+        """Clear TikTok's pre-filled caption (it seeds it from the file name), then type.
+
+        The click is allowed to fail. Verified on 2026-09-23 (four live runs, traces under
+        scripts/browser/runs/2026-09-23/tiktok_web-18*): the Draft.js editor resolves and
+        passes the visibility wait, and the click still times out on Playwright's
+        actionability check -- the form re-renders continuously while TikTok processes the
+        upload, so the element is never "stable". Keyboard focus needs no stability, and
+        Draft.js takes typed input the same way after either.
+        """
         editor = page.locator(S.CAPTION_EDITOR).first
         editor.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
-        editor.click()
+        try:
+            editor.click(timeout=CAPTION_CLICK_TIMEOUT_MS)
+        except Exception as exc:  # playwright's TimeoutError is not the builtin one
+            if "Timeout" not in type(exc).__name__ and "Timeout" not in str(exc):
+                raise
+            editor.focus()
         page.keyboard.press("Meta+A")
         page.keyboard.press("Backspace")
         page.keyboard.type(caption)
 
     def enable_schedule(self, page) -> None:
-        """Turn the scheduler on only if it is off — read the state, then apply the diff.
+        """Select the "Schedule" radio only if "Now" is still the active choice.
 
-        **The text path is guarded, and that guard is the point.** SCHEDULE_TOGGLE_TEXT and
-        SCHEDULE_BUTTON_TEXT are the same word, "Schedule": if TikTok ever renders the
-        scheduler's label inside a <button>, or sorts the submit button ahead of it, then
-        "click the text Schedule" is "click the submit button". That would post the video
-        immediately — and because this runs BEFORE `self._submitted` is set, the resulting
-        failure is retried and the video goes up a second time. So the switch role is tried
-        first, and the text match can only ever land on something that is not inside a button.
+        Verified live 2026-09-23: "When to post" is not a switch, it is two
+        `<input type='radio' name='postSchedule'>` with `<label for=…>` text "Now" /
+        "Schedule". SCHEDULE_RADIO_NAME and SCHEDULE_BUTTON_TEXT are still the same word, but
+        `get_by_role("radio", ...)` is scoped by role: it can never resolve to the <button>
+        that submits, so — unlike the old switch/text guess this replaces — no
+        NOT_INSIDE_A_BUTTON-style guard is needed to keep this click off the submit button.
         """
-        if page.locator(S.SCHEDULE_DATE_INPUT).count():
-            return
-        switch = page.locator(S.SCHEDULE_TOGGLE)
-        target = (switch.first if switch.count()
-                  else page.get_by_text(S.SCHEDULE_TOGGLE_TEXT, exact=True)
-                           .locator(S.NOT_INSIDE_A_BUTTON).first)
-        target.click()
+        radio = page.get_by_role("radio", name=S.SCHEDULE_RADIO_NAME, exact=True)
+        if not radio.is_checked():
+            radio.click()
         page.locator(S.SCHEDULE_DATE_INPUT).first.wait_for(
             state="visible", timeout=ANCHOR_TIMEOUT_MS)
 
     def set_schedule(self, page, when: dt.datetime) -> None:
-        self.set_field(page, S.SCHEDULE_DATE_INPUT, format_date(when), str(when.day), "date")
-        self.set_field(page, S.SCHEDULE_TIME_INPUT, format_time(when), format_time(when), "time")
+        """Set the date via the calendar, then the time via the hour/minute picker.
 
-    def set_field(self, page, selector: str, value: str, cell_text: str, what: str) -> None:
-        """Type the value; if the input is a read-only picker, click the cell; else fail loud.
-
-        Both branches end with the field's own value being read back, so "the click landed on
-        something else" cannot pass as success — which for a scheduler means posting at the
-        wrong hour, on a day nobody checks.
+        Date before time, on purpose: TikTok shows "Schedule at least 15 minutes in advance"
+        under the pickers when the chosen instant is too soon, and checking it only after both
+        fields are set (rather than after each) is what lets a stale date get corrected before
+        that warning is judged. Both fields are read back — see _assert_field — so a click that
+        silently landed on the wrong cell is caught here, never at the submit button.
         """
-        field = page.locator(selector).first
-        field.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
-        field.click()
-        field.fill(value)
-        if (field.input_value() or "").strip() != value:
-            page.get_by_text(cell_text, exact=True).first.click()
-        if (field.input_value() or "").strip() != value:
+        date_loc, time_loc = self._locate_schedule_inputs(page)
+        self._set_date(page, date_loc, when)
+        self._set_time(page, time_loc, when)
+        self._assert_field(date_loc, format_date(when), "date", "CALENDAR_DAY")
+        self._assert_field(time_loc, format_time(when), "time",
+                            "TIME_HOUR_OPTION/TIME_MINUTE_OPTION")
+        if page.get_by_text(S.TOO_SOON_TEXT, exact=True).count():
             raise ScheduleFieldError(
-                f"the {what} field would not take {value!r} (it reads "
-                f"{(field.input_value() or '').strip()!r}). TikTok's picker markup has "
-                f"changed: fix selectors_tiktok.{'SCHEDULE_DATE_INPUT' if what == 'date' else 'SCHEDULE_TIME_INPUT'}.")
+                f"TikTok shows {S.TOO_SOON_TEXT!r} for {format_date(when)} {format_time(when)}"
+                f"; choose a time further out.")
+
+    def _locate_schedule_inputs(self, page):
+        """Tell the date and time inputs apart by their current value, never by position.
+
+        Both are `input.TUXTextInputCore-input`, no placeholder, no documented DOM order
+        (time-then-date is what 2026-09-23 happened to show — not a contract). TikTok
+        pre-fills each one before anything is clicked, and DATE_VALUE_RE/TIME_VALUE_RE match
+        the shape of that pre-filled value.
+        """
+        group = page.locator(S.SCHEDULE_DATE_INPUT)
+        n = group.count()
+        date_loc = time_loc = None
+        for i in range(n):
+            cand = group.nth(i)
+            value = (cand.input_value() or "").strip()
+            if date_loc is None and re.match(S.DATE_VALUE_RE, value):
+                date_loc = cand
+            elif time_loc is None and re.match(S.TIME_VALUE_RE, value):
+                time_loc = cand
+        if date_loc is None or time_loc is None:
+            raise ScheduleFieldError(
+                f"could not tell the date and time schedule inputs apart by value pattern "
+                f"(matched {n} {S.SCHEDULE_DATE_INPUT} element(s)); TikTok's picker markup has "
+                f"changed: fix selectors_tiktok.DATE_VALUE_RE/TIME_VALUE_RE.")
+        return date_loc, time_loc
+
+    def _set_date(self, page, date_loc, when: dt.datetime) -> None:
+        date_loc.click()
+        self._goto_month(page, when)
+        self._click_exact(page, S.CALENDAR_DAY, str(when.day))
+
+    def _set_time(self, page, time_loc, when: dt.datetime) -> None:
+        time_loc.click()
+        self._click_exact(page, S.TIME_HOUR_OPTION, f"{when:%H}")
+        self._click_exact(page, S.TIME_MINUTE_OPTION, f"{(when.minute // 5) * 5:02d}")
+
+    def _goto_month(self, page, when: dt.datetime, *, max_steps: int = 24) -> None:
+        """Click CALENDAR_NEXT/CALENDAR_PREV until the header names `when`'s month and year."""
+        target = (when.year, when.month)
+        for _ in range(max_steps):
+            title = page.locator(S.CALENDAR_MONTH_TITLE).first.text_content() or ""
+            current = _parse_month_title(title)
+            if current == target:
+                return
+            arrow = S.CALENDAR_PREV if current is not None and current > target else S.CALENDAR_NEXT
+            page.locator(arrow).first.click()
+
+    def _click_exact(self, page, selector: str, text: str) -> None:
+        """Click the one element in `selector` whose own text is exactly `text`.
+
+        `filter(has_text=...)`, scoped and anchored, rather than a page-wide text search:
+        TIME_HOUR_OPTION and TIME_MINUTE_OPTION share the "00"-"55" vocabulary, and
+        CALENDAR_DAY repeats 1-31 across adjacent months, so an unscoped or unanchored match
+        could click "1" and land on "10" or the wrong column entirely.
+        """
+        pattern = re.compile(rf"^{re.escape(text)}$")
+        page.locator(selector).filter(has_text=pattern).first.click()
+
+    def _assert_field(self, loc, expected: str, what: str, anchor: str) -> None:
+        actual = (loc.input_value() or "").strip()
+        if actual != expected:
+            raise ScheduleFieldError(
+                f"the {what} field would not take {expected!r} (it reads {actual!r}). "
+                f"TikTok's picker markup has changed: fix selectors_tiktok.{anchor}.")
 
     def submit(self, page, when) -> None:
         """Click Schedule/Post and wait on the response, then on the redirect.

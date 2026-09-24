@@ -19,6 +19,7 @@ What is being protected, in order of how much it would cost to get wrong:
 import datetime as dt
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -48,12 +49,24 @@ class _Loc:
     def is_visible(self):
         return self.count() > 0
 
+    def is_checked(self):
+        return self.page.checked.get(self.key, False)
+
     def wait_for(self, **kw):
         self.page.calls.append(f"wait_for:{self.key}")
 
     def locator(self, sel):
         """A chained locator, e.g. the not-inside-a-button guard on a text match."""
         return _Loc(self.page, f"{self.key}+{sel}")
+
+    def nth(self, i):
+        """A one-of-several-identical-matches locator (both schedule inputs share a selector)."""
+        return _Loc(self.page, f"{self.key}#{i}")
+
+    def filter(self, has_text=None):
+        """Scoped-and-anchored text match, e.g. picking one timepicker option by its text."""
+        tag = has_text.pattern if hasattr(has_text, "pattern") else has_text
+        return _Loc(self.page, f"{self.key}|has_text={tag}")
 
     def scroll_into_view_if_needed(self):
         self.page.calls.append(f"scroll:{self.key}")
@@ -63,6 +76,9 @@ class _Loc:
         for hook in self.page.on_click.get(self.key, ()):
             hook()
 
+    def focus(self):
+        self.page.calls.append(f"focus:{self.key}")
+
     def fill(self, value):
         self.page.calls.append(f"fill:{self.key}={value}")
         if self.key not in self.page.readonly:
@@ -70,6 +86,9 @@ class _Loc:
 
     def input_value(self):
         return self.page.values.get(self.key, "")
+
+    def text_content(self):
+        return self.page.texts.get(self.key, "")
 
 
 class _Keyboard:
@@ -91,6 +110,8 @@ class _Page:
         self.calls = []
         self.counts = {}
         self.values = {}
+        self.checked = {}
+        self.texts = {}
         self.readonly = set()
         self.on_click = {}
         self.shots = []
@@ -101,6 +122,43 @@ class _Page:
         # The live content page has zero [role=tab]; --check asserts that stays true, so the
         # fake has to agree or the canary reports a tab that does not exist.
         self.counts["role:tab:None~"] = 0
+        # First-run modals ("Turn on automatic content checks?" etc.) are the exception to the
+        # default-present convention below: most runs never see one, so dismiss_first_run_
+        # dialogs must find nothing unless a test opts in by raising one of these back to 1.
+        for _name in S.FIRST_RUN_DIALOG_BUTTONS:
+            self.counts[f"role:button:{_name}"] = 0
+        # The "too soon" warning is likewise absent by default — a test that wants to see
+        # ScheduleFieldError raised for it sets this count back up.
+        self.counts[f"text:{S.TOO_SOON_TEXT}"] = 0
+        # The two read-only schedule inputs: one CSS selector, two elements, told apart by
+        # value shape (see tiktok_web._locate_schedule_inputs). Defaults are pre-fill values
+        # that are NOT WHEN's own date/time, so a driver that forgot to click the calendar or
+        # the time picker would still fail the read-back assertion. Time-then-date matches the
+        # DOM order seen live 2026-09-23.
+        self.counts[S.SCHEDULE_DATE_INPUT] = 2
+        self.values[f"{S.SCHEDULE_DATE_INPUT}#0"] = "19:10"
+        self.values[f"{S.SCHEDULE_DATE_INPUT}#1"] = "2026-09-19"
+        # The calendar header defaults to WHEN's own month, so a test that never cares about
+        # month navigation does not have to wire it up. Tests that DO care override this.
+        self.texts[S.CALENDAR_MONTH_TITLE] = WHEN.strftime("%B %Y")
+        # Clicking the day cell / hour / minute for WHEN updates whichever of the two schedule
+        # inputs CURRENTLY holds a value of the matching shape — not a fixed index, so the
+        # wiring holds regardless of which one is "#0" and which is "#1" in a given test (see
+        # test_the_date_and_time_inputs_are_told_apart_by_value_not_dom_order). Wired for WHEN
+        # specifically since nearly every schedule test targets it; a test scheduling
+        # something else, or wanting the click to have no effect, overrides these directly.
+        def _update_matching(pattern, new_value):
+            for idx in (0, 1):
+                k = f"{S.SCHEDULE_DATE_INPUT}#{idx}"
+                if re.match(pattern, self.values.get(k, "")):
+                    self.values[k] = new_value
+                    return
+        self.on_click[f"{S.CALENDAR_DAY}|has_text=^{WHEN.day}$"] = [
+            lambda: _update_matching(S.DATE_VALUE_RE, WHEN.strftime(S.DATE_FORMAT))]
+        self.on_click[f"{S.TIME_HOUR_OPTION}|has_text=^{WHEN:%H}$"] = [
+            lambda: _update_matching(S.TIME_VALUE_RE, WHEN.strftime(S.TIME_FORMAT))]
+        self.on_click[f"{S.TIME_MINUTE_OPTION}|has_text=^{(WHEN.minute // 5) * 5:02d}$"] = [
+            lambda: _update_matching(S.TIME_VALUE_RE, WHEN.strftime(S.TIME_FORMAT))]
         self.rows_reads = list(rows_reads)
         self.keyboard = _Keyboard(self)
         # Playwright raises these on __exit__ / on the call — i.e. AFTER the button was
@@ -252,6 +310,39 @@ def test_date_variants_cover_the_renderings_a_studio_row_might_use():
 
 
 # ------------------------------------------------------------------- pure: the caption key
+
+class _PWTimeout(Exception):
+    """Stands in for playwright.sync_api.TimeoutError, which is not the builtin."""
+
+
+def test_a_caption_editor_that_never_settles_is_focused_by_keyboard_instead():
+    """2026-09-23: the editor resolved, was visible, and the click timed out on the
+    stability check four runs in a row. The driver must fall back to focus and still type."""
+    page = _Page()
+    def unstable():
+        raise _PWTimeout("Locator.click: Timeout 10000ms exceeded. waiting for element to be visible, enabled and stable")
+    page.on_click[S.CAPTION_EDITOR] = [unstable]
+    tw.TikTokWebPublisher().fill_caption(page, "hello world")
+    assert f"focus:{S.CAPTION_EDITOR}" in page.calls
+    assert page.calls.index(f"focus:{S.CAPTION_EDITOR}") < page.calls.index("press:Meta+A")
+    assert "type:hello world" in page.calls
+
+
+def test_a_caption_editor_that_clicks_normally_is_not_focused_twice():
+    page = _Page()
+    tw.TikTokWebPublisher().fill_caption(page, "hello")
+    assert f"click:{S.CAPTION_EDITOR}" in page.calls
+    assert f"focus:{S.CAPTION_EDITOR}" not in page.calls
+
+
+def test_a_non_timeout_click_error_still_raises():
+    page = _Page()
+    def broken():
+        raise RuntimeError("page closed")
+    page.on_click[S.CAPTION_EDITOR] = [broken]
+    with pytest.raises(RuntimeError):
+        tw.TikTokWebPublisher().fill_caption(page, "hello")
+
 
 def test_the_caption_is_the_description_plus_hashtags():
     caption = tw.caption_of(META)
@@ -438,46 +529,32 @@ def test_with_no_schedule_at_it_posts_now_and_never_touches_the_date_fields(pub,
     assert not [c for c in page.calls if c.startswith("fill:" + S.SCHEDULE_DATE_INPUT)]
 
 
-TOGGLE_SWITCH_KEY = f"click:{S.SCHEDULE_TOGGLE}"
-TOGGLE_TEXT_KEY = f"click:text:{S.SCHEDULE_TOGGLE_TEXT}+{S.NOT_INSIDE_A_BUTTON}"
+# 2026-09-23: "When to post" turned out not to be a switch but two <input type=radio>,
+# labelled "Now" / "Schedule". A role-scoped radio lookup can never resolve to the <button>
+# that submits (unlike the old switch/text guess), so there is no NOT_INSIDE_A_BUTTON-style
+# guard to test any more — enable_schedule is just "click it if it isn't checked".
+
+RADIO_KEY = f"role:radio:{S.SCHEDULE_RADIO_NAME}"
 
 
-def test_the_scheduler_is_not_toggled_again_when_the_date_field_is_already_showing(pub, asset):
-    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
-    pub.drive(page, asset, META)
-    assert TOGGLE_SWITCH_KEY not in page.calls and TOGGLE_TEXT_KEY not in page.calls
-
-    page2 = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
-    page2.counts[S.SCHEDULE_DATE_INPUT] = 0          # scheduler is off
-    pub.drive(page2, asset, META)
-    assert TOGGLE_SWITCH_KEY in page2.calls, "the switch role is tried first"
+def test_the_schedule_radio_is_clicked_when_it_is_not_checked():
+    page = _Page()
+    tw.TikTokWebPublisher().enable_schedule(page)
+    assert f"click:{RADIO_KEY}" in page.calls
 
 
-def test_the_toggle_falls_back_to_label_text_only_when_there_is_no_switch(pub, asset):
-    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
-    page.counts[S.SCHEDULE_DATE_INPUT] = 0           # scheduler is off
-    page.counts[S.SCHEDULE_TOGGLE] = 0               # ...and TikTok is not using a switch
-    pub.drive(page, asset, META)
-    assert TOGGLE_TEXT_KEY in page.calls
+def test_the_schedule_radio_is_left_alone_when_already_checked():
+    page = _Page()
+    page.checked[RADIO_KEY] = True
+    tw.TikTokWebPublisher().enable_schedule(page)
+    assert f"click:{RADIO_KEY}" not in page.calls
 
 
-def test_the_toggle_text_can_never_click_something_inside_a_button(pub, asset):
-    """SCHEDULE_TOGGLE_TEXT and SCHEDULE_BUTTON_TEXT are both "Schedule".
-
-    An unguarded text click could therefore land on the submit button and post the video
-    immediately — and since this happens BEFORE the point-of-no-return flag is set, the
-    failure would be retried and the video would go up twice.
-    """
-    page = _Page(rows_reads=[[], [_row(tw.caption_of(META))]])
-    page.counts[S.SCHEDULE_DATE_INPUT] = 0
-    page.counts[S.SCHEDULE_TOGGLE] = 0
-    pub.drive(page, asset, META)
-    toggle_clicks = [c for c in page.calls
-                     if c.startswith(f"click:text:{S.SCHEDULE_TOGGLE_TEXT}")]
-    assert toggle_clicks, "the toggle was never clicked"
-    for call in toggle_clicks:
-        assert S.NOT_INSIDE_A_BUTTON in call, \
-            "an unguarded text click on 'Schedule' can hit the submit button"
+def test_enable_schedule_waits_for_the_date_input_after_the_radio_click():
+    page = _Page()
+    tw.TikTokWebPublisher().enable_schedule(page)
+    assert (page.calls.index(f"click:{RADIO_KEY}")
+            < page.calls.index(f"wait_for:{S.SCHEDULE_DATE_INPUT}"))
 
 
 def test_the_submit_button_is_resolved_exactly_not_as_a_substring(pub, asset):
@@ -491,14 +568,118 @@ def test_the_submit_button_is_resolved_exactly_not_as_a_substring(pub, asset):
     assert f"click:role:button:{S.POST_BUTTON_TEXT}~" not in page.calls
 
 
-def test_a_date_field_that_refuses_the_typed_value_falls_back_to_the_picker_then_raises(
-        pub, asset):
-    page = _Page(rows_reads=[[]])
-    page.readonly.add(S.SCHEDULE_DATE_INPUT)         # a readonly picker input
+# --------------------------------------------------------- set_schedule: the date/time pickers
+#
+# 2026-09-23: both fields are READ-ONLY `input.TUXTextInputCore-input` — `fill()` cannot set
+# them — sharing one selector with no documented DOM order. set_schedule tells them apart by
+# the shape of their current value (DATE_VALUE_RE / TIME_VALUE_RE), drives the calendar for
+# the date and the hour/minute picker for the time, then reads both back.
+
+HOUR_KEY = f"{S.TIME_HOUR_OPTION}|has_text=^{WHEN:%H}$"
+MINUTE_KEY = f"{S.TIME_MINUTE_OPTION}|has_text=^{(WHEN.minute // 5) * 5:02d}$"
+DAY_KEY = f"{S.CALENDAR_DAY}|has_text=^{WHEN.day}$"
+
+
+def test_the_date_and_time_inputs_are_told_apart_by_value_not_dom_order():
+    """The live DOM order was time-then-date; the driver must not depend on it."""
+    page = _Page()
+    page.values[f"{S.SCHEDULE_DATE_INPUT}#0"] = "2026-09-19"   # date first this time
+    page.values[f"{S.SCHEDULE_DATE_INPUT}#1"] = "19:10"        # time second
+    tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert page.values[f"{S.SCHEDULE_DATE_INPUT}#0"] == "2026-09-21"
+    assert page.values[f"{S.SCHEDULE_DATE_INPUT}#1"] == "14:00"
+
+
+def test_set_schedule_raises_when_no_input_value_matches_either_pattern():
+    page = _Page()
+    page.values[f"{S.SCHEDULE_DATE_INPUT}#0"] = "garbage"
+    page.values[f"{S.SCHEDULE_DATE_INPUT}#1"] = "also garbage"
     with pytest.raises(tw.ScheduleFieldError) as e:
-        pub.drive(page, asset, META)
-    assert "2026-09-21" in str(e.value)
-    assert f"click:text:21" in page.calls, "the day cell is the documented fallback"
+        tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert "DATE_VALUE_RE" in str(e.value) or "TIME_VALUE_RE" in str(e.value)
+
+
+def test_the_hour_is_clicked_before_the_minute():
+    page = _Page()
+    tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert page.calls.index(f"click:{HOUR_KEY}") < page.calls.index(f"click:{MINUTE_KEY}")
+
+
+def test_the_day_cell_is_clicked_only_once_the_month_title_matches():
+    page = _Page()
+    page.texts[S.CALENDAR_MONTH_TITLE] = "August 2026"        # one month behind WHEN
+    page.on_click[S.CALENDAR_NEXT] = [
+        lambda: page.texts.__setitem__(S.CALENDAR_MONTH_TITLE, WHEN.strftime("%B %Y"))]
+    tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    calls = page.calls
+    assert f"click:{S.CALENDAR_NEXT}" in calls
+    assert f"click:{S.CALENDAR_PREV}" not in calls
+    assert calls.index(f"click:{S.CALENDAR_NEXT}") < calls.index(f"click:{DAY_KEY}")
+
+
+def test_the_prev_arrow_is_clicked_when_the_calendar_is_ahead_of_the_target_month():
+    page = _Page()
+    page.texts[S.CALENDAR_MONTH_TITLE] = "October 2026"       # one month ahead of WHEN
+    page.on_click[S.CALENDAR_PREV] = [
+        lambda: page.texts.__setitem__(S.CALENDAR_MONTH_TITLE, WHEN.strftime("%B %Y"))]
+    tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert f"click:{S.CALENDAR_PREV}" in page.calls
+    assert f"click:{S.CALENDAR_NEXT}" not in page.calls
+
+
+def test_schedule_field_error_when_the_date_does_not_read_back():
+    page = _Page()
+    page.on_click[DAY_KEY] = []          # clicking the day cell has no effect this time
+    with pytest.raises(tw.ScheduleFieldError) as e:
+        tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert "date" in str(e.value) and "2026-09-21" in str(e.value)
+
+
+def test_schedule_field_error_when_the_time_does_not_read_back():
+    page = _Page()
+    page.on_click[HOUR_KEY] = []
+    page.on_click[MINUTE_KEY] = []       # neither picker click takes
+    with pytest.raises(tw.ScheduleFieldError) as e:
+        tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert "time" in str(e.value) and "14:00" in str(e.value)
+
+
+def test_the_too_soon_warning_raises_once_both_fields_are_set():
+    page = _Page()
+    page.counts[f"text:{S.TOO_SOON_TEXT}"] = 1
+    with pytest.raises(tw.ScheduleFieldError) as e:
+        tw.TikTokWebPublisher().set_schedule(page, WHEN)
+    assert S.TOO_SOON_TEXT in str(e.value)
+    # both fields were still set before the warning was judged
+    assert page.values[f"{S.SCHEDULE_DATE_INPUT}#1"] == "2026-09-21"
+    assert page.values[f"{S.SCHEDULE_DATE_INPUT}#0"] == "14:00"
+
+
+# --------------------------------------------------------------- dismiss_first_run_dialogs
+
+def test_dismiss_first_run_dialogs_clicks_the_one_showing():
+    page = _Page()
+    page.counts["role:button:Allow"] = 1
+    tw.dismiss_first_run_dialogs(page)
+    assert page.calls == ["click:role:button:Allow"]
+
+
+def test_dismiss_first_run_dialogs_does_nothing_when_none_are_showing():
+    page = _Page()
+    tw.dismiss_first_run_dialogs(page)
+    assert page.calls == []
+
+
+def test_dismiss_first_run_dialogs_never_clicks_post_or_discard():
+    page = _Page()
+    for name in S.FIRST_RUN_DIALOG_BUTTONS:
+        page.counts[f"role:button:{name}"] = 1
+    page.counts["role:button:Post"] = 1
+    page.counts["role:button:Discard"] = 1
+    tw.dismiss_first_run_dialogs(page)
+    clicked = {c.rsplit(":", 1)[-1] for c in page.calls}
+    assert clicked == set(S.FIRST_RUN_DIALOG_BUTTONS)
+    assert "Post" not in clicked and "Discard" not in clicked
 
 
 # ------------------------------------------------------- verification and the single retry
@@ -729,12 +910,11 @@ def test_check_says_post_file_only_instead_of_missing_for_the_form(tmp_path, mon
     not do.
     """
     page = _Page()
-    for sel in (S.CAPTION_EDITOR, S.SCHEDULE_TOGGLE, S.SCHEDULE_DATE_INPUT,
-                S.SCHEDULE_TIME_INPUT):
+    for sel in (S.CAPTION_EDITOR, RADIO_KEY, S.SCHEDULE_DATE_INPUT, S.SCHEDULE_TIME_INPUT):
         page.counts[sel] = 0
     rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
     assert rc == 0, "an anchor that cannot be resolved read-only is not a failure"
-    for label in ("caption editor", "schedule toggle", "schedule date", "schedule time",
+    for label in ("caption editor", "schedule radio", "schedule date", "schedule time",
                   "post button"):
         line = next(l for l in out.splitlines() if l.startswith(label))
         assert "post-file only" in line and "MISSING" not in line, line
@@ -795,8 +975,7 @@ def test_check_is_green_against_the_studio_as_it_looked_on_the_day_it_was_read(
     """The fake page is shaped like the live 2026-09-15 studio: empty account, no tabs."""
     page = _Page()
     page.counts[S.POST_ROW] = 0
-    for sel in (S.CAPTION_EDITOR, S.SCHEDULE_TOGGLE, S.SCHEDULE_DATE_INPUT,
-                S.SCHEDULE_TIME_INPUT):
+    for sel in (S.CAPTION_EDITOR, RADIO_KEY, S.SCHEDULE_DATE_INPUT, S.SCHEDULE_TIME_INPUT):
         page.counts[sel] = 0
     rc, out = _check_out(tmp_path, monkeypatch, capsys, page)
     assert rc == 0, out
