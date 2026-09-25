@@ -12,11 +12,15 @@ NOW = dt.datetime(2026, 9, 14, 8, 30, tzinfo=dt.timezone(dt.timedelta(hours=-7))
 
 def test_sites_cover_every_driven_site_with_dashboard_urls():
     # TikTok joined on 2026-09-15 with the Chrome-driven scheduler (publishers/tiktok_web.py);
-    # its own anchors are asserted in tests/test_browser_selectors_tiktok.py.
-    assert set(session.SITES) == {"gumroad", "mailerlite", "tiktok"}
+    # its own anchors are asserted in tests/test_browser_selectors_tiktok.py. YouTube joined on
+    # 2026-09-25 with publishers/youtube_web.py, when the Upload-Post free quota stopped
+    # covering a daily Short — note this entry only says "Studio is signed in", NOT which
+    # channel; only youtube_web.assert_channel can tell ParkSheet from the personal channel.
+    assert set(session.SITES) == {"gumroad", "mailerlite", "tiktok", "youtube"}
     assert session.SITES["gumroad"].dashboard_url == "https://app.gumroad.com/products"
     assert session.SITES["mailerlite"].dashboard_url == "https://dashboard.mailerlite.com/campaigns"
     assert session.SITES["tiktok"].dashboard_url == "https://www.tiktok.com/tiktokstudio"
+    assert session.SITES["youtube"].dashboard_url == "https://studio.youtube.com"
 
 
 def test_classify_is_ok_when_the_dashboard_url_holds():

@@ -5,6 +5,8 @@
   python3 scripts/publishers/publish.py --platform youtube,instagram,site --asset X.mp4 --meta meta.json
   python3 scripts/publishers/publish.py --platform tiktok_web --asset X.mp4 --meta meta.json \
       --schedule 2026-09-21T14:00:00-07:00
+  scripts/video/.venv-tts/bin/python scripts/publishers/publish.py --platform youtube_web \
+      --asset X.mp4 --meta meta.json        # Studio in the debug Chrome; session-only
   python3 scripts/publishers/publish.py --capabilities
   python3 scripts/publishers/publish.py --whoami        # which Upload-Post profile would we post as?
 
@@ -43,14 +45,21 @@ from publishers.tiktok import TikTokPublisher  # noqa: E402
 from publishers import tiktok_web  # noqa: E402  (--schedule validation)
 from publishers.tiktok_web import TikTokWebPublisher  # noqa: E402
 from publishers.youtube import YouTubePublisher  # noqa: E402
+from publishers.youtube_web import YouTubeWebPublisher  # noqa: E402
 
+# `youtube` is the Upload-Post transport and stays exactly as it was; `youtube_web` is the
+# Chrome/Studio one added 2026-09-25, when the free Upload-Post quota stopped covering a daily
+# Short. Two entries, two transports, one platform — the caller picks.
 PUBLISHERS: dict[str, type] = {"youtube": YouTubePublisher, "tiktok": TikTokPublisher,
                                "tiktok_web": TikTokWebPublisher,
+                               "youtube_web": YouTubeWebPublisher,
                                "instagram": InstagramPublisher, "site": SitePublisher}
 # Platforms whose result url is a public permalink worth embedding in the site post.
 # tiktok_web is deliberately absent: it returns the TikTok Studio content URL (a scheduled
 # post has no public URL yet), and embedding that would put a 404 behind a reader's click.
-VIDEO_PLATFORMS = ("youtube", "tiktok", "instagram")
+# youtube_web IS here for the mirror-image reason: it publishes immediately, so its url is a
+# real https://www.youtube.com/shorts/<id> the moment Publish lands.
+VIDEO_PLATFORMS = ("youtube", "youtube_web", "tiktok", "instagram")
 # The T2 decision that authorises auto-publishing at all: 2026-09-14, "marketing autonomy
 # loosened to T1 auto-publish for five surfaces", veto window 2026-09-16 12:00 PT — approved
 # early by entry 85 on 2026-09-15, which is what opens this gate today. Until a decision is

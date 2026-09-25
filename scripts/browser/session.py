@@ -29,6 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import ledger  # noqa: E402  (scripts/ledger.py)
 
 from browser import selectors_tiktok as _tiktok  # noqa: E402  (constants only, stdlib-safe)
+from browser import selectors_youtube as _youtube  # noqa: E402  (constants only, stdlib-safe)
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 CDP_URL = "http://localhost:9222"
@@ -67,6 +68,14 @@ SITES: dict[str, Site] = {
     # what catches it.
     "tiktok": Site("tiktok", _tiktok.STUDIO_URL, _tiktok.LOGIN_MARKER,
                    "the TikTok Studio dashboard", alt_hosts=_tiktok.ALT_HOSTS),
+    # YouTube Studio, for the youtube_web publisher. Signed out, Studio bounces to
+    # accounts.google.com — a different HOST, which is what the check catches first; the
+    # /signin marker is the belt to that pair of braces. Note this says nothing about WHICH
+    # channel is signed in: the profile also holds Stephen's personal channel, and only
+    # youtube_web.assert_channel can tell them apart (verified 2026-09-25).
+    "youtube": Site("youtube", _youtube.STUDIO_URL, _youtube.LOGIN_MARKER,
+                    f"the {_youtube.CHANNEL_NAME} Studio dashboard",
+                    alt_hosts=_youtube.ALT_HOSTS),
 }
 
 
