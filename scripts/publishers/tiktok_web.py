@@ -919,6 +919,32 @@ class TikTokWebPublisher(Publisher):
                 return
             raise
         confirm.click()
+        if self._dismissed(confirm):
+            return
+        # 2026-09-25 (day-1 run, trace tiktok_web-110440): the locator click landed and the
+        # dialog stayed up for the rest of the run, so the driver read an empty table and
+        # filed a card while the video sat behind the modal. A pointer click at the button's
+        # own centre is what a person does and what worked by hand on 2026-09-23.
+        box = confirm.bounding_box()
+        if box:
+            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        if self._dismissed(confirm):
+            return
+        raise VerificationFailed(
+            f"the {S.POST_CONFIRM_TEXT!r} confirmation did not dismiss after two clicks; "
+            "the video is still on the form, not posted -- nothing to verify"
+        )
+
+    @staticmethod
+    def _dismissed(confirm) -> bool:
+        """True once the confirmation has gone; False if it is still up after the wait."""
+        try:
+            confirm.wait_for(state="hidden", timeout=CONFIRM_TIMEOUT_MS)
+        except Exception as exc:
+            if "Timeout" in type(exc).__name__ or "Timeout" in str(exc):
+                return False
+            raise
+        return True
 
 
 # ----------------------------------------------------------------------------- the CLI

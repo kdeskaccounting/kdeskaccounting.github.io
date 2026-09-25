@@ -72,6 +72,11 @@ class _Loc:
         # A locator that the fake says is absent (counts == 0) behaves like Playwright: the
         # wait times out. Only when a timeout was asked for, so existing tests that never set
         # a count keep their "everything is there" default.
+        if kw.get("state") == "hidden":
+            # A key in `sticky` is a dialog that refuses to go away (the 2026-09-25 case).
+            if kw.get("timeout") is not None and self.key in self.page.sticky:
+                raise _FakeTimeout(f"Timeout {kw['timeout']}ms exceeded waiting for {self.key} to hide")
+            return
         if kw.get("timeout") is not None and self.page.counts.get(self.key, 1) == 0:
             raise _FakeTimeout(f"Timeout {kw['timeout']}ms exceeded waiting for {self.key}")
 
@@ -91,6 +96,9 @@ class _Loc:
     def scroll_into_view_if_needed(self):
         self.page.calls.append(f"scroll:{self.key}")
 
+    def bounding_box(self):
+        return {"x": 100.0, "y": 200.0, "width": 80.0, "height": 40.0}
+
     def click(self, **kw):
         self.page.calls.append(f"click:{self.key}")
         for hook in self.page.on_click.get(self.key, ()):
@@ -109,6 +117,16 @@ class _Loc:
 
     def text_content(self):
         return self.page.texts.get(self.key, "")
+
+
+class _Mouse:
+    def __init__(self, page):
+        self.page = page
+
+    def click(self, x, y):
+        self.page.calls.append(f"mouse.click:{x:.0f},{y:.0f}")
+        for hook in self.page.on_mouse_click:
+            hook()
 
 
 class _Keyboard:
@@ -135,6 +153,9 @@ class _Page:
         self.texts = {}
         self.readonly = set()
         self.on_click = {}
+        self.on_mouse_click = []
+        self.sticky = set()
+        self.mouse = _Mouse(self)
         self.shots = []
         self.url = url
         # What --check's body probe reads. The live content page says "No posts yet"; the
@@ -598,6 +619,25 @@ def test_a_post_now_confirmation_is_clicked_after_the_post_button():
     post_i = page.calls.index(f"click:role:button:{S.POST_BUTTON_TEXT}")
     assert f"click:{CONFIRM_KEY}" in page.calls
     assert post_i < page.calls.index(f"click:{CONFIRM_KEY}") < page.calls.index("wait_for_url")
+
+
+def test_a_stuck_post_now_confirmation_gets_a_pointer_click_at_its_centre():
+    """2026-09-25: the locator click left the dialog up; a mouse click at the centre worked."""
+    page = _Page()
+    page.sticky.add(CONFIRM_KEY)
+    page.on_mouse_click.append(lambda: page.sticky.discard(CONFIRM_KEY))
+    tw.TikTokWebPublisher().submit(page, None)
+    assert "mouse.click:140,220" in page.calls
+    assert page.calls.index(f"click:{CONFIRM_KEY}") < page.calls.index("mouse.click:140,220")
+    assert "wait_for_url" in page.calls
+
+
+def test_a_post_now_confirmation_that_never_dismisses_is_an_error_not_a_verification():
+    page = _Page()
+    page.sticky.add(CONFIRM_KEY)
+    with pytest.raises(tw.VerificationFailed, match="did not dismiss"):
+        tw.TikTokWebPublisher().submit(page, None)
+    assert "wait_for_url" not in page.calls
 
 
 def test_a_missing_post_now_confirmation_is_not_an_error():
