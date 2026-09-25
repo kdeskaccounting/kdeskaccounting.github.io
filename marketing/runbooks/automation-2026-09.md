@@ -360,6 +360,83 @@ message rather than inside TikTok's form.
 
 ---
 
+## youtube_web — YouTube (Chrome, daily)
+
+**Why this is not the API and not Upload-Post.** A YouTube **Data API** upload on this account is
+locked to `private` and stays there, so the API is barred for publishing (the same warning sits on
+`scripts/video/youtube_publish.py`). **Upload-Post**'s free tier is ten uploads a month, which a
+daily Short plus Instagram exhausts inside a fortnight, and Stephen declined the paid plan. So on
+2026-09-25 he ruled that YouTube and Instagram posting move into the daily Chrome session, and
+`scripts/publishers/youtube_web.py` drives YouTube Studio's own uploader the way
+`tiktok_web.py` drives TikTok's. `publish.py --platform youtube` (Upload-Post) stays in the tree,
+untouched, for the day the plan changes; the Chrome transport is `--platform youtube_web`.
+
+**Session-only, like TikTok, and for the same reason.** Spec Chrome rule 1 keeps Chrome off the
+recurring path, and automating a logged-in session is a ToS grey area whose failure mode is a
+restricted channel rather than a broken script. It runs beside Stephen, one post at a time. There
+is no workflow file for it; `tests/test_publishers_youtube_web.py` asserts there never is one.
+
+**The channel guard is the part to understand.** The debug Chrome profile holds Stephen's
+**personal** channel as well as **ParkSheet**, and Studio opens whichever was used last. A
+ParkSheet Short posted to the personal channel cannot be moved. So every entry point reads the
+header's channel name *and* the channel id in the URL, and refuses on anything but ParkSheet
+(`UC7ApR5Ntbc4DRkkZ_FrwyOw`). If `--check` prints `WRONG`, switch channels in Studio (avatar →
+Switch account) before anything else.
+
+**The run, in order:**
+
+```bash
+python3 scripts/browser/ensure_chrome.py                     # 1. Chrome up on :9222
+python3 scripts/browser/session.py --check youtube           # 2. Studio still signed in?
+V=scripts/video/.venv-tts/bin/python                         #    the venv that has playwright
+$V scripts/publishers/youtube_web.py --check                 # 3. ParkSheet? anchors resolve?
+$V scripts/publishers/youtube_web.py --dry-run \
+   --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
+   --meta  ~/parksheet/build/release/2026-W40/day-1.json     # 4. rehearse — uploads, then deletes
+$V scripts/publishers/publish.py --platform youtube_web \
+   --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
+   --meta  ~/parksheet/build/release/2026-W40/day-1.json     # 5. the real post
+find scripts/browser/runs -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
+```
+
+**`--dry-run` here is not free, and that is the point.** Unlike `tiktok_web.py --dry-run`, which
+prints a plan and opens nothing, this one **really uploads the mp4**: it fills the title and
+description, answers "made for kids", walks Details → Video elements → Initial check → Visibility
+and selects Public — everything except the Publish click — and then closes the uploader and
+**deletes the draft YouTube saves**, asserting the content list is back to the row count it
+started with. That is the only way to know the uploader still works before committing a post. It
+takes a few minutes and it costs upload bandwidth; it leaves nothing behind.
+
+**If a dry run ever fails, look for a leftover draft.** Closing the uploader saves a draft
+silently — there is no "discard?" prompt — so a run that dies mid-clean-up leaves one on the
+channel. The card says so and names the title. Delete it from the content list (hover the row →
+**Options** → **Delete forever** → tick the acknowledgement → **Delete draft video**), because a
+leftover draft **blocks the next run**: it is not a published video, so it is not a skip, and the
+driver refuses rather than putting two rows of the same title on the channel.
+
+**What the driver guarantees, and what it does not.** It reads the content list — **both** the
+Shorts and the Videos tab, because which one YouTube files an upload under is its classification
+call — and skips a day whose **exact title** is already listed. A failure *after* the Publish
+click is deliberately **not** retried: the video may already be live, and the card says which id
+to go and look at. It verifies after publishing that the row exists *and* reads `Public`; a video
+that lands as Private is a failure, not a success.
+
+The title and description reach YouTube **verbatim**, read back out of the boxes and compared.
+Nothing is truncated: a title over YouTube's 100 characters is refused with a message telling you
+to fix the meta file, because the description carries the Queue-Times, ThemeParks.wiki and
+photo-credit lines the licences require and the title is copy a fact-check pass approved. Tags are
+*not* folded into the description the way the TikTok caption folds them.
+
+**Limits.** No scheduling — `capabilities()` reports `scheduling: false`; this publishes now. The
+content read takes the first page of each tab, so the same pagination caveat as TikTok applies once
+the channel is busy enough to paginate: a published Short that falls off page 1 would stop being
+seen by the skip check, which is a double-post risk rather than a cosmetic one.
+
+**Prune the traces**, exactly as for TikTok — the `find` line above. Each run leaves a `trace.zip`
+under `scripts/browser/runs/<date>/` holding a logged-in session's requests and headers.
+
+---
+
 ## If X is broken, do Y
 
 ### The debug Chrome is not running

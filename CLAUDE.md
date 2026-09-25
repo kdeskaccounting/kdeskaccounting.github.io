@@ -80,7 +80,7 @@ All live on **this Mac** unless noted:
 - **Google Workspace** (`gws` CLI): authed as `santiagokdesk@gmail.com` — NOT smichels1@gmail.com
 - **Search Console**: verified by DNS TXT (`google-site-verification=bJlwcW0aYXafivvCsvcRhgyE2UiLDwwF6WIteYQqaEU`)
 - **YouTube uploads — DO NOT USE `scripts/video/youtube_publish.py` (verified 2026-09-14, ledger #71).** Uploads from this un-audited GCP project (`involuted-disk-489017-r3`) are **locked private, permanently**. The lock **cannot be appealed and cannot be flipped in YouTube Studio**; per Google support article 7300965 the affected videos **must be re-uploaded**. Passing the compliance audit only unlocks *future* uploads — it does not free the existing ones. Proof: all **20** videos the API uploaded 2026-09-05/09-07 are `private` with **0 views** in `marketing/seo-tracking/youtube-snapshots.jsonl` (2026-09-07), while the 10 uploaded through Chrome on 2026-09-02 are `public` and carrying views. **No uploads via the Data API until the audit passes**; re-upload the 20 via Upload-Post (holds audited credentials) or manually in Chrome. Read-only Data API use (`scripts/pull_youtube_snapshot.py`) is unaffected.
-- **Debug Chrome** for UI-only work (Gumroad covers, MailerLite editor, manual YouTube uploads, **TikTok scheduling**): Stephen launches with `--remote-debugging-port=9222`, profile `~/.kdesk/chrome-debug`; drive it with `scripts/video/cdp.py` or Playwright `connect_over_cdp`. **TikTok:** Upload-Post reaches it only on the paid plan (declined 2026-09-15), so the week's Shorts are scheduled through TikTok Studio in this profile — `scripts/publishers/tiktok_web.py`, semi-supervised on a Saturday, never an Actions job (ToS grey area; runbook section "TikTok (Chrome, Saturday)"). The profile is **not** logged in to TikTok yet: sign in once with **Use QR code** at <https://www.tiktok.com/tiktokstudio>.
+- **Debug Chrome** for UI-only work (Gumroad covers, MailerLite editor, manual YouTube uploads, **TikTok scheduling**): Stephen launches with `--remote-debugging-port=9222`, profile `~/.kdesk/chrome-debug`; drive it with `scripts/video/cdp.py` or Playwright `connect_over_cdp`. **TikTok:** Upload-Post reaches it only on the paid plan (declined 2026-09-15), so the week's Shorts are scheduled through TikTok Studio in this profile — `scripts/publishers/tiktok_web.py`, semi-supervised on a Saturday, never an Actions job (ToS grey area; runbook section "TikTok (Chrome, Saturday)"). The profile is **not** logged in to TikTok yet: sign in once with **Use QR code** at <https://www.tiktok.com/tiktokstudio>. **YouTube (2026-09-25):** API uploads are locked private (#71) and the Upload-Post free tier is 10/month, so the daily Short is published through YouTube Studio in this same profile — `scripts/publishers/youtube_web.py` (`--platform youtube_web`; `--platform youtube` stays Upload-Post), session-only, never an Actions job (runbook section "youtube_web — YouTube (Chrome, daily)"). **The profile holds Stephen's personal channel as well as ParkSheet**, so the driver refuses to upload unless the Studio header reads `ParkSheet` and the URL carries `UC7ApR5Ntbc4DRkkZ_FrwyOw`; `--dry-run` really uploads and then deletes the draft.
 - **Linux box only** (`ssh wsl`, Tailscale `100.112.159.5`, unreachable since 2026-09-01): Cloudflare API tokens, `dist/` binaries. Nothing current depends on it.
 
 ## Useful commands
@@ -568,6 +568,18 @@ python3 scripts/publishers/publish.py --platform tiktok_web --asset <mp4> --meta
 # Idempotent — a day already on the posts list is skipped. 0 all ok / 1 any queued / 2 hard error.
 python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR>   # dry run: the DEFAULT
 python3 scripts/publishers/schedule_week.py --week 2026-W39 --assets-dir <DIR> --hour 14:00 --go
+
+# YouTube via Chrome (2026-09-25): the Data API locks uploads private and the Upload-Post free
+# tier is 10/month, so the daily Short goes through YouTube Studio in the debug Chrome.
+# Session-only, never an Actions job. Runbook: "youtube_web — YouTube (Chrome, daily)".
+# The venv is REQUIRED: these import playwright.
+V=scripts/video/.venv-tts/bin/python
+python3 scripts/browser/session.py --check youtube                 # is Studio still signed in?
+$V scripts/publishers/youtube_web.py --check                       # read-only: ParkSheet? anchors?
+# --dry-run REALLY uploads (title, description, Public - everything but the Publish click) and
+# then DELETES the draft it leaves. It is the rehearsal, and it is not free.
+$V scripts/publishers/youtube_web.py --dry-run --asset <mp4> --meta <json>
+$V scripts/publishers/publish.py --platform youtube_web --asset <mp4> --meta <json>   # the real post
 ```
 
 ## Mac-side notes (added 2026-09-01 — this repo is now worked from the Mac too)
