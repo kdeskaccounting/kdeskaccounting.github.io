@@ -840,7 +840,7 @@ def caption_plan_json(cues, overlays, box, cfg):
             "windows": rows}
 
 
-def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
+def cut_plan_json(rows, join: str, total: float, extra_cuts=(), sfx=()) -> dict:
     """Where the picture changes, according to the renderer rather than to a detector.
 
     `scdet` cannot see our joins: it returns ZERO cuts on the published day-3 Short and on
@@ -876,6 +876,11 @@ def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
     builds this plan in memory before the pass that writes the file this one measures. A
     frame of difference is a bed that fades out 33 ms off; anything larger means the concat
     did not join what the timeline says it did.
+
+    `sfx` is every SOUND EFFECT START on the same timeline (`sfx_placements`), as
+    `{at, role}` rows. It is written on every render -- an empty list when there are none
+    -- so a gate can tell "this render placed no sound" from "this renderer never knew
+    how to say", which is the difference between a pass and a fail-closed.
     """
     cuts = [round(float(at), 3) for at in extra_cuts if float(at) > 0]
     for row in rows:
@@ -886,7 +891,8 @@ def cut_plan_json(rows, join: str, total: float, extra_cuts=()) -> dict:
         if float(row["start"]) > 0:
             cuts.append(round(float(row["start"]), 3))
     return {"join": join, "duration_s": round(float(total), 3),
-            "cuts": sorted(cuts), "scenes": list(rows)}
+            "cuts": sorted(cuts), "sfx": [dict(row) for row in sfx],
+            "scenes": list(rows)}
 
 
 def caption_filter(overlays, y, plate_seconds=None):
@@ -951,15 +957,47 @@ class Duck:
     release: int = 300
 
 
+#: What a cue may BE. Deliberately short: sound-design section 2.2 measured every other
+#: candidate and they all made the loudness range worse -- a tick on 100 caption cues took
+#: it 2.2 -> 1.4 LU and drove the limiter 1.1 dB harder. The riser is the only thing that
+#: moved it the other way (+0.7 LU), and the hit is what the riser is for.
+SFX_ROLES: tuple[str, ...] = ("riser", "hit")
+
+#: What a cue may key off. One timeline, because one is what there is evidence for.
+CUE_TIMELINES: tuple[str, ...] = ("payoff",)
+
+
+@dataclasses.dataclass(frozen=True)
+class SfxCue:
+    """One sound keyed to one moment, rather than to the cut cadence.
+
+    `lead` starts it this far BEFORE the moment, so a 1.5 s riser is fully under way by
+    the time the payoff frame arrives. `lead: 0` is a hit ON it.
+    """
+    role: str
+    src: str
+    on: str = "payoff"
+    lead: float = 0.0
+    gain_db: float = -9.0
+
+
 @dataclasses.dataclass(frozen=True)
 class Sfx:
     src: str
-    gain_db: float = -6.0
+    #: -9, not the -6 this shipped with. MEASURED (sound-design section 2.4): the whoosh
+    #: is -13.0 LUFS and lands near -19 at -6 dB, roughly 2 LU under the voice's -17.1 --
+    #: nothing like the "12 to 18 dB below narration" of creator lore, which appears in no
+    #: standard. R 128 s4's Loudness-to-Dialogue Ratio "should not exceed 5 LU": audible,
+    #: never dominant. With more than one thing on the SFX bus, -9 is the safer floor.
+    gain_db: float = -9.0
     #: Start the whoosh this far BEFORE the cut, so it peaks on it.
     lead: float = 0.20
     #: How many structural beats the video has. A whoosh on every cut is a cartoon; one at
     #: each of the two boundaries between three ~11 s beats is an edit.
     beats: int = 3
+    #: Sounds keyed to a MOMENT rather than to the cadence. Empty on every spec written
+    #: before cues existed, so the mix such a spec produces is unchanged.
+    cues: tuple[SfxCue, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1005,6 +1043,27 @@ def beat_boundaries(cuts, runtime: float, beats: int = 3) -> list:
     return sorted(out)
 
 
+def sfx_placements(mix, boundaries, payoff_s) -> list:
+    """Every SFX START on the finished timeline, in time order. `[]` when there are none.
+
+    The START, not the event it keys off: a whoosh at `lead` before a cut is HEARD from
+    `cut - lead`, and that is the number the gate's placement and density lines (S16, S17)
+    have to read. Written into cuts.json beside the picture changes, because that file is
+    already the renderer's own record of what it did and a second file would be a second
+    thing to keep in step.
+    """
+    out = []
+    if mix is None or mix.sfx is None:
+        return out
+    for at in boundaries:
+        out.append({"at": round(max(0.0, float(at) - mix.sfx.lead), 3), "role": "whoosh"})
+    if payoff_s is not None:
+        for cue in mix.sfx.cues:
+            out.append({"at": round(max(0.0, float(payoff_s) - cue.lead), 3),
+                        "role": cue.role})
+    return sorted(out, key=lambda row: (row["at"], row["role"]))
+
+
 def loudnorm_filter(master) -> str:
     """The master loudnorm, as an `-af` value. The one place its numbers are spelled."""
     return f"loudnorm=I={master.lufs:g}:TP={master.tp:g}:LRA={master.lra:g}"
@@ -1025,6 +1084,61 @@ def _only(block, known, what):
         raise SystemExit(f"unknown audio.{what} key(s) {', '.join(sorted(unknown))}; "
                          f"known: {', '.join(known)}")
     return block
+
+
+def _sfx_cues(raw, resolve) -> tuple:
+    """`audio.sfx.cues:` -> a tuple of SfxCue. `()` when the spec has none.
+
+    `resolve` is `audio_settings`'s own `resolved(name, raw)`, so a cue's file is checked
+    and made absolute exactly the way the bed and the whoosh are -- a missing file refuses
+    the render rather than silently dropping the sound it was supposed to make.
+
+    One cue per role. Two risers is not a design, it is a spec written twice, and the
+    second one would simply be mixed on top of the first at the same instant.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise SystemExit(f"spec `audio.sfx.cues:` must be a list, got {type(raw).__name__}")
+    cues, seen = [], set()
+    for index, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            raise SystemExit(f"audio.sfx.cues[{index}] is {type(entry).__name__}, "
+                             f"expected a mapping")
+        unknown = set(entry) - {"role", "src", "on", "lead", "gain_db"}
+        if unknown:
+            raise SystemExit(f"unknown audio.sfx.cues[{index}] key(s) "
+                             f"{', '.join(sorted(unknown))}; known: role, src, on, lead, "
+                             f"gain_db")
+        role = str(entry.get("role") or "").strip()
+        if not role:
+            raise SystemExit(f"audio.sfx.cues[{index}] needs a `role`; known: "
+                             f"{', '.join(SFX_ROLES)}")
+        if role not in SFX_ROLES:
+            raise SystemExit(f"audio.sfx.cues[{index}] has role {role!r}; known: "
+                             f"{', '.join(SFX_ROLES)}. Sound-design section 2.2 measured "
+                             f"every other candidate and they all made the loudness range "
+                             f"worse.")
+        if role in seen:
+            raise SystemExit(f"audio.sfx.cues names {role!r} twice; one cue per role, or "
+                             f"the second is simply mixed over the first at the same "
+                             f"instant.")
+        seen.add(role)
+        if not entry.get("src"):
+            raise SystemExit(f"audio.sfx.cues[{index}] ({role}) has no `src`, so there is "
+                             f"no file to mix.")
+        on = str(entry.get("on") or "payoff").strip()
+        if on not in CUE_TIMELINES:
+            raise SystemExit(f"audio.sfx.cues[{index}] fires `on: {on}`; the only timeline "
+                             f"a cue may key off is {', '.join(CUE_TIMELINES)}.")
+        lead = float(entry.get("lead", 0.0))
+        if lead < 0:
+            raise SystemExit(f"audio.sfx.cues[{index}] has `lead: {lead:g}`; a lead starts "
+                             f"the sound BEFORE the moment, so it cannot be negative.")
+        cues.append(SfxCue(role=role, src=resolve(f"sfx.cues[{index}]", entry),
+                           on=on, lead=lead,
+                           gain_db=float(entry.get("gain_db", -9.0))))
+    return tuple(cues)
 
 
 def audio_settings(spec: dict, spec_path):
@@ -1081,6 +1195,12 @@ def audio_settings(spec: dict, spec_path):
                 f"audio.{name} without audio.bed: there is no bed-less path through the mix, "
                 f"so the render would emit the plain loudnorm chain and this block would "
                 f"vanish without a word. Add a `bed:`, or drop `{name}:`.")
+    # Shape-checked before EITHER block touches a file: an unknown `audio.sfx` key (this is
+    # what makes `cues:` need no capability probe -- GC7) must refuse the spec at preflight
+    # even when `audio.bed.src` also happens to be missing, rather than lose the word "cuez"
+    # behind whichever block's file check runs first.
+    if block.get("sfx"):
+        _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues"), "sfx")
     bed = None
     if block.get("bed"):
         raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
@@ -1114,7 +1234,8 @@ def audio_settings(spec: dict, spec_path):
     if block.get("sfx"):
         # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
         # accepted as the spelling every other block in this renderer uses.
-        raw = _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats"), "sfx")
+        raw = _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues"),
+                    "sfx")
         beats = int(raw.get("beats", 3))
         if beats < 2:
             # `beats - 1` boundaries: one beat has none, and the whole sfx block would be
@@ -1124,10 +1245,12 @@ def audio_settings(spec: dict, spec_path):
                 f"ha{'s' if beats == 1 else 've'} no boundary to put a whoosh on — the SFX "
                 f"would be configured and never heard. Use 2 or more (3 is the default: two "
                 f"whooshes), or drop `sfx:`.")
+        cues = _sfx_cues(raw.get("cues"), resolved)
         sfx = Sfx(src=resolved("sfx", {"src": raw.get("on_cut") or raw.get("src")}),
-                  gain_db=float(raw.get("gain_db", -6.0)),
+                  gain_db=float(raw.get("gain_db", -9.0)),
                   lead=float(raw.get("lead", 0.20)),
-                  beats=beats)
+                  beats=beats,
+                  cues=cues)
     duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
     master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
     return AudioMix(bed=bed,
@@ -1137,12 +1260,17 @@ def audio_settings(spec: dict, spec_path):
 
 
 def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_indexes,
-                voice: str = "0:a") -> list:
+                cue_indexes=(), payoff_s=None, voice: str = "0:a") -> list:
     """The audio half of the final filter graph. Verified end to end at full scale.
 
     `runtime` is the FINISHED Short's length, not the sum of the scene rows: a closing CTA
     plate is 1.5 s of picture that carries no scene, so a bed trimmed to the rows would fade
     out before the plate and leave the last frames in the silence this block exists to end.
+
+    `cue_indexes` are the inputs for `mix.sfx.cues`, in the cues' own order, and
+    `payoff_s` is where the payoff frame starts -- the last scene's start on the finished
+    timeline. With no payoff (a spec with no scene rows) no cue is placed: a sound with
+    nowhere to land is not quietly dropped onto second zero.
     """
     master = mix.master
     if mix.bed is None:
@@ -1174,6 +1302,14 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
                          f"atrim=0:{float(runtime):.3f},"
                          f"apad=whole_dur={float(runtime):.3f}[s{n}]")
             labels.append(f"s{n}")
+    if mix.sfx is not None and cue_indexes and payoff_s is not None:
+        for n, (index, cue) in enumerate(zip(cue_indexes, mix.sfx.cues), start=1):
+            delay = max(0, round((float(payoff_s) - cue.lead) * 1000))
+            steps.append(f"[{index}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                         f"volume={cue.gain_db:g}dB,adelay={delay}|{delay},"
+                         f"atrim=0:{float(runtime):.3f},"
+                         f"apad=whole_dur={float(runtime):.3f}[q{n}]")
+            labels.append(f"q{n}")
     steps.append("".join(f"[{label}]" for label in labels)
                  + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
     steps.append(f"[vox][music]amix=inputs=2:normalize=0,alimiter=limit=0.97,"
@@ -1191,17 +1327,24 @@ def audio_inputs(mix: AudioMix, boundaries, bed_index: int):
     1, and a bed in front of them would burn the wrong word onto the wrong frame.
 
     One whoosh input per BOUNDARY, never per `beats - 1`: two divisions of a short runtime can
-    pick the same cut, and beat_boundaries drops the duplicate.
+    pick the same cut, and beat_boundaries drops the duplicate. Then one input per CUE, in the
+    cues' own order, so `audio_steps` can zip the two lists.
+
+    Returns (args, bed_index, sfx_indexes, cue_indexes).
     """
     args = ["-stream_loop", "-1", "-i", mix.bed.src]
     count = bed_index + 1
-    sfx_indexes = []
+    sfx_indexes, cue_indexes = [], []
     if mix.sfx is not None:
         for _at in boundaries:
             sfx_indexes.append(count)
             args += ["-i", mix.sfx.src]
             count += 1
-    return args, bed_index, sfx_indexes
+        for cue in mix.sfx.cues:
+            cue_indexes.append(count)
+            args += ["-i", cue.src]
+            count += 1
+    return args, bed_index, sfx_indexes, cue_indexes
 
 
 def highlight_bbox(im):
@@ -1548,10 +1691,15 @@ def main():
     # file; the whooshes need the same list one pass earlier, so it is built here in memory.
     mixed = mix is not None and mix.bed is not None
     runtime, cuts, boundaries = timeline[0], [], []
+    # The payoff frame is the START of the LAST scene. Script v2 signs off in <= 6 words
+    # spoken OVER it, and mediaplan.pin_payoff puts the payoff asset on that scene, so the
+    # last scene IS the payoff and a cue needs no spec key of its own to find it.
+    payoff_s = cut_rows[-1]["start"] if cut_rows else None
     if mixed:
         cuts = cut_plan_json(cut_rows, tr.join, runtime, cut_extras)["cuts"]
         if mix.sfx is not None:
             boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
+    placed = sfx_placements(mix if mixed else None, boundaries, payoff_s)
     if cap.enabled and not overlays:
         # A spec that asked for captions and got none is almost always a narration problem,
         # not a caption one — and an uncaptioned Short that nobody was warned about is how a
@@ -1593,10 +1741,11 @@ def main():
             inputs += 1
         steps = caption_filter(overlays, cap_box[1], plate_seconds)
         if mixed:
-            extra, bed_index, sfx_indexes = audio_inputs(mix, boundaries, inputs)
+            extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, inputs)
             args += extra
             steps.extend(audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
-                                     sfx_indexes=sfx_indexes))
+                                     sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
+                                     payoff_s=payoff_s))
         else:
             steps.append(plain_audio_steps(mix.master if mix is not None else Master()))
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
@@ -1610,12 +1759,13 @@ def main():
         if mixed:
             # -c:v copy: the video is untouched, so the whole mix costs 0.81 s for 12.8 s of
             # output. This is exactly the command the filtergraph was verified with.
-            extra, bed_index, sfx_indexes = audio_inputs(mix, boundaries, 1)
+            extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, 1)
             run(["ffmpeg", "-y", "-loglevel", "error", *CONCAT_INPUT_ARGS,
                  "-f", "concat", "-safe", "0", "-i", str(lst), *extra,
                  "-filter_complex", ";".join(
                      audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
-                                 sfx_indexes=sfx_indexes)),
+                                 sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
+                                 payoff_s=payoff_s)),
                  "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
                  "-b:a", "160k", "-movflags", "+faststart", str(final)])
         else:
@@ -1625,7 +1775,7 @@ def main():
     # joins dip to black finds nothing, so this file — not a pixel detector — is what a
     # cadence check reads. Written before the length check below, because a Short that came
     # out too long is exactly the one whose cut list someone wants to look at.
-    cut_plan = cut_plan_json(cut_rows, tr.join, total, cut_extras)
+    cut_plan = cut_plan_json(cut_rows, tr.join, total, cut_extras, sfx=placed)
     (work / "cuts.json").write_text(json.dumps(cut_plan, indent=1), encoding="utf-8")
     changes = len(cut_plan["cuts"])
     print(f"cuts: {changes} picture change{'' if changes == 1 else 's'} in {total:.1f}s",
@@ -1638,6 +1788,10 @@ def main():
               f"{len(boundaries)} whoosh{'' if len(boundaries) == 1 else 'es'} at "
               f"{', '.join(f'{at:.2f}s' for at in boundaries) or 'no boundary'}",
               flush=True)
+        if placed:
+            print("audio: sfx at "
+                  + ", ".join(f"{row['at']:.2f}s {row['role']}" for row in placed),
+                  flush=True)
     if total > 59.5: raise SystemExit(f"Short too long: {total:.1f}s (>59 s) — pick shorter scenes")
     rev = paths.review; rev.mkdir(exist_ok=True)
     for name, t in (("t01", 1.0), ("mid", total / 2), ("end", max(0.0, total - 1.0))):

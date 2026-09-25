@@ -374,3 +374,138 @@ def test_a_spec_with_no_audio_block_renders_the_pass_it_always_did(stub):
     assert "-filter_complex" not in cmd
     assert cmd[cmd.index("-af") + 1] == "loudnorm=I=-16:TP=-1.5:LRA=11"
     assert cmd[cmd.index("-c:v") + 1] == "copy"
+
+
+# --- cues: a riser into the payoff, a hit on it -----------------------------------------
+
+CUES = [{"role": "riser", "src": "media/audio/riser.wav", "on": "payoff",
+         "lead": 1.5, "gain_db": -12},
+        {"role": "hit", "src": "media/audio/hit.wav", "on": "payoff", "gain_db": -8}]
+
+
+def test_the_default_sfx_gain_is_minus_nine_not_minus_six():
+    """Measured (sound-design section 2.4): the whoosh is -13.0 LUFS and lands near -19 at
+    -6 dB, about 2 LU under the voice's -17.1 -- not the 12-18 dB of creator lore. With
+    more than one cue on the bus, -9 is the safer floor."""
+    assert M.Sfx(src="w.wav").gain_db == -9.0
+    assert M.SfxCue(role="riser", src="r.wav").gain_db == -9.0
+
+
+def test_a_cue_is_parsed_off_the_sfx_block(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"on_cut": "w.wav", "cues": CUES}}}
+    mix = M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert [c.role for c in mix.sfx.cues] == ["riser", "hit"]
+    assert mix.sfx.cues[0].lead == 1.5 and mix.sfx.cues[0].gain_db == -12.0
+    assert mix.sfx.cues[1].lead == 0.0 and mix.sfx.cues[1].gain_db == -8.0
+    assert mix.sfx.cues[0].src == "/abs/media/audio/riser.wav"
+
+
+@pytest.mark.parametrize("cues,needle", [
+    ({"role": "riser"}, "must be a list"),
+    ([{"src": "r.wav"}], "needs a `role`"),
+    ([{"role": "boom", "src": "r.wav"}], "riser, hit"),
+    ([{"role": "riser"}], "no `src`"),
+    ([{"role": "riser", "src": "r.wav", "on": "every_cut"}], "payoff"),
+    ([{"role": "riser", "src": "r.wav", "lead": -1}], "lead"),
+    ([{"role": "riser", "src": "r.wav"}, {"role": "riser", "src": "r2.wav"}], "twice"),
+])
+def test_a_malformed_cue_stops_the_render_by_name(tmp_path, monkeypatch, cues, needle):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"on_cut": "w.wav", "cues": cues}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert needle in str(excinfo.value)
+
+
+def test_an_unknown_key_under_sfx_is_still_refused_by_name(tmp_path):
+    """GC7: this is why `cues:` needs no capability probe -- an old engine refuses it."""
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"on_cut": "w.wav", "cuez": []}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, "scenes.yaml")
+    assert "cuez" in str(excinfo.value)
+
+
+def _mix_with_cues(**kw):
+    return M.AudioMix(
+        bed=M.Bed(src="/abs/b.mp3", lufs=-13.2),
+        duck=M.Duck(),
+        sfx=M.Sfx(src="/abs/w.wav", cues=(
+            M.SfxCue(role="riser", src="/abs/r.wav", lead=1.5, gain_db=-12.0),
+            M.SfxCue(role="hit", src="/abs/h.wav", lead=0.0, gain_db=-8.0))),
+        master=M.Master(), **kw)
+
+
+def test_a_cue_is_delayed_to_its_lead_before_the_payoff():
+    mix = _mix_with_cues()
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[5.0, 20.0], bed_index=1,
+                                   sfx_indexes=[2, 3], cue_indexes=[4, 5],
+                                   payoff_s=30.0))
+    assert "[4:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=-12dB," \
+           "adelay=28500|28500," in graph
+    assert "volume=-8dB,adelay=30000|30000," in graph
+
+
+def test_every_cue_joins_the_music_bus_and_the_amix_counts_them_all():
+    # 12.0 and 26.0, not 5.0/20.0: beat_boundaries(runtime=38, beats=3) targets ~12.67 and
+    # ~25.33, and 5.0/20.0 are both nearest to 20.0 -- one boundary, not two. These two cuts
+    # land the beat math on two distinct boundaries so the whoosh count in the comment below
+    # is the whoosh count in the graph.
+    mix = _mix_with_cues()
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[12.0, 26.0], bed_index=1,
+                                   sfx_indexes=[2, 3], cue_indexes=[4, 5],
+                                   payoff_s=30.0))
+    # bedduck + 2 whooshes + 2 cues
+    assert "amix=inputs=5:normalize=0:dropout_transition=0[music]" in graph
+
+
+def test_a_cue_is_trimmed_and_padded_to_the_runtime_like_a_whoosh():
+    mix = _mix_with_cues()
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[5.0], bed_index=1,
+                                   sfx_indexes=[2], cue_indexes=[3, 4], payoff_s=30.0))
+    assert graph.count("atrim=0:38.000,apad=whole_dur=38.000") == 3
+
+
+def test_no_payoff_means_no_cue_is_placed():
+    """A spec with no scene rows has no payoff frame; a cue with nowhere to land is not
+    silently dropped onto second zero."""
+    mix = _mix_with_cues()
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[5.0], bed_index=1,
+                                   sfx_indexes=[2], cue_indexes=[], payoff_s=None))
+    assert "volume=-12dB" not in graph and "volume=-8dB" not in graph
+
+
+def test_audio_inputs_queues_one_input_per_whoosh_then_one_per_cue():
+    mix = _mix_with_cues()
+    args, bed_index, sfx_indexes, cue_indexes = M.audio_inputs(mix, [5.0, 20.0], 1)
+    assert args == ["-stream_loop", "-1", "-i", "/abs/b.mp3",
+                    "-i", "/abs/w.wav", "-i", "/abs/w.wav",
+                    "-i", "/abs/r.wav", "-i", "/abs/h.wav"]
+    assert (bed_index, sfx_indexes, cue_indexes) == (1, [2, 3], [4, 5])
+
+
+def test_sfx_placements_are_the_starts_not_the_events_they_key_off():
+    mix = _mix_with_cues()
+    assert M.sfx_placements(mix, [9.97, 19.01], 30.0) == [
+        {"at": 9.77, "role": "whoosh"},
+        {"at": 18.81, "role": "whoosh"},
+        {"at": 28.5, "role": "riser"},
+        {"at": 30.0, "role": "hit"},
+    ]
+
+
+def test_sfx_placements_of_a_render_with_no_sfx_is_an_empty_list():
+    mix = M.AudioMix(bed=M.Bed(src="/abs/b.mp3", lufs=-13.2), duck=M.Duck(), sfx=None,
+                     master=M.Master())
+    assert M.sfx_placements(mix, [], 30.0) == []
+    assert M.sfx_placements(None, [], 30.0) == []
+
+
+def test_cut_plan_json_always_carries_an_sfx_list():
+    rows = [{"scene": 0, "start": 0.0, "seconds": 10.0, "beats": [10.0]}]
+    assert M.cut_plan_json(rows, "cut", 10.0)["sfx"] == []
+    placed = [{"at": 9.77, "role": "whoosh"}]
+    assert M.cut_plan_json(rows, "cut", 10.0, sfx=placed)["sfx"] == placed
