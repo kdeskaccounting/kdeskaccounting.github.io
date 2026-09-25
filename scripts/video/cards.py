@@ -46,6 +46,7 @@ Pure string building — no I/O, stdlib only — so the golden tests run in the 
 from __future__ import annotations
 
 import html as _html
+import math
 import re
 
 TEMPLATES = ("ranked_list", "countdown", "changed", "calendar_heatmap", "wait_curve")
@@ -137,6 +138,65 @@ def _e(value: object) -> str:
     return _html.escape(str(value if value is not None else ""), quote=True)
 
 
+def reveal_count(total: int, reveal: float) -> int:
+    """How many of `total` items are on screen at `reveal`. CEILING, clamped.
+
+    Ceiling, not floor, because an item becomes visible as soon as it STARTS arriving:
+    `item_progress` then counts its value up over its own arrival, which is the
+    "count-up on the headline number" the motion doc asks for. `reveal_count(n, 0.0)` is
+    still 0 and `reveal_count(n, 1.0)` is still n, so the two ends are unchanged.
+    """
+    total = max(0, int(total))
+    if reveal >= 1.0:
+        return total
+    return max(0, min(total, math.ceil(float(reveal) * total - 1e-9)))
+
+
+def item_progress(index: int, total: int, reveal: float) -> float:
+    """How far item `index` is into its OWN arrival, 0.0 to 1.0.
+
+    The card's reveal is spread evenly across its items: item k owns the window
+    [k/n, (k+1)/n]. Everything before it has landed, everything after it has not started.
+    """
+    if reveal >= 1.0:
+        return 1.0
+    return max(0.0, min(1.0, float(reveal) * max(1, int(total)) - int(index)))
+
+
+def count_up(value, reveal: float = 1.0):
+    """A number on its way to `value`, eased out. Anything not a number is itself.
+
+    Cubic ease-out, `1 - (1 - r)**3`: fast at first and settling on the final figure,
+    which is what reads as a counter rather than as a linear sweep.
+
+    At `reveal >= 1.0` the value is returned UNCHANGED -- the same object, so the same
+    type, so `_value_text` renders the same string it always did. That is what keeps every
+    card golden byte-identical (tests/golden/card_*.html).
+
+    A str is left alone even when it looks like a number: a `ranked_list` value may be a
+    label, a `changed` value is a whole sentence, and parsing either to count it would be
+    guessing at what the caller meant. A bool is left alone because a bool is not a figure.
+    """
+    if reveal >= 1.0:
+        return value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    eased = 1.0 - (1.0 - max(0.0, min(1.0, float(reveal)))) ** 3
+    if isinstance(value, int):
+        return int(round(value * eased))
+    return float(round(value * eased, 1))
+
+
+def _hidden(index: int, shown: int) -> str:
+    """The attribute that keeps an unrevealed element's BOX while hiding its ink.
+
+    `visibility:hidden`, never `display:none` and never leaving the element out: a card
+    that reflowed as its rows arrived would read as a bug, not as an animation. Empty at
+    `index < shown`, so a fully revealed card emits nothing new (see `count_up`).
+    """
+    return "" if index < shown else ' style="visibility:hidden"'
+
+
 def _value_text(value: object) -> str:
     """`5` -> '5', `9.4` -> '9.4', `8.0` -> '8', `""`/None -> '' (no value column)."""
     if value is None or value == "":
@@ -159,23 +219,28 @@ def _rank_text(template: str, item: dict, index: int, count: int) -> str:
 
 # --- rows -----------------------------------------------------------------------------
 
-def _rows_ranked(template: str, items: list[dict]) -> str:
+def _rows_ranked(template: str, items: list[dict], reveal: float = 1.0) -> str:
     out = []
+    shown = reveal_count(len(items), reveal)
     for i, item in enumerate(items):
-        value = _value_text(item.get("value"))
+        value = _value_text(count_up(item.get("value"),
+                                     item_progress(i, len(items), reveal)))
         cells = (f'<div class="rank">{_e(_rank_text(template, item, i, len(items)))}</div>'
                  f'<div class="label">{_e(item.get("label"))}</div>')
         if value:
-            out.append(f'<li class="row">{cells}<div class="value">{_e(value)}</div></li>')
+            out.append(f'<li class="row"{_hidden(i, shown)}>{cells}'
+                       f'<div class="value">{_e(value)}</div></li>')
         else:
-            out.append(f'<li class="row novalue">{cells}</li>')
+            out.append(f'<li class="row novalue"{_hidden(i, shown)}>{cells}</li>')
     return "\n      ".join(out)
 
 
-def _rows_changed(items: list[dict]) -> str:
+def _rows_changed(items: list[dict], reveal: float = 1.0) -> str:
     out = []
-    for item in items:
-        out.append(f'<li class="row changed"><div class="label">{_e(item.get("label"))}</div>'
+    shown = reveal_count(len(items), reveal)
+    for i, item in enumerate(items):
+        out.append(f'<li class="row changed"{_hidden(i, shown)}>'
+                   f'<div class="label">{_e(item.get("label"))}</div>'
                    f'<div class="note">{_e(item.get("value"))}</div></li>')
     return "\n      ".join(out)
 
@@ -217,12 +282,20 @@ def _heatmap_score_text(value: object) -> str:
     return _value_text(value)
 
 
-def _cells_heatmap(items: list[dict]) -> str:
+def _cells_heatmap(items: list[dict], reveal: float = 1.0) -> str:
+    """Cells in the order the caller gave them, which for a calendar is DATE ORDER.
+
+    A month of crowd scores painting itself in two seconds is the single best data-day
+    visual this renderer has, and it is free: the caller already emits the cells in date
+    order, so revealing them in list order IS revealing them in date order.
+    """
     out = []
-    for item in items:
+    shown = reveal_count(len(items), reveal)
+    for i, item in enumerate(items):
         colour = HEATMAP_RAMP[_ramp_index(item.get("value"))]
         klass = "cell hot" if item.get("highlight") else "cell"
-        out.append(f'<li class="{klass}" style="background:{colour}">'
+        style = f"background:{colour}" + ("" if i < shown else ";visibility:hidden")
+        out.append(f'<li class="{klass}" style="{style}">'
                    f'<span class="d">{_e(item.get("label"))}</span>'
                    f'<span class="v">{_e(_heatmap_score_text(item.get("value")))}</span></li>')
     return "\n      ".join(out)
@@ -238,7 +311,20 @@ CURVE_H = 720.0
 CURVE_PAD = 40.0
 
 
-def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
+def polyline_length(points) -> float:
+    """The drawn length of a polyline, in the curve's own coordinate space.
+
+    `stroke-dasharray` wants one number: the length of the whole path. SVG can compute it
+    in a browser (`getTotalLength`), but this module is stdlib-only by contract and the
+    page is screenshotted, not scripted -- so the length is computed here, in Python, off
+    the same points the polyline is built from.
+    """
+    points = list(points)
+    return float(sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                     for a, b in zip(points, points[1:])))
+
+
+def _curve_svg(items: list[dict], annotation: dict, brand: dict, reveal: float = 1.0) -> str:
     """An inline SVG line chart. No library: this file is stdlib-only by contract."""
     values = [_number(item.get("value")) for item in items]
     lo, hi = min(values), max(values)
@@ -252,6 +338,19 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
     poly = " ".join(f"{x},{y}" for x, y in points)
     area = f"0,{CURVE_H} {poly} {points[-1][0]},{CURVE_H}"
 
+    # The line draws itself: the dash pattern is one dash as long as the whole path, and
+    # the offset walks it on from nothing. At full reveal NEITHER attribute is emitted, so
+    # the golden is the string it always was.
+    dash = ""
+    if reveal < 1.0:
+        length = polyline_length(points)
+        dash = (f' stroke-dasharray="{length:.1f}" '
+                f'stroke-dashoffset="{length * (1.0 - float(reveal)):.1f}"')
+    # The shaded area under the line, and the annotation dot with its label, belong to a
+    # FINISHED curve: an area under half a line is a wedge, and a dot marking a point the
+    # line has not reached yet marks nothing. `visibility` keeps their geometry.
+    veil = "" if reveal >= 1.0 else ' visibility="hidden"'
+
     index = max(0, min(len(points) - 1, int(_number(annotation.get("index")))))
     mx, my = points[index]
     label = str(annotation.get("label") or "")
@@ -260,10 +359,10 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
     dx = -26 if anchor == "end" else 26
     mark = (
         f'<circle cx="{mx}" cy="{my}" r="16" fill="{brand["accent"]}" '
-        f'stroke="{brand["bg"]}" stroke-width="7"/>'
+        f'stroke="{brand["bg"]}" stroke-width="7"{veil}/>'
         + (
             f'<text x="{mx + dx}" y="{max(my - 34, 52)}" text-anchor="{anchor}" '
-            f'class="ann">{_e(label)}</text>'
+            f'class="ann"{veil}>{_e(label)}</text>'
             if label
             else ""
         )
@@ -284,8 +383,8 @@ def _curve_svg(items: list[dict], annotation: dict, brand: dict) -> str:
         f'<div class="curve">\n'
         f'      <svg viewBox="0 0 {CURVE_W:.0f} {CURVE_H:.0f}" '
         f'preserveAspectRatio="xMidYMid meet" class="plot">\n'
-        f'        <polygon points="{area}" class="fill"/>\n'
-        f'        <polyline points="{poly}" class="line"/>\n'
+        f'        <polygon points="{area}" class="fill"{veil}/>\n'
+        f'        <polyline points="{poly}" class="line"{dash}/>\n'
         f'        {mark}\n'
         f'      </svg>\n'
         f'      <div class="xlabels">\n        {labels}\n      </div>\n'
@@ -345,7 +444,8 @@ def spec_credits(spec: dict) -> str:
 
 def card_html(template: str, data: dict, brand: dict, width: int = 1296,
               height: int = 2304, *, transparent: bool = False,
-              box: tuple[int, int, int, int] | None = None, fill: bool = False) -> str:
+              box: tuple[int, int, int, int] | None = None, fill: bool = False,
+              reveal: float = 1.0) -> str:
     """The 9:16 card. `box`, `fill` and `transparent` are what the other scene kinds add.
 
     `box` is `(left, top, w, h)`: the card lives inside that rectangle of the page instead
@@ -362,6 +462,17 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     hugging the rows would leave a slab of dead background between the captions and the card
     — so the card takes the box's full height and centres its rows in the leftovers, exactly
     as a full-frame card does.
+
+    `reveal` is how much of the card is DRAWN yet, 0.0 to 1.0. It moves the `items` and
+    nothing else: the brand line, the heading, the subheading, the rule and the footer are
+    always on screen, because a data day's frame 0 IS a card and the stop test wants that
+    frame lit (S1) and wants its headline to name the subject (S3). Rows that have not
+    arrived keep their boxes under `visibility:hidden`, so the card never reflows; the
+    heatmap fills in the caller's order, which for a calendar is date order; the wait
+    curve draws itself with a dash offset and shows its shaded area and its annotation
+    only once the line is finished. At the default 1.0 this function emits exactly the
+    string it emitted before the parameter existed -- that is what keeps every golden in
+    tests/golden/card_*.html byte-identical, and tests assert it directly.
     """
     if template not in TEMPLATES:
         raise ValueError(f"unknown card template {template!r}; known: {', '.join(TEMPLATES)}")
@@ -372,6 +483,8 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     if len(items) > cap:
         raise ValueError(f"card template {template!r} holds at most {cap} items, "
                          f"got {len(items)}; split it across two cards")
+    if not 0.0 <= float(reveal) <= 1.0:
+        raise ValueError(f"card reveal must be between 0.0 and 1.0, got {reveal!r}")
 
     heading = str(data.get("heading") or "")
     subheading = str(data.get("subheading") or "")
@@ -384,13 +497,13 @@ def card_html(template: str, data: dict, brand: dict, width: int = 1296,
     if not items:
         body = '<div class="empty">Nothing to show right now</div>'
     elif template == "calendar_heatmap":
-        body = f'<ul class="grid">\n      {_cells_heatmap(items)}\n    </ul>'
+        body = f'<ul class="grid">\n      {_cells_heatmap(items, reveal)}\n    </ul>'
     elif template == "wait_curve":
-        body = _curve_svg(items, data.get("annotation") or {}, brand)
+        body = _curve_svg(items, data.get("annotation") or {}, brand, reveal)
     elif template == "changed":
-        body = f'<ul class="rows">\n      {_rows_changed(items)}\n    </ul>'
+        body = f'<ul class="rows">\n      {_rows_changed(items, reveal)}\n    </ul>'
     else:
-        body = f'<ul class="rows">\n      {_rows_ranked(template, items)}\n    </ul>'
+        body = f'<ul class="rows">\n      {_rows_ranked(template, items, reveal)}\n    </ul>'
     sub = f'<p class="sub">{_e(subheading)}</p>' if subheading else ""
 
     if box is not None and fill:

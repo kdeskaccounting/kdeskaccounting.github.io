@@ -827,3 +827,124 @@ def test_a_single_point_curve_is_fine_without_an_annotation_too():
 
     assert "<polyline" in html
     assert "<text" not in html, "no annotation label means no annotation text"
+
+
+# --- reveal ----------------------------------------------------------------------------
+
+def test_reveal_counts_items_by_ceiling_so_an_arriving_row_is_on_screen():
+    assert cards.reveal_count(5, 0.0) == 0
+    assert cards.reveal_count(5, 0.01) == 1
+    assert cards.reveal_count(5, 0.2) == 1
+    assert cards.reveal_count(5, 0.21) == 2
+    assert cards.reveal_count(5, 1.0) == 5
+    assert cards.reveal_count(0, 0.5) == 0
+
+
+def test_item_progress_is_that_items_own_arrival_clamped_to_zero_and_one():
+    assert cards.item_progress(0, 4, 0.125) == pytest.approx(0.5)
+    assert cards.item_progress(0, 4, 0.25) == pytest.approx(1.0)
+    assert cards.item_progress(1, 4, 0.25) == pytest.approx(0.0)
+    assert cards.item_progress(3, 4, 0.5) == pytest.approx(0.0)
+    assert cards.item_progress(3, 4, 1.0) == pytest.approx(1.0)
+
+
+def test_count_up_returns_the_value_itself_at_full_reveal():
+    """Same type, same object -- this is what keeps the goldens byte-identical."""
+    for value in (5, 9.4, 8.0, "", None, "Reopened on Tuesday."):
+        assert cards.count_up(value, 1.0) is value
+
+
+def test_count_up_eases_out_toward_the_final_number():
+    assert cards.count_up(100, 0.0) == 0
+    assert cards.count_up(100, 0.5) == 88          # 1 - 0.5**3 = 0.875
+    assert cards.count_up(100, 0.9) == 100         # 1 - 0.1**3 = 0.999
+    assert cards.count_up(100, 0.5) < 100
+
+
+def test_count_up_keeps_an_int_an_int_and_a_float_a_float():
+    assert isinstance(cards.count_up(80, 0.5), int)
+    assert isinstance(cards.count_up(9.4, 0.5), float)
+
+
+def test_count_up_leaves_anything_that_is_not_a_number_alone():
+    assert cards.count_up("Reopened on Tuesday.", 0.3) == "Reopened on Tuesday."
+    assert cards.count_up("", 0.3) == ""
+    assert cards.count_up(None, 0.3) is None
+    assert cards.count_up(True, 0.3) is True       # a bool is not a figure to count
+
+
+def test_a_hidden_row_keeps_its_box_so_the_card_never_reflows():
+    html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                           reveal=0.4)
+    assert html.count("visibility:hidden") == 3    # 5 rows, ceil(0.4*5)=2 drawn
+    assert html.count('class="row"') + html.count('class="row novalue"') == 5
+
+
+def test_the_heading_and_the_footer_are_drawn_at_every_reveal():
+    """`reveal` reveals the ITEMS. Frame 0 of a data day is a card, and S1 wants it lit
+    and S3 wants its headline to be the frame-0 text."""
+    for reveal in (0.0, 0.25, 1.0):
+        html = cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND),
+                               1296, 2304, reveal=reveal)
+        assert RANKED["heading"] in html
+        assert RANKED["footer"] in html
+        assert "Demo Brand" in html          # BRAND["name"], the brand line at the top
+
+
+def test_the_heatmap_fills_in_date_order():
+    n = len(HEATMAP["items"])
+    for reveal, drawn in ((0.0, 0), (0.5, -(-n // 2)), (1.0, n)):
+        html = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(BRAND),
+                               1296, 2304, reveal=reveal)
+        assert html.count("visibility:hidden") == n - drawn, reveal
+    half = cards.card_html("calendar_heatmap", HEATMAP, cards.brand_tokens(BRAND),
+                           1296, 2304, reveal=0.5)
+    cells = re.findall(r'<li class="cell[^"]*"([^>]*)>', half)
+    hidden = [bool("visibility:hidden" in attrs) for attrs in cells]
+    assert hidden == sorted(hidden), "cells must fill in order, never out of it"
+
+
+def test_the_wait_curve_draws_itself_with_a_dash_offset():
+    half = cards.card_html("wait_curve", CURVE, cards.brand_tokens(BRAND), 1296, 2304,
+                           reveal=0.5)
+    m = re.search(r'stroke-dasharray="([0-9.]+)" stroke-dashoffset="([0-9.]+)"', half)
+    assert m, half
+    length, offset = float(m.group(1)), float(m.group(2))
+    assert length > 0
+    assert offset == pytest.approx(length * 0.5, abs=0.2)
+
+
+def test_the_curve_fill_and_its_annotation_only_appear_when_the_line_is_finished():
+    partial = cards.card_html("wait_curve", CURVE, cards.brand_tokens(BRAND), 1296, 2304,
+                              reveal=0.75)
+    assert 'class="fill" visibility="hidden"' in partial
+    assert '<circle' in partial and 'visibility="hidden"' in partial
+    whole = cards.card_html("wait_curve", CURVE, cards.brand_tokens(BRAND), 1296, 2304)
+    assert "visibility" not in whole
+
+
+def test_polyline_length_is_the_sum_of_its_segments():
+    assert cards.polyline_length([(0.0, 0.0), (3.0, 4.0)]) == pytest.approx(5.0)
+    assert cards.polyline_length([(0.0, 0.0), (3.0, 4.0), (3.0, 14.0)]) == pytest.approx(15.0)
+    assert cards.polyline_length([(1.0, 1.0)]) == pytest.approx(0.0)
+    assert cards.polyline_length([]) == pytest.approx(0.0)
+
+
+def test_a_reveal_outside_zero_to_one_is_refused():
+    for bad in (-0.1, 1.5):
+        with pytest.raises(ValueError) as excinfo:
+            cards.card_html("ranked_list", RANKED, cards.brand_tokens(BRAND), 1296, 2304,
+                            reveal=bad)
+        assert "reveal" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("template,data,name", GOLDEN_CASES,
+                         ids=[c[2] for c in GOLDEN_CASES])
+def test_full_reveal_is_byte_identical_to_the_card_with_no_reveal_at_all(template, data, name):
+    """GC3: no golden moves. `reveal=1.0` must emit exactly the old string -- no
+    visibility attribute, no dash attributes, no re-formatted number."""
+    plain = cards.card_html(template, data, cards.brand_tokens(BRAND), 1296, 2304)
+    explicit = cards.card_html(template, data, cards.brand_tokens(BRAND), 1296, 2304,
+                               reveal=1.0)
+    assert plain == explicit
+    assert plain == (GOLDEN / f"{name}.html").read_text(encoding="utf-8")
