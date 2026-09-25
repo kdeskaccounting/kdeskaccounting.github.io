@@ -220,6 +220,79 @@ def scene_beats(scene: dict) -> list:
     return out
 
 
+def scene_steps(scene: dict) -> list:
+    """One CARD scene's `steps:`, validated and normalised. `[]` when it has none.
+
+    A step is to a card what a beat is to a photograph: it shares the scene's single
+    narration WAV and its caption cues, and only the PICTURE changes. The picture of a
+    card scene is the card, so a step is not a different file -- it is the SAME card drawn
+    further on, `cards.card_html(..., reveal=)`. A month of crowd scores painting itself in
+    date order is eight pictures out of one data block and no photograph at all.
+
+    `reveal` is 0.0 to 1.0 and must STRICTLY INCREASE: two steps at the same reveal are the
+    same PNG twice, which is a picture change in `cuts.json` that a viewer cannot see, and
+    the gate would be counting a cut that is not there.
+
+    The LAST step must be exactly 1.0. A card scene that ended half-drawn would leave the
+    payoff card unfinished on the frame the video ends on -- and on a data day that frame
+    is the whole point of the video.
+
+    Like `scene_beats`, one entry is refused rather than flattened: one picture IS the
+    scene, and a spec that carries one was built by something that did not know the
+    contract. And like `scene_beats` this raises SystemExit, because a malformed spec is
+    the operator's problem and not an exception to catch.
+    """
+    steps = (scene or {}).get("steps")
+    if not steps:
+        return []
+    if not isinstance(steps, list):
+        raise SystemExit(f"a scene's `steps:` must be a list, got {type(steps).__name__}")
+    if len(steps) < 2:
+        raise SystemExit("a scene's `steps:` has one entry; one picture IS the scene. Drop "
+                         "the key, or give it two.")
+    out = []
+    previous = -1.0
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise SystemExit(f"steps[{index}] is {type(step).__name__}, expected a mapping")
+        if step.get("reveal") is None:
+            raise SystemExit(f"steps[{index}] needs a `reveal`: how much of the card is "
+                             f"drawn yet, 0.0 to 1.0")
+        try:
+            reveal = float(step["reveal"])
+        except (TypeError, ValueError):
+            raise SystemExit(f"steps[{index}] `reveal` must be a number, got "
+                             f"{step.get('reveal')!r}") from None
+        if not 0.0 <= reveal <= 1.0:
+            raise SystemExit(f"steps[{index}] has `reveal: {reveal:g}`, and a reveal is a "
+                             f"fraction of the card between 0.0 and 1.0")
+        if reveal <= previous:
+            raise SystemExit(
+                f"steps[{index}] reveals {reveal:g} after {previous:g}; a step's reveal has "
+                f"to increase. Two steps at the same reveal render the same PNG twice, "
+                f"which puts a picture change in cuts.json that nobody can see.")
+        previous = reveal
+        try:
+            seconds = float(step.get("seconds") or 0.0)
+        except (TypeError, ValueError):
+            raise SystemExit(f"steps[{index}] `seconds` must be a number, got "
+                             f"{step.get('seconds')!r}") from None
+        if seconds <= 0.0:
+            raise SystemExit(f"steps[{index}] has `seconds: {seconds:.2f}`; a step is a "
+                             f"picture on screen, so it needs a positive length")
+        if seconds > MAX_PICTURE_S:
+            raise SystemExit(
+                f"steps[{index}] is {seconds:.2f}s and the renderer's backstop is "
+                f"{MAX_PICTURE_S}s. One picture held longer than that is the defect this "
+                f"whole change set exists to remove.")
+        out.append({"reveal": reveal, "seconds": seconds})
+    if out[-1]["reveal"] != 1.0:
+        raise SystemExit(
+            f"the last step reveals {out[-1]['reveal']:g}; a card scene has to finish drawn. "
+            f"The video's last frame is its payoff frame, and half a card is not a payoff.")
+    return out
+
+
 def beat_spans(beats, dur: float) -> list:
     """The beats' seconds rescaled to the scene's REAL duration, summing exactly to it.
 
@@ -358,6 +431,75 @@ def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
          "-filter_complex",
          f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
          f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
+         "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
+         "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
+    return out
+
+
+def step_frames(spans, fps: int = FPS) -> list:
+    """Frames per card step, summing EXACTLY to the scene's own frame count.
+
+    The scene is `math.ceil(dur * fps)` frames -- the same number `encode_scene` hands
+    zoompan -- and the steps have to partition it, because the zoom expression continues
+    across them: a step that claimed more frames than it renders would restart the push
+    in the wrong place.
+
+    The last step absorbs the rounding, exactly as `beat_spans` lets the last span absorb
+    it. A step reduced below one frame is a spec asking for more steps than there are
+    frames, which is refused rather than rendered as a step nobody sees.
+    """
+    spans = [float(span) for span in spans]
+    total = math.ceil(sum(spans) * int(fps))
+    counts = [max(1, round(span * int(fps))) for span in spans]
+    counts[-1] = total - sum(counts[:-1])
+    if counts[-1] < 1:
+        raise SystemExit(
+            f"{len(spans)} steps do not fit in {total} frames: the last one comes out at "
+            f"{counts[-1]} frames. Ask for fewer steps, or a longer scene.")
+    return counts
+
+
+def encode_card_steps(pngs, spans, wav, dur, crf, out, join=DEFAULT_JOIN):
+    """Several renders of ONE card + one narration WAV -> an mp4. Returns `out`.
+
+    One input and one chain per step, each ending at the delivered size, then the `concat`
+    FILTER -- not the demuxer, which would mean encoding every step to its own file first.
+    This is `beat_steps` for a card, and it borrows BEAT_TAIL for the same reason: concat
+    demands identical size, pixel format and SAR, and BEAT_TAIL is the one place those are
+    spelled.
+
+    The PUSH IS CONTINUOUS. `encode_scene` zooms one still from 1.00 to 1.06 across the
+    whole scene; a stepped card does the same, by giving step k's zoompan the zoom the
+    scene had reached by then (`1.0 + frames_before * dz`) instead of starting it over. A
+    card that snapped back to 1.00 at every step would read as a stutter, which is the
+    opposite of what steps are for.
+
+    The output flags are `encode_scene`'s, byte for byte, because the parts are
+    concatenated with `-c:v copy`: a card scene that encoded differently would break the
+    concat.
+    """
+    pngs = list(pngs)
+    counts = step_frames(spans)
+    n = math.ceil(float(dur) * FPS); zmax = 1.06; dz = (zmax - 1.0) / n
+    args, steps, before = [], [], 0
+    for index, (png, frames) in enumerate(zip(pngs, counts)):
+        args += ["-i", str(png)]
+        span = frames / FPS
+        steps.append(
+            f"[{index}:v]scale={RW}:{RH}:flags=lanczos,"
+            f"zoompan=z='min({1.0 + before * dz:.7f}+on*{dz:.7f},{zmax})':"
+            f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"d={frames}:s={OUT_W}x{OUT_H}:fps={FPS},"
+            f"{BEAT_TAIL}trim=duration={span:.3f},setpts=PTS-STARTPTS[c{index}]")
+        before += frames
+    steps.append("".join(f"[c{i}]" for i in range(len(pngs)))
+                 + f"concat=n={len(pngs)}:v=1:a=0[m0]")
+    steps.append(f"[m0]{fade_steps(dur, join)}format=yuv420p[v]")
+    args += ["-i", str(wav)]
+    steps.append(f"[{len(pngs)}:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+                 "aformat=sample_rates=48000:channel_layouts=stereo[a]")
+    run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
          "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
          "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
@@ -1173,11 +1315,22 @@ def main():
     for _scene in spec.get("scenes") or []:
         if media.is_media(_scene or {}):
             scene_beats(_scene)
-        elif (_scene or {}).get("beats"):
+            if (_scene or {}).get("steps"):
+                raise SystemExit(
+                    "a `media` scene carries `steps:`, which only a `card` scene renders — "
+                    "a step redraws a card further on, and a photograph has no reveal. Use "
+                    "`beats:` to cut a media scene's picture.")
+        elif cards.is_card(_scene or {}):
+            scene_steps(_scene)
+            if (_scene or {}).get("beats"):
+                raise SystemExit(
+                    "a `card` scene carries `beats:`, which only a `media` scene renders — "
+                    "a beat cuts to a picture, and a card scene's picture is the card. Use "
+                    "`steps:` to draw the card a row at a time.")
+        elif (_scene or {}).get("beats") or (_scene or {}).get("steps"):
             raise SystemExit(
-                f"a `{(_scene or {}).get('kind')}` scene carries `beats:`, which only a "
-                f"`media` scene renders — a beat cuts to a picture, and a card scene's "
-                f"picture is the card. Nothing would have read the key.")
+                f"a `{(_scene or {}).get('kind')}` scene carries `beats:` or `steps:`, and "
+                f"neither key is read for this scene kind. Nothing would have read it.")
     cap = captions.settings(spec, a.captions)
     slug = slug or safe_slug(spec["slug"]); sh = select_short(spec, a.variant)
     tr = transitions(spec)
@@ -1300,12 +1453,30 @@ def main():
             # A card is already 9:16 — use it as the whole frame, no top/bottom banding.
             # With captions on it is boxed below the band instead: a card scene is all text,
             # so a caption over it prints text on text, and the card is the thing that moves.
-            png = work / f"scene_{k}.png"
-            R.render_card_scene(png, sc["template"], sc.get("data", {}), spec.get("brand"),
-                                RW, RH, html_dir=work,
-                                box=card_box_under_captions(RW, RH) if cap.enabled else None)
+            box = card_box_under_captions(RW, RH) if cap.enabled else None
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            steps = scene_steps(sc)
+            if steps:
+                # The SAME spans encode_card_steps trims each step to — rescaled against
+                # the `dur` this part is encoded with, exactly as a media scene's beats are.
+                spans = beat_spans(steps, dur)
+                pngs = []
+                for s, step in enumerate(steps):
+                    png = work / f"scene_{k}_step{s}.png"
+                    R.render_card_scene(png, sc["template"], sc.get("data", {}),
+                                        spec.get("brand"), RW, RH, html_dir=work,
+                                        box=box, reveal=step["reveal"])
+                    pngs.append(png)
+                out = encode_card_steps(pngs, spans, wav, dur, a.crf,
+                                        work / f"scene_{k}.mp4", join=tr.join)
+                add_part(out, idx, spans)
+                print(f"scene {idx:02d}: card {len(steps)} steps {dur:.1f}s -> {out.name}",
+                      flush=True)
+                continue
+            png = work / f"scene_{k}.png"
+            R.render_card_scene(png, sc["template"], sc.get("data", {}), spec.get("brand"),
+                                RW, RH, html_dir=work, box=box)
             out = encode_scene(png, wav, dur, a.crf, join=tr.join)
             add_part(out, idx); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue

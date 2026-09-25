@@ -53,6 +53,10 @@ scenes:
         - {rank: 2, label: "Rows a card holds at most", value: 8}
         - {rank: 1, label: "Frame height in pixels", value: 2304}
       footer: kdeskaccounting.com
+    steps:
+      - {reveal: 0.34, seconds: 1.4}
+      - {reveal: 0.67, seconds: 1.4}
+      - {reveal: 1.0, seconds: 1.4}
     narration: >
       Three templates. Eight rows at most, so the type stays large enough to read on a phone.
       And a frame two thousand three hundred and four pixels tall, rendered at one point two
