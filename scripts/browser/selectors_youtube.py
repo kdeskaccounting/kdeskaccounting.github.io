@@ -17,7 +17,7 @@ again, leaving the channel at its two published Shorts each time. Every anchor b
 the date it was counted and how.
 
 The one thing deliberately NOT exercised is the final Publish click, because that would put a
-video on the channel. The three anchors that only a real publish can confirm are named in
+video on the channel. The two anchors that only a real publish can confirm are named in
 `POST_PUBLISH_ONLY`, so `--check` reports them as "post-publish only" rather than MISSING, and
 they are in `UNVERIFIED` until a live run shortens that list.
 
@@ -248,11 +248,13 @@ POST_FILE_ONLY = (
 )
 
 # Anchors that can only be seen by actually publishing a video to the channel. A dry run
-# reaches the Visibility step and stops, so these three are the honest remainder.
+# reaches the Visibility step and stops, so these two are the honest remainder.
+# PUBLIC_VISIBILITY_TEXT is deliberately NOT here: the two Shorts already on the channel made
+# ROW_VISIBILITY read "Public" live on 2026-09-25, so that word is confirmed even though
+# nothing has been published THROUGH this driver.
 POST_PUBLISH_ONLY = (
     "GOT_IT_BUTTON_TEXT",
     "WATCH_URL",
-    "PUBLIC_VISIBILITY_TEXT",
 )
 
 # Every anchor above that has never been confirmed live. `--check` and a dry run are what

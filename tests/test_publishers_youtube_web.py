@@ -162,6 +162,10 @@ class _Page:
         # Which channel id a navigation lands on. A test overrides it to stand on someone
         # else's channel without having to fight goto() for the url.
         self.url_channel = S.CHANNEL_ID
+        # After this many navigations, land on a DIFFERENT channel — Studio moving the session
+        # mid-run, which is what the per-navigation channel re-check exists to catch.
+        self.channel_switches_after = None
+        self.navigations = 0
         self.keyboard = _Keyboard(self)
         # Signed in as ParkSheet, on the ParkSheet channel URL. Tests that want the wrong
         # channel override one or both.
@@ -180,13 +184,28 @@ class _Page:
     # navigation ------------------------------------------------------------
     def goto(self, url, **kw):
         self.calls.append(f"goto:{url}")
-        self.url = url if self.url_channel in url else f"{url}?c={self.url_channel}"
+        self.navigations += 1
+        landed = self.url_channel
+        if (self.channel_switches_after is not None
+                and self.navigations > self.channel_switches_after):
+            landed = "UCsomeoneelseschannel"
+        # Studio rewrites the /channel/<id>/ segment when it moves a session to another
+        # channel, so the fake does too — appending a query parameter would leave the real
+        # id in the path and the driver's check would pass on a url that had moved.
+        got = url.replace(S.CHANNEL_ID, landed)
+        self.url = got if landed in got else f"{got.split('?')[0]}?c={landed}"
 
     def wait_for_load_state(self, *a, **kw):
         self.calls.append("load_state")
 
     def wait_for_function(self, js, **kw):
-        self.calls.append("wait_for_function")
+        # The predicate is recorded, not discarded. While it was thrown away, deleting the
+        # enabled-wait before the delete confirmation — or the row-absent wait after it — left
+        # the whole suite green, which is how the silent-no-op delete bug survived a test pass.
+        # The WHOLE predicate, not a prefix: the first 60 characters of every one of these is
+        # `() => { const ... document.querySelector(`, so a prefix cannot tell the
+        # enabled-wait from the row-present one, which is the distinction the tests assert on.
+        self.calls.append(f"wait_for_function:{js}")
 
     def evaluate(self, js, *a):
         self.calls.append("evaluate")
@@ -298,16 +317,43 @@ def test_two_parksheet_days_sharing_a_prefix_do_not_match_each_other():
     assert not yw.title_matches(_row(b), a)
 
 
-def test_a_row_youtube_truncated_with_an_ellipsis_still_matches():
-    assert yw.title_matches(_row(TITLE[:30] + "…"), TITLE)
+def test_a_truncated_row_is_not_a_match_at_all():
+    """Prefix-matching a cut-off row is the substring hole it looks like.
+
+    Two ParkSheet days open "Hidden Detail Monday — ", so a row truncated inside that prefix
+    would stand in for either one of them.
+    """
+    assert not yw.title_matches(_row(TITLE[:30] + "…"), TITLE)
+
+
+def test_a_truncated_row_that_could_be_this_title_stops_the_run():
+    with pytest.raises(yw.AmbiguousList) as exc:
+        yw.refuse_if_ambiguous([_row(TITLE[:30] + "…")], TITLE)
+    assert "truncated" in str(exc.value)
+
+
+def test_a_truncated_row_for_some_other_video_is_not_ambiguous():
+    yw.refuse_if_ambiguous([_row("Something else entirely about Epcot…")], TITLE)
+
+
+def test_a_truncated_stub_too_short_to_identify_anything_is_not_ambiguous():
+    yw.refuse_if_ambiguous([_row("Hori…")], TITLE)
+
+
+def test_an_ambiguous_list_stops_the_driver_before_it_uploads(pub, asset):
+    page = _Page(rows_reads=[[_row(TITLE[:30] + "…")], []])
+    with pytest.raises(yw.AmbiguousList):
+        _driven(pub, page, asset)
+    assert not [c for c in page.calls if c.startswith("set_input_files")]
 
 
 def test_a_short_row_with_no_ellipsis_is_not_treated_as_truncated():
     assert not yw.title_matches(_row(TITLE[:30]), TITLE)
 
 
-def test_an_ellipsis_row_still_has_to_be_long_enough_to_identify_anything():
-    assert not yw.title_matches(_row("Hori…"), TITLE)
+def test_a_draft_in_the_way_is_a_row_not_published():
+    """The type hierarchy is what keeps both out of the retry path."""
+    assert issubclass(yw.DraftInTheWay, yw.RowNotPublished)
 
 
 def test_the_title_is_found_even_when_it_is_not_the_title_node():
@@ -434,6 +480,28 @@ def test_the_right_name_on_the_wrong_channel_id_still_refuses(pub):
     assert S.CHANNEL_ID in str(exc.value)
 
 
+def test_a_mid_run_channel_switch_is_caught_on_the_next_navigation(pub, asset):
+    """assert_channel runs once; being on ParkSheet for the REST of the run is a second claim.
+
+    Studio moves a session to another channel when the profile's active channel is switched —
+    in a window Stephen also uses by hand — and without this the uploader would open in front
+    of his personal channel on the first check's word alone.
+    """
+    page = _Page(rows_reads=[[], []])
+    page.channel_switches_after = 1        # the studio check passes, the next goto does not
+    with pytest.raises(yw.WrongChannel) as exc:
+        _driven(pub, page, asset)
+    assert "moved this session to another channel" in str(exc.value)
+    assert not [c for c in page.calls if c.startswith("set_input_files")]
+
+
+def test_a_navigation_that_does_not_name_the_channel_is_not_second_guessed(pub):
+    """STUDIO_URL carries no channel id — it is the redirect that supplies one."""
+    page = _Page()
+    page.url_channel = S.CHANNEL_ID
+    pub.goto(page, S.STUDIO_URL)           # must not raise on a url with no id in it
+
+
 def test_the_parksheet_channel_passes(pub):
     assert pub.assert_channel(_Page()) == S.CHANNEL_NAME
 
@@ -474,6 +542,51 @@ def test_both_content_tabs_are_read_before_anything_is_uploaded(pub, asset):
     gotos = [c for c in page.calls if c.startswith("goto:")]
     assert f"goto:{S.CONTENT_SHORTS_URL}" in gotos
     assert f"goto:{S.CONTENT_VIDEOS_URL}" in gotos
+
+
+@pytest.mark.parametrize("visibility", ["Private", "Unlisted", "Scheduled", "", "Processing"])
+def test_only_a_public_row_is_a_skip_everything_else_raises(pub, asset, visibility):
+    """The skip must be a CLOSED door.
+
+    Anything that is not Public came back as ok "already published" before this: a Private or
+    Unlisted row, a Scheduled one, or an EMPTY visibility cell from selector drift. Each would
+    have skipped the day for ever, with no video on the channel and nothing saying so.
+    """
+    page = _Page(rows_reads=[[_row(TITLE, visibility)], []])
+    with pytest.raises(yw.RowNotPublished) as exc:
+        _driven(pub, page, asset)
+    assert "not 'Public'" in str(exc.value) or "Public" in str(exc.value)
+    assert not [c for c in page.calls if c.startswith("set_input_files")]
+
+
+def test_an_empty_visibility_cell_says_the_selector_may_have_drifted(pub, asset):
+    page = _Page(rows_reads=[[_row(TITLE, "")], []])
+    with pytest.raises(yw.RowNotPublished) as exc:
+        _driven(pub, page, asset)
+    assert "ROW_VISIBILITY has drifted" in str(exc.value)
+
+
+def test_a_public_row_is_still_a_skip(pub, asset):
+    page = _Page(rows_reads=[[_row(TITLE)], []])
+    result = _driven(pub, page, asset)
+    assert result.ok and "already published" in result.detail
+
+
+@pytest.mark.parametrize("visibility", ["Private", "Unlisted", ""])
+def test_the_dry_run_skip_is_closed_the_same_way(pub, asset, monkeypatch, visibility):
+    page = _Page(rows_reads=[[_row(TITLE, visibility)], []])
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=True)
+    assert not result.ok
+    assert not [c for c in page.calls if c.startswith("set_input_files")]
+
+
+def test_a_row_not_published_is_never_retried(pub, asset, monkeypatch):
+    page = _Page(rows_reads=[[_row(TITLE, "Unlisted")], []])
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    assert not result.ok and result.queued_path
+    assert page.calls.count("evaluate") == 2      # one read per tab, not two rounds
 
 
 def test_a_leftover_draft_is_refused_not_read_as_already_published(pub, asset):
@@ -585,6 +698,50 @@ def test_a_box_that_never_settles_is_focused_by_keyboard_instead(pub, asset):
     assert f"focus:{S.TITLE_BOX}" in page.calls
 
 
+def test_a_description_that_lost_its_line_breaks_is_refused(pub, asset):
+    """The read-back used to run through `_norm`, which collapses runs of whitespace.
+
+    Same words, no newlines, PASSED — and for this field that means the Queue-Times line, the
+    ThemeParks.wiki line and the photo credits arrive as one paragraph: the licences require
+    those credits to be legible, so a flattened description is a breach, not a cosmetic bug.
+    """
+    page = _Page(rows_reads=[[], []])
+    page.lossy_boxes.add(S.DESCRIPTION_BOX)
+    page.texts[S.DESCRIPTION_BOX] = " ".join(DESC.split())        # every newline gone
+    with pytest.raises(yw.FormFieldError) as exc:
+        _driven(pub, page, asset)
+    assert "LINE BREAKS were lost" in str(exc.value)
+    assert "licence-required credit lines" in str(exc.value)
+
+
+def test_a_crlf_read_back_is_accepted_because_that_is_the_browsers_choice(pub, asset):
+    page = _Page(rows_reads=[[], [], [_row(TITLE)], []])
+    page.lossy_boxes.add(S.DESCRIPTION_BOX)
+    page.texts[S.DESCRIPTION_BOX] = DESC.rstrip().replace("\n", "\r\n")
+    assert _driven(pub, page, asset).ok
+
+
+def test_a_trailing_newline_the_browser_adds_is_not_a_lost_line(pub, asset):
+    page = _Page(rows_reads=[[], [], [_row(TITLE)], []])
+    page.lossy_boxes.add(S.DESCRIPTION_BOX)
+    page.texts[S.DESCRIPTION_BOX] = DESC.rstrip() + "\n"
+    assert _driven(pub, page, asset).ok
+
+
+def test_a_blank_line_collapsed_to_one_is_refused(pub, asset):
+    page = _Page(rows_reads=[[], []])
+    page.lossy_boxes.add(S.DESCRIPTION_BOX)
+    page.texts[S.DESCRIPTION_BOX] = DESC.rstrip().replace("\n\n", "\n")
+    with pytest.raises(yw.FormFieldError):
+        _driven(pub, page, asset)
+
+
+def test_norm_is_only_for_matching_and_prose_not_for_verifying_a_field():
+    flat = " ".join(DESC.split())
+    assert yw._norm(flat) == yw._norm(DESC)            # _norm cannot see the difference
+    assert yw._lines(flat) != yw._lines(DESC)          # _lines can, which is why it is used
+
+
 def test_a_box_that_loses_its_text_raises_rather_than_publishing_a_broken_description(pub, asset):
     page = _Page(rows_reads=[[], []])
     page.lossy_boxes.add(S.DESCRIPTION_BOX)
@@ -660,7 +817,73 @@ def test_the_video_id_is_captured_before_publish_is_clicked(pub, asset):
     assert pub._video_id == "Oxo41KgeVoA"
 
 
+def test_the_enabled_wait_sits_between_the_checkbox_and_the_confirm_click(pub, asset,
+                                                                          monkeypatch):
+    """The wait is the fix for the silent-no-op delete, so its POSITION is the assertion.
+
+    While the fake discarded predicates, deleting this wait left the suite green — which is
+    exactly how the bug it fixes got past a test pass in the first place.
+    """
+    page = _dry_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    pub.publish(asset, META, dry_run=True)
+    calls = page.calls
+    enabled = next(i for i, c in enumerate(calls)
+                   if c == f"wait_for_function:{yw.enabled_js(S.DELETE_CONFIRM_BUTTON)}")
+    assert calls.index(f"click:{S.DELETE_CONFIRM_CHECKBOX}:force") < enabled
+    assert enabled < calls.index(f"click:{S.DELETE_CONFIRM_BUTTON}")
+
+
+def test_the_row_absent_wait_comes_after_the_confirm_click(pub, asset, monkeypatch):
+    """The delete is asynchronous; re-reading the list before the row goes is the race."""
+    page = _dry_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    pub.publish(asset, META, dry_run=True)
+    calls = page.calls
+    absent = next(i for i, c in enumerate(calls)
+                  if c == f"wait_for_function:{yw.row_absent_js(TITLE)}")
+    assert calls.index(f"click:{S.DELETE_CONFIRM_BUTTON}") < absent
+
+
+def test_the_fake_records_predicates_so_deleting_a_wait_cannot_pass(pub, asset, monkeypatch):
+    page = _dry_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    pub.publish(asset, META, dry_run=True)
+    predicates = [c for c in page.calls if c.startswith("wait_for_function:")]
+    assert predicates, page.calls
+    assert any("aria-disabled" in c for c in predicates)
+    assert any(c.startswith("wait_for_function:() => !((") for c in predicates)
+
+
 # ------------------------------------------------------------------------ verification
+
+def test_the_verification_waits_for_the_row_before_it_reads_the_list(pub, asset):
+    """Without the wait the verification races YouTube's own list refresh.
+
+    It would land before the new row is painted, find nothing, and raise the one failure this
+    driver refuses to retry — over a video that is live and fine.
+    """
+    page = _Page(rows_reads=[[], [], [_row(TITLE)], []])
+    _driven(pub, page, asset)
+    calls = page.calls
+    at_submit = calls.index(f"click:{S.DONE_BUTTON}")
+    waits = [i for i, c in enumerate(calls)
+             if c == f"wait_for_function:{yw.row_present_js(TITLE)}"]
+    assert waits, calls
+    assert max(waits) > at_submit, "the row-present wait must run AFTER Publish"
+    # ...and before the read that decides (the last two list reads are the verification)
+    evals = [i for i, c in enumerate(calls) if c == "evaluate"]
+    assert max(waits) < evals[-2]
+
+
+def test_that_wait_reuses_the_draft_paths_open_tab(pub, asset):
+    page = _Page(rows_reads=[[], [], [_row(TITLE)], []])
+    _driven(pub, page, asset)
+    calls = page.calls
+    at_submit = calls.index(f"click:{S.DONE_BUTTON}")
+    after = calls[at_submit:]
+    assert f"goto:{S.CONTENT_SHORTS_URL}" in after
+
 
 def test_a_video_that_never_appears_on_the_list_raises_and_is_not_retried(pub, asset):
     page = _Page(rows_reads=[[], [], [], []])
@@ -690,6 +913,62 @@ def test_a_failure_after_the_publish_click_is_never_retried(pub, asset, monkeypa
     result = pub.publish(asset, META, dry_run=False)
     assert calls == [1]
     assert not result.ok and "NOT retrying" in result.detail
+
+
+def test_a_failure_after_the_upload_but_before_publish_is_not_retried(pub, asset, monkeypatch):
+    """A timeout in set_public is a draft on the channel, not a flake worth re-running.
+
+    Re-running drive() from the top navigates away, which SILENTLY saves the half-filled
+    upload as a draft, and then hands YouTube the same mp4 again. The content read cannot
+    catch that: a draft is not a published row.
+    """
+    page = _Page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    calls = []
+
+    def uploaded_then_boom(*a, **k):
+        calls.append(1)
+        pub._uploaded = True
+        pub._video_id = "Oxo41KgeVoA"
+        raise RuntimeError("Timeout waiting for the Public radio")
+    monkeypatch.setattr(pub, "drive", uploaded_then_boom)
+    result = pub.publish(asset, META, dry_run=False)
+    assert calls == [1], "a retry would upload the file twice"
+    assert not result.ok and result.queued_path
+
+
+def test_that_card_says_a_draft_exists_and_where_to_delete_it(pub, asset, monkeypatch):
+    page = _Page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+
+    def uploaded_then_boom(*a, **k):
+        pub._uploaded = True
+        pub._video_id = "Oxo41KgeVoA"
+        raise RuntimeError("Timeout waiting for the Public radio")
+    monkeypatch.setattr(pub, "drive", uploaded_then_boom)
+    result = pub.publish(asset, META, dry_run=False)
+    assert f"a draft titled {TITLE!r} exists" in result.detail
+    assert "Oxo41KgeVoA" in result.detail
+    assert S.DELETE_MENU_ITEM_TEXT in result.detail
+    assert "NOT retrying" in result.detail
+
+
+def test_a_failure_with_nothing_uploaded_yet_is_still_retried(pub, asset, monkeypatch):
+    """The retry is not gone — it is scoped to failures that changed nothing."""
+    page = _Page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    calls = []
+
+    def flaky(*a, **k):
+        calls.append(1)
+        assert pub._uploaded is False
+        if len(calls) == 1:
+            raise RuntimeError("the list would not load")
+        return yw.PublishResult(platform=yw.PLATFORM, ok=True, url="u", queued_path=None,
+                                detail="second time lucky")
+    monkeypatch.setattr(pub, "drive", flaky)
+    assert pub.publish(asset, META, dry_run=False).ok
+    assert calls == [1, 1]
 
 
 def test_a_failure_before_the_click_is_retried_exactly_once(pub, asset, monkeypatch):
@@ -793,15 +1072,20 @@ def test_the_delete_goes_back_to_the_tab_the_draft_was_seen_on(pub, asset, monke
     page = _dry_page()
     monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
     pub.publish(asset, META, dry_run=True)
-    gotos = [c for c in page.calls if c.startswith("goto:")]
-    last_shorts = len(gotos) - 1 - gotos[::-1].index(f"goto:{S.CONTENT_SHORTS_URL}")
-    last_videos = len(gotos) - 1 - gotos[::-1].index(f"goto:{S.CONTENT_VIDEOS_URL}")
-    hover = [c for c in page.calls if c.startswith("hover:")]
-    assert hover, page.calls
-    # the tab holding the draft is re-opened after the videos tab, i.e. right before the menu
-    assert last_shorts > 0
-    assert page.calls.index(hover[0]) > page.calls.index(f"goto:{S.CONTENT_VIDEOS_URL}")
-    assert last_videos < page.calls.index(hover[0]) or last_shorts < page.calls.index(hover[0])
+    calls = page.calls
+    hover = next((c for c in calls if c.startswith("hover:")), None)
+    assert hover, calls
+    at_hover = calls.index(hover)
+    # Every index off ONE list. The earlier version mixed positions in a filtered `gotos` list
+    # with positions in `page.calls` and then `or`-ed two comparisons, which made the assertion
+    # true no matter what order the driver navigated in.
+    # The navigation immediately BEFORE the row menu is the draft's own tab. Stated that way
+    # rather than as "the last goto overall", because the clean-up re-reads both tabs
+    # afterwards to prove the list is back to where it started.
+    before_hover = [c for c in calls[:at_hover] if c.startswith("goto:")]
+    assert before_hover[-1] == f"goto:{S.CONTENT_SHORTS_URL}", before_hover[-4:]
+    # and the empty Videos tab was visited earlier in the same run, so this is a RE-open
+    assert f"goto:{S.CONTENT_VIDEOS_URL}" in before_hover
 
 
 def test_a_dry_run_reports_what_it_reached(pub, asset, monkeypatch):
@@ -844,6 +1128,35 @@ def test_a_draft_that_survives_the_delete_queues_a_card_naming_it(pub, asset, mo
     assert "still on" in result.detail
     card = (pathlib.Path(pub.repo) / result.queued_path).read_text()
     assert TITLE in card
+
+
+def test_a_cleanup_failure_still_names_the_error_that_caused_it(pub, asset, monkeypatch):
+    """A `finally` that raises REPLACES the exception on its way out.
+
+    The clean-up error was all the card said, so the reason the run failed — which is the
+    thing to fix — was gone.
+    """
+    draft = [_row(TITLE, S.DRAFT_VISIBILITY_TEXT, href=None)]
+    page = _Page(rows_reads=[[], [], draft, [], draft, draft, []])
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    monkeypatch.setattr(pub, "set_public", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("the Public radio never appeared")))
+    result = pub.publish(asset, META, dry_run=True)
+    assert not result.ok
+    assert "the Public radio never appeared" in result.detail, result.detail
+    assert "which is the cause to fix first" in result.detail
+
+
+def test_a_clean_cleanup_still_lets_the_original_error_through(pub, asset, monkeypatch):
+    page = _dry_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    monkeypatch.setattr(pub, "set_public", lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("the Public radio never appeared")))
+    result = pub.publish(asset, META, dry_run=True)
+    assert not result.ok
+    assert "the Public radio never appeared" in result.detail
+    # the draft was still removed
+    assert f"click:{S.DELETE_CONFIRM_BUTTON}" in page.calls
 
 
 def test_a_dry_run_on_a_day_already_published_uploads_nothing(pub, asset, monkeypatch):
@@ -1035,6 +1348,82 @@ def test_capabilities_makes_no_network_or_browser_call(tmp_path, monkeypatch):
     yw.YouTubeWebPublisher(repo=tmp_path).capabilities()
 
 
+# --------------------------------------------------------------- the CLI and publish.py
+
+def test_the_cli_refuses_a_real_post_without_go(tmp_path, asset, monkeypatch, capsys):
+    """A TikTok mistake is a scheduled post you can delete before it airs; this one is a
+    public video on the channel the moment the button lands. So the flag is here."""
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps(META))
+    monkeypatch.setattr(yw.session, "open_page", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a refused run must not open a browser")))
+    with pytest.raises(SystemExit) as exc:
+        yw.main(["--asset", str(asset), "--meta", str(meta)], repo=tmp_path)
+    assert exc.value.code == 2
+    assert "--go" in capsys.readouterr().err
+
+
+def test_go_and_dry_run_together_are_refused(tmp_path, asset, capsys):
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps(META))
+    with pytest.raises(SystemExit):
+        yw.main(["--go", "--dry-run", "--asset", str(asset), "--meta", str(meta)],
+                repo=tmp_path)
+    assert "contradict" in capsys.readouterr().err
+
+
+def test_the_cli_dry_run_needs_no_go(tmp_path, asset, monkeypatch):
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps(META))
+    page = _dry_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    assert yw.main(["--dry-run", "--asset", str(asset), "--meta", str(meta)],
+                   repo=tmp_path) == 0
+
+
+def test_this_publisher_declares_that_its_dry_run_writes():
+    assert yw.YouTubeWebPublisher.dry_run_writes is True
+
+
+def test_every_other_publisher_still_declares_a_dry_run_that_writes_nothing():
+    from publishers import publish
+    for name, cls in publish.PUBLISHERS.items():
+        if name != "youtube_web":
+            assert cls.dry_run_writes is False, name
+
+
+def test_publish_py_refuses_dry_run_for_this_platform(tmp_path, asset, capsys, monkeypatch):
+    """publish.py advertises "--dry-run performs zero writes", and for this transport it
+    cannot: rehearsing a web uploader means handing it the file. Rather than widen the T2
+    gate, the shared entry point declines the platform and names the CLI that owns it."""
+    from publishers import publish
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps(META))
+    monkeypatch.setattr(yw.session, "open_page", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a refused run must not open a browser")))
+    rc = publish.main(["--platform", "youtube_web", "--asset", str(asset),
+                       "--meta", str(meta), "--dry-run"], repo=tmp_path)
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "youtube_web" in err and "youtube_web.py --dry-run" in err
+
+
+def test_publish_py_still_allows_a_dry_run_for_the_upload_post_transports(tmp_path, asset,
+                                                                          capsys):
+    from publishers import publish
+    meta = tmp_path / "m.json"
+    meta.write_text(json.dumps(META))
+    assert publish.main(["--platform", "youtube", "--asset", str(asset),
+                         "--meta", str(meta), "--dry-run"], repo=tmp_path) == 0
+
+
+def test_publish_py_no_longer_claims_its_dry_run_is_always_write_free():
+    from publishers import publish
+    src = pathlib.Path(publish.__file__).read_text(encoding="utf-8")
+    assert "--dry-run performs zero writes" not in src
+    assert "dry_run_writes" in src
+
+
 # ---------------------------------------------------------------------- the invariants
 
 def test_youtube_web_is_registered_and_upload_post_youtube_is_untouched():
@@ -1088,7 +1477,10 @@ def test_the_driver_says_out_loud_that_it_never_runs_from_actions():
 def test_no_workflow_file_runs_this_publisher():
     """Chrome rule 1, enforced rather than promised."""
     root = pathlib.Path(yw.__file__).resolve().parents[2]
-    for wf in (root / ".github" / "workflows").glob("*.yml"):
+    workflows = root / ".github" / "workflows"
+    found = sorted(list(workflows.glob("*.yml")) + list(workflows.glob("*.yaml")))
+    assert found, "no workflow files found — this test would pass vacuously"
+    for wf in found:
         assert "youtube_web" not in wf.read_text(encoding="utf-8"), wf.name
 
 

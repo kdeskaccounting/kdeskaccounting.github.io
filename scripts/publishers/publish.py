@@ -20,8 +20,14 @@ on purpose: the daily job must surface it in the digest.
 A live run is gated on ledger entry 69, the T2 decision that authorises auto-publishing:
 unless that decision is authorised — its veto window has closed unvetoed, or a later entry's
 `approves` names it (entry 85 did, on 2026-09-15) — any non-dry-run publish refuses with exit
-2 and publishes nothing. There is no override flag; the unlock is a ledger entry. --dry-run is
-never gated, because it writes nothing.
+2 and publishes nothing. There is no override flag; the unlock is a ledger entry.
+
+--dry-run is ungated because through THIS entry point it writes nothing. That invariant is
+enforced rather than assumed: a publisher whose dry run does touch the outside world sets
+`Publisher.dry_run_writes = True`, and --dry-run refuses it by name. `youtube_web` is the one
+such publisher — there is no way to rehearse a web uploader without handing it a
+file, so its dry run really uploads and then deletes the draft YouTube saves. It is run
+through its own CLI, `youtube_web.py --dry-run`, where that is the documented contract.
 
 Everything printed or written to the ledger goes through session.redact_secrets first;
 PublishResult already masks its own detail and url, and this is the second belt.
@@ -137,6 +143,9 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
     if not (a.platform and a.asset and a.meta):
         ap.error("--platform, --asset and --meta are required unless "
                  "--capabilities or --whoami is given")
+    # Parsed once, here, so the --dry-run guard below and the publish loop at the bottom can
+    # never disagree about which platforms were asked for.
+    requested = [n.strip() for n in a.platform.split(",") if n.strip()]
     # Fail on the caller's own mistake before any publisher runs, rather than half way
     # through a platform list with a traceback.
     for label, path in (("--asset", a.asset), ("--meta", a.meta)):
@@ -151,10 +160,24 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
         except tiktok_web.ScheduleError as exc:
             ap.error(f"--schedule {exc}")
 
+    # A --dry-run that is not actually dry cannot be ungated, and here it cannot be made dry
+    # either: youtube_web's rehearsal has to hand YouTube the file. Rather than quietly widen
+    # the T2 gate to cover a dry run, or quietly let an uploading "dry run" past it, this
+    # entry point declines the platform and names the CLI that owns that contract. Smaller
+    # change than gating it, and it keeps one sentence true of everything publish.py does.
+    if a.dry_run:
+        writes = [n for n in requested if n in PUBLISHERS and PUBLISHERS[n].dry_run_writes]
+        if writes:
+            print(f"REFUSING: --dry-run through publish.py writes nothing, and "
+                  f"{', '.join(writes)} cannot honour that — its dry run really uploads the "
+                  f"file and then deletes the draft YouTube saves. Rehearse it with its own "
+                  f"CLI, where that is the documented contract:\n"
+                  f"  scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py "
+                  f"--dry-run --asset <mp4> --meta <json>", file=sys.stderr)
+            return 2
     # The gate comes before meta is even read: a refused run must not reach the work, and
     # its message must be the refusal, not a JSON parse error from a file it should not have
-    # opened. --dry-run performs zero writes, so there is nothing for a veto to protect
-    # against and it stays ungated — it is what a refused caller is told to run.
+    # opened.
     if not a.dry_run:
         ok, why = veto_gate(now)
         if not ok:
@@ -168,7 +191,7 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
     if a.schedule:
         meta["schedule_at"] = a.schedule
     rc = 0
-    for name in [p.strip() for p in a.platform.split(",") if p.strip()]:
+    for name in requested:
         if name not in PUBLISHERS:
             print(f"unknown platform {name!r}; known: {', '.join(PUBLISHERS)}", file=sys.stderr)
             rc = max(rc, 2)

@@ -119,6 +119,14 @@ def card_slug(meta: dict, asset: pathlib.Path) -> str:
 
 class Publisher(abc.ABC):
     platform: str = "base"
+    #: Does this publisher's dry run touch the outside world?
+    #:
+    #: False for every transport whose dry run is a printed plan — which was the whole of this
+    #: module's assumption until the Chrome/Studio YouTube driver arrived. `youtube_web`'s dry
+    #: run really uploads the mp4 and then deletes the draft YouTube saves, because there is no
+    #: way to rehearse a web uploader without handing it a file. publish.py reads this to
+    #: decide whether `--dry-run` is still the safe, ungated thing it advertises.
+    dry_run_writes: bool = False
 
     def __init__(self, *, repo: pathlib.Path = REPO) -> None:
         self.repo = pathlib.Path(repo)

@@ -5,9 +5,16 @@
   scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py --dry-run \
       --asset ~/parksheet/build/release/2026-W38/day-6.mp4 \
       --meta  ~/parksheet/build/release/2026-W38/day-6.json
+  scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py --go \
+      --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
+      --meta  ~/parksheet/build/release/2026-W40/day-1.json
   scripts/video/.venv-tts/bin/python scripts/publishers/publish.py --platform youtube_web \
       --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
       --meta  ~/parksheet/build/release/2026-W40/day-1.json
+
+`--go` is required for a real post from this module's own CLI, and `publish.py --dry-run`
+refuses this platform: rehearse with `youtube_web.py --dry-run`, which is the only dry run
+that knows it is allowed to upload and then clean up after itself.
 
 **SESSION ONLY — never from GitHub Actions, never on a cron.** This drives a logged-in
 browser session, which is a grey area in YouTube's terms: it runs beside Stephen in the
@@ -108,7 +115,28 @@ class TitleTooLong(ValueError):
     """`meta.title` is longer than YouTube allows. Refused, never truncated."""
 
 
-class DraftInTheWay(RuntimeError):
+class RowNotPublished(RuntimeError):
+    """A row with this title is on the content list, but it is not a published public video.
+
+    The skip has to be a CLOSED door. "A row with this title exists" is not the same claim as
+    "this day is already up": a Private, Unlisted or Scheduled row, or a visibility cell that
+    reads "" because the selector drifted, would all have returned ok "already published" —
+    and the day would then be silently skipped for ever, with no video on the channel and
+    nothing anywhere saying so. Only PUBLIC_VISIBILITY_TEXT is a skip; everything else raises
+    and a human decides.
+    """
+
+
+class AmbiguousList(RuntimeError):
+    """The content list truncated a title, so "is this day already up?" cannot be answered.
+
+    Fails closed rather than guessing in either direction: prefix-matching a truncated row
+    would let one ParkSheet day stand in for another that shares its "Hidden Detail Monday — "
+    opening, and ignoring it would upload a video that is already live.
+    """
+
+
+class DraftInTheWay(RowNotPublished):
     """A draft of this exact title is already on the channel.
 
     Its own type, and never a skip: a draft is not a published video, so reporting "already
@@ -137,7 +165,20 @@ class VerificationFailed(RuntimeError):
 # --------------------------------------------------------------------------- pure helpers
 
 def _norm(text) -> str:
+    """Whitespace-collapsed, lowercased. For MATCHING titles and for error prose — never for
+    verifying a field's contents: it cannot tell a paragraph from the same words on nine
+    lines, which is the whole of what `fill_box` has to check."""
     return " ".join(str(text or "").split()).strip().lower()
+
+
+def _lines(text) -> str:
+    """`text` with CRLF/CR folded to LF and the ends trimmed. Exact otherwise.
+
+    The only normalisation a read-back may apply: a contenteditable can hand a CRLF back where
+    a bare LF went in, and the trailing newline a browser appends is not a lost line. Anything
+    else — a missing break, a collapsed blank line — has to fail.
+    """
+    return str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def title_of(meta: dict) -> str:
@@ -181,22 +222,56 @@ def title_matches(row: dict, title: str) -> bool:
     2026-09-25, so equality is the honest comparison and it cannot confuse two ParkSheet days
     whose titles share the "Hidden Detail Monday — " prefix.
 
-    The one exception is a row YouTube itself marked as cut off with an ellipsis: then the row
-    is a prefix of the real title and the comparison has to run the other way. It stays narrow —
-    the ellipsis must be there, and what remains must still be MIN_TITLE_LEN characters — so it
-    cannot become the substring hole it looks like.
+    A row YouTube itself marked as cut off with an ellipsis is NOT a match — not even when the
+    target title starts with it. Prefix-matching a truncated row is the substring hole it looks
+    like: two ParkSheet days open "Hidden Detail Monday — ", so a row truncated inside that
+    prefix would stand in for either. A truncated row that COULD be this title is instead an
+    ambiguous read, and `refuse_if_ambiguous` stops the run rather than answering it wrongly in
+    one direction or the other.
     """
     want = _norm(title)
     if len(want) < MIN_TITLE_LEN:
         return False
+    return any(c == want and not is_truncated(c) for c in row_titles(row))
+
+
+def is_truncated(candidate: str) -> bool:
+    """Did YouTube cut this string off? (It carries a trailing ellipsis.)"""
+    return str(candidate or "").endswith(ELLIPSIS)
+
+
+def could_be_truncated_title(row: dict, title: str) -> bool:
+    """Is any string in `row` a truncated version of `title`?
+
+    Deliberately generous about what counts: the point is to notice that the list CANNOT answer
+    "is this day already up", so a near miss must count as ambiguous rather than be argued away.
+    """
+    want = _norm(title)
     for candidate in row_titles(row):
-        truncated = candidate.endswith(ELLIPSIS)
-        got = candidate.rstrip("….") if truncated else candidate
-        if len(got) < MIN_TITLE_LEN:
+        if not is_truncated(candidate):
             continue
-        if want.startswith(got) if truncated else got == want:
+        stem = candidate.rstrip("….").strip()
+        if len(stem) >= MIN_TITLE_LEN and want.startswith(stem):
             return True
     return False
+
+
+def refuse_if_ambiguous(rows, title: str) -> None:
+    """Stop when a row is truncated in a way that might be `title`.
+
+    Both answers are wrong when the list will not show a full title: reporting "already
+    published" skips a day that may never have gone up, and reporting "not there" uploads a
+    video that may already be live. Live on 2026-09-25 the rows carried their titles whole
+    (86 characters, untruncated), so this should never fire — which is exactly why it must be
+    loud if it ever does.
+    """
+    for row in rows or ():
+        if could_be_truncated_title(row, title):
+            raise AmbiguousList(
+                f"the content list shows a truncated title that could be {title!r} "
+                f"(the row reads {row.get('title')!r}). Refusing to decide whether this day is "
+                f"already published from a title YouTube cut off: skipping would drop the day "
+                f"and uploading would risk a second copy. Look at {S.CONTENT_URL} by hand.")
 
 
 def row_titles(row: dict) -> tuple[str, ...]:
@@ -497,6 +572,10 @@ class YouTubeWebPublisher(Publisher):
     """YouTube Studio's web uploader, driven in the logged-in debug Chrome."""
 
     platform = PLATFORM
+    # There is no way to rehearse a web uploader without handing it a file, so this dry run
+    # really uploads and then deletes the draft. publish.py reads this and refuses --dry-run
+    # for this platform, because its own contract is that --dry-run writes nothing.
+    dry_run_writes = True
 
     def __init__(self, *, repo: pathlib.Path | None = None, check_fn=None) -> None:
         super().__init__(repo=repo if repo is not None else REPO)
@@ -625,11 +704,12 @@ class YouTubeWebPublisher(Publisher):
             try:
                 return self.drive(page, asset, meta)
             except (VerificationFailed, WrongChannel, TitleTooLong, FormFieldError,
-                    DraftInTheWay):
+                    RowNotPublished, AmbiguousList):
                 # VerificationFailed: may already be live, see above. WrongChannel is never
                 # worked around. The rest are deterministic — a title YouTube will not take, a
-                # form that will not accept its value and a draft sitting in the way all fail
-                # the same way twice, so a retry only doubles the time to the card.
+                # form that will not accept its value, a row that is on the list but not public
+                # (DraftInTheWay among them, since it is a RowNotPublished) and a truncated list
+                # all fail the same way twice, so a retry only doubles the time to the card.
                 raise
             except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
                 if self._submitted:
@@ -639,6 +719,23 @@ class YouTubeWebPublisher(Publisher):
                         + (f" ({watch_url(self._video_id)})" if self._video_id else "")
                         + f". NOT retrying: a second attempt would upload "
                           f"{pathlib.Path(asset).name} twice.") from exc
+                if self._uploaded:
+                    # The file is already with YouTube even though Publish was never clicked —
+                    # a timeout in set_public lands here. Re-running drive() from the top would
+                    # navigate away, which SILENTLY saves the half-filled upload as a draft,
+                    # and then upload the same mp4 a second time; the content read cannot catch
+                    # that, because a draft is not a published row. So this is a card, and the
+                    # card has to say the draft is there, or nobody will know to delete it.
+                    raise DraftNotRemoved(
+                        f"{type(exc).__name__}: {exc} — this happened AFTER "
+                        f"{pathlib.Path(asset).name} was handed to YouTube but BEFORE Publish "
+                        f"was clicked, so a draft titled {title_of(meta)!r} exists on the "
+                        f"channel"
+                        + (f" (video id {self._video_id})" if self._video_id else "")
+                        + f". NOT retrying: a retry would leave that draft behind and upload "
+                          f"the file again. Delete the draft at {S.CONTENT_URL} "
+                          f"(row menu -> {S.DELETE_MENU_ITEM_TEXT}) before running this day "
+                          f"again.") from exc
                 print(f"{self.platform}: retrying once after "
                       f"{session.redact_secrets(f'{type(exc).__name__}: {exc}')[:160]}",
                       file=sys.stderr)
@@ -650,9 +747,11 @@ class YouTubeWebPublisher(Publisher):
         check_title(title)
         self.assert_channel(page)
 
-        hit = find_video(self.read_content(page), title)
+        rows = self.read_content(page)
+        refuse_if_ambiguous(rows, title)
+        hit = find_video(rows, title)
         if hit is not None:
-            self.refuse_if_draft(hit, title)
+            self.refuse_unless_public(hit, title)
             return PublishResult(
                 platform=self.platform, ok=True,
                 url=self.row_url(hit), queued_path=None,
@@ -664,6 +763,12 @@ class YouTubeWebPublisher(Publisher):
         self.set_public(page)
         self.submit(page)
 
+        # Give the row time to appear before reading the list, exactly as the draft clean-up
+        # does. Without it the verification races YouTube's own list refresh: the read lands
+        # before the new row is painted, finds nothing, and reports a VerificationFailed over a
+        # video that IS live — which is a card telling Stephen to check a channel that is fine,
+        # and (worse) the one failure this driver will not retry.
+        self.wait_for_row(page, title)
         hit = find_video(self.read_content(page), title)
         if not hit:
             raise VerificationFailed(
@@ -702,13 +807,18 @@ class YouTubeWebPublisher(Publisher):
             reached.append(f"channel confirmed: {S.CHANNEL_NAME}")
             before = self.read_content(page)
             reached.append(f"content list read: {len(before)} row(s)")
+            refuse_if_ambiguous(before, title)
             hit = find_video(before, title)
             if hit is not None:
-                self.refuse_if_draft(hit, title)
+                self.refuse_unless_public(hit, title)
                 return PublishResult(
                     platform=self.platform, ok=True, url=self.row_url(hit), queued_path=None,
                     detail=(f"dry-run: already published — a video titled {title!r} is on "
                             f"{S.CONTENT_URL}; a live run would upload nothing"))
+            # Not try/finally: a `finally` that raises REPLACES the exception on its way out,
+            # so a clean-up failure used to hide the reason the run failed in the first place —
+            # and the reason is what a reader of the card needs. The clean-up still always runs.
+            primary = None
             try:
                 self.upload(page, asset, meta)
                 reached.append(f"uploaded {asset.name}, title and description verified, "
@@ -719,9 +829,19 @@ class YouTubeWebPublisher(Publisher):
                                f"(Publish NOT clicked)")
                 if self._video_id:
                     reached.append(f"draft video id {self._video_id}")
-            finally:
-                left = self.discard_draft(page, title, before)
-                reached.append(left)
+            except Exception as exc:  # noqa: BLE001 — re-raised below, after the clean-up
+                primary = exc
+            try:
+                reached.append(self.discard_draft(page, title, before))
+            except Exception as cleanup:  # noqa: BLE001
+                if primary is None:
+                    raise
+                raise DraftNotRemoved(
+                    f"{type(cleanup).__name__}: {cleanup} — AND the run had already failed "
+                    f"with {type(primary).__name__}: {primary}, which is the cause to fix "
+                    f"first.") from primary
+            if primary is not None:
+                raise primary
         return PublishResult(
             platform=self.platform, ok=True, url=None, queued_path=None,
             detail="dry-run: " + "; ".join(plan_lines(asset, meta) + reached))
@@ -729,12 +849,28 @@ class YouTubeWebPublisher(Publisher):
     # -- the driver -------------------------------------------------------------------
 
     def goto(self, page, url: str) -> None:
-        """Navigate, then prove we are still the logged-in studio before touching anything."""
+        """Navigate, then prove we are still the logged-in studio ON THE RIGHT CHANNEL.
+
+        `assert_channel` runs once at the top of a run, which is not the same as being on
+        ParkSheet for the rest of it. Every URL this driver builds carries the channel id
+        (`selectors_youtube.channel_url`), so whenever the REQUESTED url names the channel the
+        landed one has to name it too. Studio bouncing a request to a different channel — which
+        is what it does when the profile's active channel is switched mid-session, in a window
+        Stephen also uses by hand — would otherwise put the uploader in front of his personal
+        channel with only the first check's word that it was ParkSheet.
+        """
         page.goto(url, wait_until="domcontentloaded", timeout=S.NAV_TIMEOUT_MS)
         page.wait_for_load_state("domcontentloaded")
         status = session.classify(SITE, url, page.url)
         if not status.ok:
             raise SessionLost(f"{status.detail} (requested {url}, landed on {status.final_url})")
+        if S.CHANNEL_ID in url and S.CHANNEL_ID not in (page.url or ""):
+            raise WrongChannel(
+                f"requested {url}, which names the {S.CHANNEL_NAME} channel "
+                f"{S.CHANNEL_ID}, and landed on {page.url!r}, which does not. Studio has moved "
+                f"this session to another channel — refusing to go on, because this profile "
+                f"also holds Stephen's personal channel and a Short posted there cannot be "
+                f"moved.")
 
     def assert_channel(self, page) -> str:
         """Refuse to do anything unless Studio is signed in as ParkSheet.
@@ -765,22 +901,35 @@ class YouTubeWebPublisher(Publisher):
                 f"channel the two tests disagree about.")
         return name
 
-    def refuse_if_draft(self, row: dict, title: str) -> None:
-        """Stop if the row that matched is an unpublished draft rather than a live video.
+    def refuse_unless_public(self, row: dict, title: str) -> None:
+        """Let the skip through ONLY for a row that reads Public. Everything else raises.
 
-        This is the failure mode a leftover draft creates, and it is silent in both
-        directions: read as "already published", the day never goes up and nothing says so;
-        ignored, the upload runs again and the channel ends up with two rows of the same
-        title, only one of which the next read will find.
+        The skip is the one place this driver says "do nothing and report success", so it has
+        to be a closed door rather than an open one. `is_draft` used to be the only thing that
+        could stop it, which meant a Private row, an Unlisted one, a Scheduled one, or a
+        visibility cell that read "" because ROW_VISIBILITY had drifted ALL came back as
+        "already published" — and the day would be skipped for ever, with nothing on the
+        channel and nothing anywhere saying so.
+
+        A draft keeps its own message because it has its own fix (finish it or delete it);
+        anything else is a state this driver has never seen and will not guess at.
         """
-        if not is_draft(row):
+        if is_public(row):
             return
-        raise DraftInTheWay(
-            f"a DRAFT titled {title!r} is already on {S.CONTENT_URL} "
-            f"(the row reads {row.get('visibility')!r}). That is not a published video, so "
-            f"this is not a skip — and uploading again would put two copies of the same title "
-            f"on the channel. Either finish that draft by hand or delete it "
-            f"(row menu -> {S.DELETE_MENU_ITEM_TEXT}), then run this again.")
+        if is_draft(row):
+            raise DraftInTheWay(
+                f"a DRAFT titled {title!r} is already on {S.CONTENT_URL} "
+                f"(the row reads {row.get('visibility')!r}). That is not a published video, so "
+                f"this is not a skip — and uploading again would put two copies of the same title "
+                f"on the channel. Either finish that draft by hand or delete it "
+                f"(row menu -> {S.DELETE_MENU_ITEM_TEXT}), then run this again.")
+        raise RowNotPublished(
+            f"a row titled {title!r} is on {S.CONTENT_URL} but its visibility reads "
+            f"{row.get('visibility')!r}, not {S.PUBLIC_VISIBILITY_TEXT!r}. Refusing to treat "
+            f"that as 'already published': if it is Private, Unlisted or Scheduled the day is "
+            f"not actually up, and if the cell is empty then ROW_VISIBILITY has drifted and "
+            f"this read cannot be trusted at all. Look at {self.row_url(row)} and either make "
+            f"it {S.PUBLIC_VISIBILITY_TEXT} by hand or delete it, then run this again.")
 
     def read_content(self, page) -> list:
         """Every video Studio lists for this channel, across both content tabs. Read-only.
@@ -879,9 +1028,11 @@ class YouTubeWebPublisher(Publisher):
           contenteditable a newline becomes Enter — which a 681-character description with nine
           line breaks does not survive intact. `insert_text` reproduced it exactly (verified
           2026-09-25 by reading both boxes back).
-        * **The read-back is an assertion, not a log line.** A description that silently lost
-          its attribution lines would breach the Queue-Times and photo-credit licences, and the
-          only place that can be caught is here, before Publish.
+        * **The read-back is an assertion, not a log line, and it is EXACT.** A description
+          that silently lost its attribution lines would breach the Queue-Times and photo-credit
+          licences, and the only place that can be caught is here, before Publish. The compare
+          is line-for-line after CRLF normalisation — not `_norm`, which collapses runs of
+          whitespace and therefore waved through a description whose newlines had all gone.
         """
         box = page.locator(selector).first
         box.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
@@ -894,12 +1045,22 @@ class YouTubeWebPublisher(Publisher):
         page.keyboard.press("Meta+A")
         page.keyboard.press("Backspace")
         page.keyboard.insert_text(text)
-        got = (box.inner_text() or "").strip()
-        if _norm(got) != _norm(text):
+        got, want = _lines(box.inner_text()), _lines(text)
+        if got != want:
+            anchor = "TITLE_BOX" if what == "title" else "DESCRIPTION_BOX"
+            # `_norm` is only ever used to describe the difference, never to judge it: it
+            # collapses runs of whitespace, so comparing with it passed a description that had
+            # LOST every one of its line breaks — which for this field means the attribution
+            # block arrives as one paragraph and the credit lines stop being legible credits.
+            same_words = _norm(got) == _norm(want)
             raise FormFieldError(
-                f"the {what} box would not take its value: it reads {len(got)} characters, "
-                f"expected {len(text.strip())}. YouTube's editor markup has changed — fix "
-                f"selectors_youtube.{'TITLE_BOX' if what == 'title' else 'DESCRIPTION_BOX'}.")
+                f"the {what} box would not take its value: it reads {len(got)} characters on "
+                f"{len(got.splitlines())} line(s), expected {len(want)} on "
+                f"{len(want.splitlines())}"
+                + (" — the text is there but the LINE BREAKS were lost, which for the "
+                   "description means the licence-required credit lines run together"
+                   if same_words else "")
+                + f". YouTube's editor markup has changed — fix selectors_youtube.{anchor}.")
 
     def set_audience(self, page) -> None:
         """Answer "Is this video made for kids?" with No.
@@ -1071,14 +1232,21 @@ class YouTubeWebPublisher(Publisher):
                 f"unchanged from before the run")
 
     def wait_for_draft(self, page, title: str) -> None:
-        """Give the draft time to appear on the tab a Short lands on, before anything is read.
+        """Give the draft time to appear, before the clean-up reads the list.
 
         Only when a file was actually handed over: otherwise there is no draft to wait for and
-        this would burn the list timeout on every clean run. A timeout here is not fatal — the
-        full two-tab read that follows may still find it, and that read is what decides.
+        this would burn the list timeout on every clean run.
         """
-        if not self._uploaded:
-            return
+        if self._uploaded:
+            self.wait_for_row(page, title)
+
+    def wait_for_row(self, page, title: str) -> None:
+        """Wait for a row titled `title` on the tab a Short lands on. A timeout is tolerated.
+
+        Tolerated on purpose: the full two-tab read that follows is what decides, and it can
+        still find the row on the other tab. This only removes the race — it never supplies the
+        answer, so failing it must not fail the run.
+        """
         try:
             self.open_tab(page, S.CONTENT_URL)
             page.wait_for_function(row_present_js(title), timeout=S.LIST_TIMEOUT_MS)
@@ -1250,6 +1418,9 @@ def main(argv=None, *, repo: pathlib.Path | None = None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="upload for real, fill the form, select Public, then DELETE the "
                          "draft; never clicks Publish")
+    ap.add_argument("--go", action="store_true",
+                    help="actually publish — the ONLY flag that puts a public video on the "
+                         "channel. Without it, a run with --asset/--meta refuses.")
     ap.add_argument("--asset", type=pathlib.Path)
     ap.add_argument("--meta", type=pathlib.Path)
     a = ap.parse_args(argv)
@@ -1264,6 +1435,15 @@ def main(argv=None, *, repo: pathlib.Path | None = None) -> int:
 
     if not (a.asset and a.meta):
         ap.error("--asset and --meta are required unless --check is given")
+    # tiktok_web's own CLI publishes on a bare invocation, and its `--go` lives one level up in
+    # schedule_week.py. There is no such level here, and the consequence is worse: a TikTok
+    # mistake is a post scheduled for Saturday that can be deleted before it airs, while this
+    # one is a public video on the channel the moment the button lands. So the flag is here.
+    if not (a.dry_run or a.go):
+        ap.error("refusing to publish without --go. Use --dry-run to rehearse (it uploads for "
+                 "real and then deletes the draft), or --go to actually publish.")
+    if a.dry_run and a.go:
+        ap.error("--dry-run and --go contradict each other; pick one")
     meta = json.loads(a.meta.read_text(encoding="utf-8"))
     meta.setdefault("_meta_path", str(a.meta))
     pub = YouTubeWebPublisher(repo=repo)

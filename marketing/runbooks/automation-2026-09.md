@@ -386,18 +386,31 @@ Switch account) before anything else.
 **The run, in order:**
 
 ```bash
-python3 scripts/browser/ensure_chrome.py                     # 1. Chrome up on :9222
-python3 scripts/browser/session.py --check youtube           # 2. Studio still signed in?
 V=scripts/video/.venv-tts/bin/python                         #    the venv that has playwright
+python3 scripts/browser/ensure_chrome.py                     # 1. Chrome up on :9222
+$V scripts/browser/session.py --check youtube                # 2. Studio still signed in?
 $V scripts/publishers/youtube_web.py --check                 # 3. ParkSheet? anchors resolve?
 $V scripts/publishers/youtube_web.py --dry-run \
    --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
    --meta  ~/parksheet/build/release/2026-W40/day-1.json     # 4. rehearse — uploads, then deletes
-$V scripts/publishers/publish.py --platform youtube_web \
+$V scripts/publishers/youtube_web.py --go \
    --asset ~/parksheet/build/release/2026-W40/day-1.mp4 \
    --meta  ~/parksheet/build/release/2026-W40/day-1.json     # 5. the real post
 find scripts/browser/runs -mindepth 1 -maxdepth 1 -type d -mtime +14 -exec rm -rf {} +
 ```
+
+**Nothing reaches YouTube without `--go`.** A run with `--asset`/`--meta` and neither `--go`
+nor `--dry-run` refuses. `tiktok_web.py` has no such flag because its `--go` lives one level up
+in `schedule_week.py`, and because a TikTok mistake is a post scheduled for Saturday that can be
+deleted before it airs — this one is a public video on the channel the moment the button lands.
+
+**`publish.py --dry-run` refuses this platform, on purpose.** That entry point advertises
+"`--dry-run` writes nothing", which is what keeps it outside the T2 gate; this transport cannot
+honour it, because rehearsing a web uploader means handing it the file. Rather than widen the
+gate, `publish.py` declines `youtube_web` for `--dry-run` and points at the CLI above
+(`Publisher.dry_run_writes` is the flag; a test asserts every other publisher still has it
+False). `publish.py --platform youtube_web` without `--dry-run` publishes normally and is
+gated and ledgered like any other live publish.
 
 **`--dry-run` here is not free, and that is the point.** Unlike `tiktok_web.py --dry-run`, which
 prints a plan and opens nothing, this one **really uploads the mp4**: it fills the title and
@@ -427,10 +440,26 @@ to fix the meta file, because the description carries the Queue-Times, ThemePark
 photo-credit lines the licences require and the title is copy a fact-check pass approved. Tags are
 *not* folded into the description the way the TikTok caption folds them.
 
-**Limits.** No scheduling — `capabilities()` reports `scheduling: false`; this publishes now. The
-content read takes the first page of each tab, so the same pagination caveat as TikTok applies once
-the channel is busy enough to paginate: a published Short that falls off page 1 would stop being
-seen by the skip check, which is a double-post risk rather than a cosmetic one.
+**What a matching row has to say before the day is skipped.** `Public`, and nothing else. A
+`Private`, `Unlisted` or `Scheduled` row — or a visibility cell that reads empty because the
+selector drifted — stops the run and asks, because "a row with this title exists" is not the
+same claim as "this day is up": treated as a skip it would drop the day for ever with nothing on
+the channel and nothing saying so. A `Draft` gets its own message, with its own fix. A row whose
+title YouTube **truncated** also stops the run: prefix-matching it would let one "Hidden Detail
+Monday — " day stand in for another, and ignoring it would risk a second copy. (Live the rows
+carry their titles whole, so that one should never fire.)
+
+**Limits, both known and unfixed.**
+
+* **No scheduling.** `capabilities()` reports `scheduling: false`; this publishes now.
+* **Page 1 only.** The read takes the first page of each tab, the same caveat as TikTok. Once
+  the channel is busy enough to paginate, a published Short that falls off page 1 stops being
+  seen by the skip check — a double-post risk, not a cosmetic one. Revisit before then.
+* **Partial hydration.** The "has the list settled" predicate accepts *any* row with text, so a
+  tab that has painted its old rows but not a very recent one can read as settled. The clean-up
+  and the post-publish verification both wait for the specific row first, which removes the race
+  where it matters; the skip check does not, so a Short published seconds earlier from another
+  window could in principle be missed. Not fixed, and not worth a poll loop at one post a day.
 
 **Prune the traces**, exactly as for TikTok — the `find` line above. Each run leaves a `trace.zip`
 under `scripts/browser/runs/<date>/` holding a logged-in session's requests and headers.
