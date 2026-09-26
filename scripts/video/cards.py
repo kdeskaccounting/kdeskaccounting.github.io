@@ -73,13 +73,13 @@ MAX_CURVE_POINTS = 16
 #: end still reads as a step rather than a flat pair. Change a value here and that test tells
 #: you whether the type survived.
 #:
-#: 2026-09-26: `brand['bg']` (the same ink) moved from #101418 to #2F3540 to clear gate S1's
+#: 2026-09-26: `brand['bg']` (the same ink) moved from #101418 to #343A46 to clear gate S1's
 #: frame-0 luma floor (see DEFAULT_BRAND above) -- a lighter ink is closer to a mid-value
-#: cell, so three steps (both cool steps and the hot end) dropped under 3.5:1 against the
-#: new ink and were lightened again to clear it (2.50/2.75:1 and 2.67:1 measured before this
-#: change); the two untouched middle-to-hot steps already cleared the floor unchanged.
+#: cell, so four steps (both cool steps, the hot end, and the upper-middle orange by a
+#: hair) dropped under 3.5:1 against the new ink and were lightened again to clear it; the
+#: two untouched steps already cleared the floor unchanged.
 HEATMAP_RAMP: tuple[str, ...] = (
-    "#69A487", "#78A35F", "#93B23A", "#D9B740", "#D98A3C", "#D87E6E",
+    "#73AA8F", "#81AA6A", "#93B23A", "#D9B740", "#D98B3D", "#DB8879",
 )
 
 #: Per-template row caps. The three original templates keep exactly the caps they had.
@@ -96,13 +96,18 @@ MIN_CHANGED_ROW_UNITS = 1.45
 #: `bg`/`bg_alt` were `#101418`/`#1B2430` (YAVG ~36 at every reveal) until 2026-09-26: that
 #: ground alone put a card hero's frame 0 and every step below gate S1's frame0 luma >= 60
 #: and fed S7's dark-frame count, independent of `reveal` -- a data day with a card hero
-#: could never pass either line. Raised so the mean frame lands >= 64 (measured via
-#: `signalstats` YAVG on a rendered card PNG; see the final-fix report for the numbers).
+#: could never pass either line. First raised to #2F3540/#3A4250 (a synthetic calibration
+#: card cleared >= 64 at reveal 1/n and 1.0), but the REAL W40 day-2 `wait_curve` card's own
+#: rendered step PNGs measured 63.7-64.6 at that palette -- its narrower curve (a stretch of
+#: hours has no data) leaves more of the ground exposed than the calibration card did, and
+#: `< 64` is what S7 counts as a dark frame, not S1's `>= 60`. Raised again to #343A46/
+#: #3F4753, which clears every one of the real card's nine step PNGs at 67.7-78.5 (see the
+#: final-fix report for the full measurements).
 DEFAULT_BRAND: dict = {
     "name": "Your Brand",
     "url": "example.com",
-    "bg": "#2F3540",
-    "bg_alt": "#3A4250",
+    "bg": "#343A46",
+    "bg_alt": "#3F4753",
     "fg": "#FFFFFF",
     "muted": "#AAB6C4",
     "accent": "#F2C14E",
