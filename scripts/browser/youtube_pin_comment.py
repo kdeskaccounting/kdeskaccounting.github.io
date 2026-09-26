@@ -95,7 +95,9 @@ def main(argv=None) -> int:
         if not pin.count():
             pin = page.locator("ytd-menu-popup-renderer").get_by_text("Pin", exact=True)
         if not pin.count():
-            print("no Pin item in the comment menu (is the brand channel the signed-in channel?)")
+            items = page.locator("ytd-menu-popup-renderer tp-yt-paper-item, ytd-menu-popup-renderer ytd-menu-service-item-renderer").all_inner_texts()
+            page.screenshot(path=str(SHOTS / f"{args.video}-menu.png"))
+            print("no Pin item in the comment menu; items:", items, "(is the brand channel the signed-in channel?)")
             page.close()
             return 4
         pin.first.click()
