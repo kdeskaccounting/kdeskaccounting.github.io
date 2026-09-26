@@ -68,12 +68,18 @@ MAX_CURVE_POINTS = 16
 #:
 #: Every step also has to hold DARK TYPE, because a cell prints its day and its score in
 #: `brand['bg']`. The coolest step was #2F6F4F, which put the day label at 2.87:1 — below
-#: WCAG AA even for large text. It is lightened just far enough to clear the floor
+#: WCAG AA even for large text. It was lightened just far enough to clear the floor
 #: tests/test_cards.py asserts (3.5:1), while staying darker than the next step so the cool
 #: end still reads as a step rather than a flat pair. Change a value here and that test tells
 #: you whether the type survived.
+#:
+#: 2026-09-26: `brand['bg']` (the same ink) moved from #101418 to #2F3540 to clear gate S1's
+#: frame-0 luma floor (see DEFAULT_BRAND above) -- a lighter ink is closer to a mid-value
+#: cell, so three steps (both cool steps and the hot end) dropped under 3.5:1 against the
+#: new ink and were lightened again to clear it (2.50/2.75:1 and 2.67:1 measured before this
+#: change); the two untouched middle-to-hot steps already cleared the floor unchanged.
 HEATMAP_RAMP: tuple[str, ...] = (
-    "#37855F", "#5A8F3C", "#93B23A", "#D9B740", "#D98A3C", "#C94B35",
+    "#69A487", "#78A35F", "#93B23A", "#D9B740", "#D98A3C", "#D87E6E",
 )
 
 #: Per-template row caps. The three original templates keep exactly the caps they had.
@@ -87,11 +93,16 @@ CAPS: dict[str, int] = {
 #: so 1.45 units keeps note text at 30px or more on the 1296x2304 card.
 MIN_CHANGED_ROW_UNITS = 1.45
 
+#: `bg`/`bg_alt` were `#101418`/`#1B2430` (YAVG ~36 at every reveal) until 2026-09-26: that
+#: ground alone put a card hero's frame 0 and every step below gate S1's frame0 luma >= 60
+#: and fed S7's dark-frame count, independent of `reveal` -- a data day with a card hero
+#: could never pass either line. Raised so the mean frame lands >= 64 (measured via
+#: `signalstats` YAVG on a rendered card PNG; see the final-fix report for the numbers).
 DEFAULT_BRAND: dict = {
     "name": "Your Brand",
     "url": "example.com",
-    "bg": "#101418",
-    "bg_alt": "#1B2430",
+    "bg": "#2F3540",
+    "bg_alt": "#3A4250",
     "fg": "#FFFFFF",
     "muted": "#AAB6C4",
     "accent": "#F2C14E",
