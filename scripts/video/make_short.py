@@ -1246,7 +1246,24 @@ def audio_settings(spec: dict, spec_path):
                 f"would be configured and never heard. Use 2 or more (3 is the default: two "
                 f"whooshes), or drop `sfx:`.")
         cues = _sfx_cues(raw.get("cues"), resolved)
-        sfx = Sfx(src=resolved("sfx", {"src": raw.get("on_cut") or raw.get("src")}),
+        whoosh_src = raw.get("on_cut") or raw.get("src")
+        if whoosh_src:
+            src = resolved("sfx", {"src": whoosh_src})
+        elif cues:
+            # A cue-only sfx block: ParkSheet's `cards.without_sfx`-exempt data days (and
+            # any lore day rendered before a whoosh is vetted) write
+            # `audio.sfx: {gain_db, lead, beats, cues: [...]}` with no `on_cut`/`src` at
+            # all -- a riser/hit keyed to the payoff, no accent on the cuts. There is no
+            # whoosh FILE to resolve, so `src` is the empty string rather than a refusal;
+            # `audio_inputs`/`audio_steps` both read an empty `src` as "skip the whoosh
+            # beat-boundary loop, mix the cues".
+            src = ""
+        else:
+            raise SystemExit(
+                "audio.sfx has neither on_cut/src nor cues: nothing for this block to "
+                "mix. Give it a whoosh (`on_cut:`/`src:`), a payoff cue (`cues:`), or "
+                "drop `sfx:`.")
+        sfx = Sfx(src=src,
                   gain_db=float(raw.get("gain_db", -9.0)),
                   lead=float(raw.get("lead", 0.20)),
                   beats=beats,
@@ -1288,7 +1305,10 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
                  f"ratio={mix.duck.ratio:g}:attack={mix.duck.attack:g}:"
                  f"release={mix.duck.release:g}:detection=rms[bedduck]")
     labels = ["bedduck"]
-    if mix.sfx is not None and sfx_indexes:
+    # `sfx_indexes` is already empty for a cue-only block (`mix.sfx.src == ""` --
+    # `audio_inputs` queues no whoosh input to zip it against); `mix.sfx.src` is checked
+    # here too so this loop reads the same way at both call sites.
+    if mix.sfx is not None and mix.sfx.src and sfx_indexes:
         for n, (index, at) in enumerate(
                 zip(sfx_indexes,
                     beat_boundaries(cuts, runtime, mix.sfx.beats)), start=1):
@@ -1330,16 +1350,21 @@ def audio_inputs(mix: AudioMix, boundaries, bed_index: int):
     pick the same cut, and beat_boundaries drops the duplicate. Then one input per CUE, in the
     cues' own order, so `audio_steps` can zip the two lists.
 
+    `mix.sfx.src == ""` is a CUE-ONLY sfx block (a riser/hit with no whoosh) -- there is no
+    whoosh file to queue an input for, so the boundary loop is skipped and `sfx_indexes`
+    comes back empty; the cue loop below is unaffected.
+
     Returns (args, bed_index, sfx_indexes, cue_indexes).
     """
     args = ["-stream_loop", "-1", "-i", mix.bed.src]
     count = bed_index + 1
     sfx_indexes, cue_indexes = [], []
     if mix.sfx is not None:
-        for _at in boundaries:
-            sfx_indexes.append(count)
-            args += ["-i", mix.sfx.src]
-            count += 1
+        if mix.sfx.src:
+            for _at in boundaries:
+                sfx_indexes.append(count)
+                args += ["-i", mix.sfx.src]
+                count += 1
         for cue in mix.sfx.cues:
             cue_indexes.append(count)
             args += ["-i", cue.src]
@@ -1697,7 +1722,10 @@ def main():
     payoff_s = cut_rows[-1]["start"] if cut_rows else None
     if mixed:
         cuts = cut_plan_json(cut_rows, tr.join, runtime, cut_extras)["cuts"]
-        if mix.sfx is not None:
+        # `mix.sfx.src` is empty for a cue-only sfx block (a riser/hit, no whoosh): no
+        # boundaries means `sfx_placements` records no "whoosh" starts for a sound that was
+        # never queued as an input, which would otherwise lie in cuts.json's own `sfx` list.
+        if mix.sfx is not None and mix.sfx.src:
             boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
     placed = sfx_placements(mix if mixed else None, boundaries, payoff_s)
     if cap.enabled and not overlays:

@@ -429,6 +429,77 @@ def test_an_unknown_key_under_sfx_is_still_refused_by_name(tmp_path):
     assert "cuez" in str(excinfo.value)
 
 
+# --- a cue-only sfx block: a riser/hit with no whoosh at all ----------------------------
+
+def test_a_cue_only_sfx_block_parses_with_no_on_cut_or_src(tmp_path, monkeypatch):
+    """The exact shape ParkSheet writes for a data day (or any day with no vetted whoosh):
+    `audio.sfx: {gain_db, lead, beats, cues: [...]}`, no `on_cut`/`src` at all."""
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"gain_db": -9, "lead": 0.20, "beats": 3, "cues": CUES}}}
+    mix = M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert mix.sfx.src == ""
+    assert [c.role for c in mix.sfx.cues] == ["riser", "hit"]
+
+
+def test_a_sfx_block_with_neither_a_whoosh_nor_cues_is_still_refused(tmp_path, monkeypatch):
+    """`sfx:` with nothing at all to place is not a mix, it's a typo -- the empty-block
+    check catches `{}`; this catches a non-empty block (e.g. `gain_db` alone) that still
+    names no sound."""
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"gain_db": -9, "lead": 0.20, "beats": 3}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert "no on_cut/src" in str(excinfo.value) or "nothing" in str(excinfo.value)
+
+
+def test_audio_inputs_queues_no_whoosh_for_a_cue_only_block():
+    mix = M.AudioMix(
+        bed=M.Bed(src="/abs/b.mp3", lufs=-13.2), duck=M.Duck(),
+        sfx=M.Sfx(src="", cues=(
+            M.SfxCue(role="riser", src="/abs/r.wav", lead=1.5, gain_db=-12.0),
+            M.SfxCue(role="hit", src="/abs/h.wav", lead=0.0, gain_db=-8.0))),
+        master=M.Master())
+    args, bed_index, sfx_indexes, cue_indexes = M.audio_inputs(mix, [5.0, 20.0], 1)
+    assert args == ["-stream_loop", "-1", "-i", "/abs/b.mp3",
+                    "-i", "/abs/r.wav", "-i", "/abs/h.wav"]
+    assert (bed_index, sfx_indexes, cue_indexes) == (1, [], [2, 3])
+
+
+def test_audio_steps_places_no_whoosh_for_a_cue_only_block():
+    mix = M.AudioMix(
+        bed=M.Bed(src="/abs/b.mp3", lufs=-13.2), duck=M.Duck(),
+        sfx=M.Sfx(src="", cues=(
+            M.SfxCue(role="riser", src="/abs/r.wav", lead=1.5, gain_db=-12.0),
+            M.SfxCue(role="hit", src="/abs/h.wav", lead=0.0, gain_db=-8.0))),
+        master=M.Master())
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[12.0, 26.0], bed_index=1,
+                                   sfx_indexes=[], cue_indexes=[2, 3], payoff_s=30.0))
+    # bedduck + 2 cues, no whoosh
+    assert "amix=inputs=3:normalize=0:dropout_transition=0[music]" in graph
+    assert "volume=-12dB" in graph and "volume=-8dB" in graph
+
+
+def test_a_cue_only_render_places_no_whoosh_starts_in_cuts_json(stub, tmp_path):
+    """The bug this guards: `sfx_placements` used to record a "whoosh" start at every beat
+    boundary whenever `mix.sfx` existed at all, whoosh file or not -- lying in cuts.json's
+    own `sfx` list (what gate S16/S17 read) about a sound that was never mixed in."""
+    audio_dir = tmp_path / "media" / "audio"
+    (audio_dir / "riser.wav").write_bytes(b"\0")
+    (audio_dir / "hit.wav").write_bytes(b"\0")
+    stub.spec["audio"] = {"bed": dict(BED),
+                          "sfx": {"gain_db": -9, "lead": 0.20, "beats": 3, "cues": CUES}}
+    stub.go()
+
+    cmd = _final(stub)
+    assert not any("whoosh" in str(arg) for arg in cmd)
+
+    cuts_path = next((tmp_path / "build" / "aud-demo").rglob("cuts.json"))
+    cuts = json.loads(cuts_path.read_text())
+    assert [row["role"] for row in cuts["sfx"]] == ["riser", "hit"]
+
+
 def _mix_with_cues(**kw):
     return M.AudioMix(
         bed=M.Bed(src="/abs/b.mp3", lufs=-13.2),
