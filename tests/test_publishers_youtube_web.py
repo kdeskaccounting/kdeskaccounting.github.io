@@ -1513,3 +1513,44 @@ def test_the_meta_files_on_disk_would_be_accepted():
         title = yw.title_of(meta)
         assert len(title) <= S.TITLE_MAX, f"{path.name}: {len(title)} > {S.TITLE_MAX}"
         assert yw.description_of(meta) == str(meta["description"]).rstrip()
+
+
+# --------------------------------------------------------- publish settle: Draft while processing
+#
+# 2026-09-29: a Short that has just been published reads "Draft" (no link) on the Shorts tab
+# while YouTube processes it, and turns Public on its own ~10-15 minutes later. The verifier
+# used to read once and file a card over a live video; it now waits, as a condition, for the
+# row to read Public, re-opening the tab between bounded waits.
+
+
+def test_row_public_js_names_the_title_and_the_public_text():
+    js = yw.row_public_js(TITLE)
+    assert yw._norm(TITLE) in js and yw._norm(S.PUBLIC_VISIBILITY_TEXT) in js
+    assert S.ROW_VISIBILITY in js and S.VIDEO_ROW in js
+
+
+def test_wait_for_settle_reopens_the_shorts_tab_and_waits_on_the_public_predicate():
+    page = _Page()
+    yw.YouTubeWebPublisher().wait_for_settle(page, TITLE)
+    waits = [c for c in page.calls if c.startswith("wait_for_function:")]
+    assert any(yw._norm(S.PUBLIC_VISIBILITY_TEXT) in w for w in waits), waits
+    assert f"goto:{S.CONTENT_URL}" in page.calls
+
+
+def test_a_draft_row_after_publish_is_waited_on_then_re_read(monkeypatch):
+    pub = yw.YouTubeWebPublisher()
+    reads = iter([[_row(TITLE, S.DRAFT_VISIBILITY_TEXT, href=None)], [_row(TITLE)]])
+    settled = []
+    monkeypatch.setattr(pub, "read_content", lambda page: next(reads))
+    monkeypatch.setattr(pub, "wait_for_settle", lambda page, title: settled.append(title))
+    hit = yw.find_video(pub.read_content(None), TITLE)
+    if hit is not None and yw.is_draft(hit):
+        pub.wait_for_settle(None, TITLE)
+        hit = yw.find_video(pub.read_content(None), TITLE)
+    assert settled == [TITLE] and yw.is_public(hit)
+
+
+def test_the_settle_budget_is_bounded_and_generous():
+    assert yw.PUBLISH_SETTLE_MS >= 15 * 60_000        # two live Shorts took 10-15 min
+    assert yw.PUBLISH_POLL_MS >= 30_000               # never hammer the content list
+    assert yw.PUBLISH_SETTLE_MS % yw.PUBLISH_POLL_MS == 0

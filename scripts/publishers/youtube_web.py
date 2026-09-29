@@ -297,6 +297,13 @@ def find_video(rows, title: str):
     return next((r for r in rows if title_matches(r, title)), None)
 
 
+#: After Publish, how long a row may keep reading Draft before it is reported (seconds), and
+#: how often the Shorts tab is re-read meanwhile. Measured 2026-09-29: two Shorts settled in
+#: ~10-15 min; the budget is generous because the alternative is a false card on a live video.
+PUBLISH_SETTLE_MS = 25 * 60_000
+PUBLISH_POLL_MS = 60_000
+
+
 def is_public(row: dict) -> bool:
     return _norm(row.get("visibility")) == _norm(S.PUBLIC_VISIBILITY_TEXT)
 
@@ -434,6 +441,21 @@ def row_present_js(title: str) -> str:
             " for (const r of els) { let t = null;"
             " try { t = r.querySelector(" + repr(S.ROW_TITLE) + "); } catch (e) {}"
             " if (t && norm(t.textContent) === want) return true; }"
+            " return false; }")
+
+
+def row_public_js(title: str) -> str:
+    """JS predicate: the content row titled `title` shows the Public visibility text."""
+    return ("() => { const want = " + json.dumps(_norm(title)) + ";"
+            " const pub = " + json.dumps(_norm(S.PUBLIC_VISIBILITY_TEXT)) + ";"
+            " const norm = s => (s || '').replace(/\\s+/g, ' ').trim().toLowerCase();"
+            " let els = [];"
+            " try { els = [...document.querySelectorAll(" + repr(S.VIDEO_ROW) + ")]; }"
+            " catch (e) { els = []; }"
+            " for (const r of els) { let t = null, v = null;"
+            " try { t = r.querySelector(" + repr(S.ROW_TITLE) + ");"
+            " v = r.querySelector(" + repr(S.ROW_VISIBILITY) + "); } catch (e) {}"
+            " if (t && norm(t.textContent) === want) return !!(v && norm(v.textContent) === pub); }"
             " return false; }")
 
 
@@ -770,6 +792,14 @@ class YouTubeWebPublisher(Publisher):
         # and (worse) the one failure this driver will not retry.
         self.wait_for_row(page, title)
         hit = find_video(self.read_content(page), title)
+        # A freshly published Short reads "Draft" (no link) on the Shorts tab while YouTube
+        # processes it, and flips to Public on its own — W40 days 1 and 2 took ~10-15 minutes
+        # on 2026-09-29, and both runs filed a card over videos that were live an hour later.
+        # So a draft row after Publish is "not settled yet", waited for as a CONDITION (row_public_js) on the Shorts tab,
+        # re-navigating between waits, until it flips or the settle budget is gone. Only a row that is STILL a draft after that is reported.
+        if hit is not None and is_draft(hit):
+            self.wait_for_settle(page, title)
+            hit = find_video(self.read_content(page), title)
         if not hit:
             raise VerificationFailed(
                 f"published {pathlib.Path(asset).name} but no row titled {title!r} appeared "
@@ -1239,6 +1269,24 @@ class YouTubeWebPublisher(Publisher):
         """
         if self._uploaded:
             self.wait_for_row(page, title)
+
+    def wait_for_settle(self, page, title: str) -> None:
+        """Wait, as a condition, for the row titled `title` to read Public on the Shorts tab.
+
+        Studio does not repaint a row's visibility while the tab sits still, so each wait is
+        bounded by PUBLISH_POLL_MS and the tab is re-opened between waits, up to
+        PUBLISH_SETTLE_MS in all. Timing out is tolerated: the read that follows decides.
+        """
+        spent = 0
+        while spent < PUBLISH_SETTLE_MS:
+            try:
+                self.open_tab(page, S.CONTENT_URL)
+                page.wait_for_function(row_public_js(title), timeout=PUBLISH_POLL_MS)
+                return
+            except Exception as exc:  # noqa: BLE001
+                if not timed_out(exc):
+                    raise
+            spent += PUBLISH_POLL_MS
 
     def wait_for_row(self, page, title: str) -> None:
         """Wait for a row titled `title` on the tab a Short lands on. A timeout is tolerated.
