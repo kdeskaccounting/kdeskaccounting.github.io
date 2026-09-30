@@ -895,12 +895,19 @@ class TikTokWebPublisher(Publisher):
         # clicked the navigation instead of submitting, every single time a post-now run ran.
         button = page.get_by_role("button", name=label, exact=True).first
         button.wait_for(state="visible", timeout=ANCHOR_TIMEOUT_MS)
-        with page.expect_response(
-                lambda r: S.POST_RESPONSE in r.url and r.request.method == "POST",
-                timeout=UPLOAD_TIMEOUT_MS):
-            self._submitted = True      # point of no return — never re-upload past here
-            button.click()
-            self._confirm_post_if_asked(page)
+        self._submitted = True          # point of no return — never re-upload past here
+        button.click()
+        self._confirm_post_if_asked(page)
+        # 2026-09-30 (trace tiktok_web-150037): after "Post now" the form's Post button spins
+        # while the post request is in flight, and Studio navigates to the Posts list ITSELF
+        # when it lands. The old expect_response matched an unrelated request and returned at
+        # once, and the driver then navigated to the list by hand — which cancels the in-flight
+        # post, so the list read found nothing and the video never went up (also 2026-09-29,
+        # where the second run "worked" only because it re-uploaded). So: do not navigate.
+        # Wait for the spinner to clear and the URL to change on its own.
+        page.wait_for_function(
+            "() => !location.href.includes('/upload') || !document.querySelector("
+            + repr(S.POST_SPINNER) + ")", timeout=UPLOAD_TIMEOUT_MS)
         page.wait_for_url(lambda url: S.CONTENT_URL in url, timeout=NAV_TIMEOUT_MS)
 
     def _confirm_post_if_asked(self, page) -> None:

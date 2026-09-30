@@ -91,6 +91,11 @@ MIN_TITLE_LEN = 12
 ELLIPSIS = ("…", "...")
 
 
+#: Other channels on the santiagokdesk Google account. Studio may open on one of these after
+#: a restart; the driver switches to ParkSheet itself. Any other name is another account.
+SIBLING_CHANNELS = frozenset({"kdeskaccounting"})
+
+
 class WrongChannel(RuntimeError):
     """Studio is signed in as some other channel. Never retried, never worked around."""
 
@@ -902,6 +907,17 @@ class YouTubeWebPublisher(Publisher):
                 f"also holds Stephen's personal channel and a Short posted there cannot be "
                 f"moved.")
 
+    def switch_channel(self, page) -> None:
+        """Avatar -> Switch account -> ParkSheet, then wait for the header to say so."""
+        page.locator(S.AVATAR_BUTTON).first.click()
+        page.get_by_text(S.SWITCH_ACCOUNT_TEXT, exact=False).first.click()
+        page.get_by_text(S.CHANNEL_NAME, exact=True).first.click()
+        page.wait_for_function(
+            "() => { const e = document.querySelector(" + repr(S.CHANNEL_NAME_TEXT) + ");"
+            " return !!e && e.textContent.trim().toLowerCase() === "
+            + json.dumps(S.CHANNEL_NAME.lower()) + "; }",
+            timeout=S.NAV_TIMEOUT_MS)
+
     def assert_channel(self, page) -> str:
         """Refuse to do anything unless Studio is signed in as ParkSheet.
 
@@ -918,6 +934,14 @@ class YouTubeWebPublisher(Publisher):
         page.locator(S.CHANNEL_NAME_TEXT).first.wait_for(state="visible",
                                                          timeout=S.ANCHOR_TIMEOUT_MS)
         name = (page.locator(S.CHANNEL_NAME_TEXT).first.text_content() or "").strip()
+        if _norm(name) != _norm(S.CHANNEL_NAME) and _norm(name) in SIBLING_CHANNELS:
+            # A sibling channel of the SAME Google account (santiagokdesk): Studio remembers
+            # the last channel used, and it reverts to the primary one after a Chrome restart
+            # (2026-09-30). Switching is what a person does from the avatar menu, and is
+            # allowed because it changes nothing but the header; a channel that is not on
+            # this list means a different Google session, which stays a hard refusal.
+            self.switch_channel(page)
+            name = (page.locator(S.CHANNEL_NAME_TEXT).first.text_content() or "").strip()
         if _norm(name) != _norm(S.CHANNEL_NAME):
             raise WrongChannel(
                 f"YouTube Studio is signed in as {name!r}, not {S.CHANNEL_NAME!r}. Refusing to "

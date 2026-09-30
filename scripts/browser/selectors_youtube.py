@@ -93,6 +93,7 @@ LOGIN_MARKER = "/signin"
 # --- Identity anchors on the Studio shell.
 CHANNEL_NAME_TEXT = "#entity-name"       # verified 2026-09-25: matched 1, text "ParkSheet"
 AVATAR_BUTTON = "#avatar-btn"            # verified 2026-09-25: matched 1, aria-label "Account"
+SWITCH_ACCOUNT_TEXT = "Switch account"   # verified 2026-09-29: avatar menu item; the list then names each channel
 #: What to wait for before reading the channel name, so the probe does not race the render.
 STUDIO_PAGE_READY = CHANNEL_NAME_TEXT    # verified 2026-09-25
 

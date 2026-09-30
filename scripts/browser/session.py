@@ -299,6 +299,14 @@ def open_page(name: str, *, repo: pathlib.Path = REPO, tracing: bool = True):
         try:
             yield page
         finally:
+            # Never leave the debug Chrome with zero pages: Playwright cannot attach to a
+            # browser that has no default context (seen 2026-09-30, "Browser context
+            # management is not supported"), and the next run then fails before it starts.
+            try:
+                if len(ctx.pages) <= 1:
+                    ctx.new_page().goto("about:blank")
+            except Exception:  # noqa: BLE001
+                pass
             if tracing:
                 ctx.tracing.stop(path=str(trace_path(out)))
                 print(f"trace: {trace_path(out)}", file=sys.stderr)

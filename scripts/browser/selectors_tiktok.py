@@ -166,6 +166,9 @@ FIRST_RUN_DIALOG_BUTTONS = ("Allow", "Got it", "Turn on")   # verified 2026-09-2
 # The URL change to the content page is the second, independent confirmation, so a drifted
 # fragment here costs a retry rather than a wrong answer. Only a real post would show it.
 POST_RESPONSE = "/project/post/"                  # UNVERIFIED (only visible on a real submit)
+#: The submit button while the post is in flight: its label is replaced by a spinner. Seen
+#: 2026-09-30 for ~1 s after "Post now" before Studio itself moved to the Posts list.
+POST_SPINNER = "button[data-e2e='post_video_button'] .loading, .TUXButton--loading, button svg.spinner, [class*=Spinner]"
 
 # How far ahead TikTok Studio lets a post be scheduled. Reported through capabilities() and
 # enforced before anything is typed, so an over-long schedule fails on our side with a clear
@@ -248,6 +251,7 @@ UNVERIFIED = (
     "CALENDAR_NEXT",
     "CALENDAR_PREV",
     "POST_RESPONSE",
+    "POST_SPINNER",
     "POST_ROW",
     "POST_ROW_FALLBACK",
     "max_schedule_days",

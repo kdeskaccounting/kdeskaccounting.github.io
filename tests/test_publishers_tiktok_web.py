@@ -537,15 +537,14 @@ def test_the_full_call_sequence_reads_uploads_schedules_and_re_reads(pub, asset)
     assert result.ok is True
     assert result.url
     calls = page.calls
-    order = [c for c in calls if c.startswith(("goto:", "set_input_files", "expect_response",
-                                               "evaluate"))]
+    order = [c for c in calls if c.startswith(("goto:", "set_input_files", "evaluate"))]
     assert order == [
         f"goto:{S.CONTENT_URL}",          # 1. read the Scheduled list
         "evaluate",
         f"goto:{S.UPLOAD_URL}",           # 2. upload
         "set_input_files:day-1.mp4",
-        "expect_response",                # 3. submit, waiting on the response
-        f"goto:{S.CONTENT_URL}",          # 4. re-read and assert
+        f"goto:{S.CONTENT_URL}",          # 3. re-read and assert (Studio itself navigates
+                                          #    after the post lands; the driver no longer does)
         "evaluate",
     ]
     assert "fill:" + S.SCHEDULE_DATE_INPUT + "=2026-09-21" in calls
@@ -1551,3 +1550,19 @@ def test_the_iso_and_slash_renderings_still_match():
     for text in ("scheduled 2026-10-01 14:00", "scheduled 10/1/2026 14:00",
                  "scheduled 10/01/2026 14:00", "scheduled october 1 14:00"):
         assert tw.date_in_text(text, _pt(1)) is True
+
+
+# --------------------------------------------------------- submit: never navigate over an in-flight post
+
+
+def test_submit_waits_for_studio_to_leave_the_form_instead_of_navigating():
+    """2026-09-30 (trace tiktok_web-150037): the driver's own goto to the Posts list, issued
+    1.2 s after "Post now" while the submit spinner was still up, cancelled the in-flight post.
+    The list read then found nothing and the video never went up."""
+    page = _Page()
+    tw.TikTokWebPublisher().submit(page, None)
+    i = page.calls.index(f"click:role:button:{S.POST_BUTTON_TEXT}")
+    after = page.calls[i:]
+    assert not any(c.startswith(f"goto:{S.CONTENT_URL}") for c in after), after
+    assert any(c.startswith("wait_for_function") for c in after)
+    assert "wait_for_url" in after

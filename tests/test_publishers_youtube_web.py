@@ -1554,3 +1554,30 @@ def test_the_settle_budget_is_bounded_and_generous():
     assert yw.PUBLISH_SETTLE_MS >= 15 * 60_000        # two live Shorts took 10-15 min
     assert yw.PUBLISH_POLL_MS >= 30_000               # never hammer the content list
     assert yw.PUBLISH_SETTLE_MS % yw.PUBLISH_POLL_MS == 0
+
+
+# --------------------------------------------------------- sibling channel: switch, don't refuse
+
+
+def test_a_sibling_channel_of_the_same_account_is_switched_not_refused(monkeypatch):
+    pub = yw.YouTubeWebPublisher()
+    names = iter(["KDeskAccounting", S.CHANNEL_NAME])
+    page = _Page(url=S.channel_url())
+    page.texts[S.CHANNEL_NAME_TEXT] = "KDeskAccounting"
+    switched = []
+    def fake_switch(pg):
+        switched.append(True); page.texts[S.CHANNEL_NAME_TEXT] = S.CHANNEL_NAME
+    monkeypatch.setattr(pub, "switch_channel", fake_switch)
+    monkeypatch.setattr(pub, "goto", lambda pg, url: None)
+    assert pub.assert_channel(page) is not None
+    assert switched == [True]
+
+
+def test_a_foreign_google_account_is_still_refused(monkeypatch):
+    pub = yw.YouTubeWebPublisher()
+    page = _Page(url=S.channel_url())
+    page.texts[S.CHANNEL_NAME_TEXT] = "Stephen is Acting"
+    monkeypatch.setattr(pub, "switch_channel", lambda pg: pytest.fail("must not switch"))
+    monkeypatch.setattr(pub, "goto", lambda pg, url: None)
+    with pytest.raises(yw.WrongChannel):
+        pub.assert_channel(page)
