@@ -1,0 +1,88 @@
+# Illustration-OVER-imagery smoke spec: proves the 2026-10-01 ruling end to end.
+#
+# Two scenes, and they are the two halves of that ruling:
+#   scene 0  `kind: media` -- a still under a Ken Burns zoom, darkened by `scrim: 0.3`, with an
+#            emoji popping on the word "cookies" and an arrow drawing itself on "purpose", both
+#            wearing the white sticker border. The drawing is composited in the SAME ffmpeg call
+#            that encodes the footage, so the scene is still one part and one encode.
+#   scene 1  `kind: illustration` with NO `bg:` at all -- the graphite default (#343A46), the
+#            ground the sibling repo's data cards already sit on, so the cut from the photo beat
+#            to the drawn beat does not flash to paper.
+#
+# Narrate, then render (Kokoro is the default provider; nothing is downloaded and nothing is
+# billed):
+#   scripts/video/.venv-tts/bin/python scripts/video/narrate.py \
+#     --spec marketing/video/overlay-demo/scenes.yaml \
+#     --out scripts/video/build/overlay-demo/audio --require-provider kokoro
+#   scripts/video/.venv-tts/bin/python scripts/video/make_short.py \
+#     --spec marketing/video/overlay-demo/scenes.yaml
+#
+# The still is media-demo's committed placeholder rather than a second blob: it is synthetic
+# (marketing/video/media-demo/assets/generate.py remakes it), nothing about it is licensed, and
+# it is 16:9 on purpose -- `fill: crop` below is what makes a landscape source fill the 9:16
+# frame instead of letterboxing over a blurred copy of itself.
+#
+# What a frame check should show (the times are where the picture changes):
+#   t=1.0  footage, darkened, caption up, credit plate at FULL brightness -- the scrim is on the
+#          footage only, which is the licence answer as much as the legibility one
+#   t=2.6  the cookie popped in on its own word, white border and drop shadow, over the footage
+#   t=4.3  the arrow mid-draw, same treatment, both elements on the one layer
+#   t=6.0  graphite, the label in black ink inside its white border
+#   t=8.2  the squiggle drawn on "patent"
+slug: overlay-demo
+brand:
+  name: Park Sheet
+  url: parksheet.com
+  accent: "#FFD966"
+captions:
+  enabled: true
+  accent: "#ffe234"
+  position: top
+short:
+  hook: Illustration over imagery
+  scenes: [0, 1]
+meta:
+  title: Illustration over imagery — overlays, stickers, scrim, graphite
+  description: >
+    A smoke render of the 2026-10-01 ruling: drawn elements laid OVER a photograph under a
+    scrim, every one of them wearing a white sticker border, and a graphite illustration scene
+    beside it. No workbook, no download, no paid narration.
+  tags: [video pipeline, automation, shorts]
+  platforms: []
+scenes:
+  - kind: media
+    src: marketing/video/media-demo/assets/placeholder-still.jpg
+    motion: kenburns
+    fill: crop
+    credit: "Imagery: placeholder, generated with ffmpeg"
+    scrim: 0.3
+    narration: >
+      Main Street smells like warm cookies, and the smell is on purpose.
+    overlay:
+      elements:
+        - type: emoji
+          glyph: "🍪"
+          at: [0.52, 0.52]
+          size: 0.24
+          enter: {when: {word: "cookies"}, how: pop}
+          sfx: pop
+        - type: arrow
+          from: [0.22, 0.75]
+          to: [0.46, 0.60]
+          enter: {when: {word: "purpose"}, how: draw}
+          sfx: whoosh
+
+  - kind: illustration
+    narration: >
+      The reason the scent is there at all has a patent behind it.
+    elements:
+      - type: label
+        text: "ON PURPOSE"
+        at: [0.5, 0.42]
+        size: 0.062
+        enter: {t: 0.0, how: slide-left}
+      - type: squiggle
+        from: [0.5, 0.72]
+        to: [0.5, 0.54]
+        enter: {when: {word: "patent"}, how: draw}
+        sfx: whoosh

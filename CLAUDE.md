@@ -316,6 +316,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # for the `-c:v copy` concat to join them. Its two placeholder assets are synthetic and
 # committed; marketing/video/media-demo/assets/generate.py remakes them.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
+# marketing/video/overlay-demo/scenes.yaml is the smoke spec for the 2026-10-01 ruling: scene 0
+# is a `kind: media` still under `scrim: 0.3` with a sticker emoji and a drawing arrow over it,
+# scene 1 a `kind: illustration` on the graphite default. It borrows media-demo's committed
+# synthetic still rather than adding a second blob, so it renders on a clean checkout with no
+# download and (Kokoro being the default provider) no paid narration:
+scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec marketing/video/overlay-demo/scenes.yaml --out scripts/video/build/overlay-demo/audio --require-provider kokoro
+scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/overlay-demo/scenes.yaml
 
 # The `illustration` scene kind (2026-10-01) — an illustrated, ANIMATED scene drawn from a list
 # of elements: stick figures, emoji that pop on the word being said, arrows and scent-line
