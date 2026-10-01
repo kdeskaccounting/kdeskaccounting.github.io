@@ -31,7 +31,6 @@ import types
 import pytest
 
 import captions
-import illustrate
 import make_short as M
 
 
