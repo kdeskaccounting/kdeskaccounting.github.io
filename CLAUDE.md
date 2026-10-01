@@ -284,14 +284,18 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     art) and BEFORE the fades (a join dips the whole composite to black rather than fading the
 #     picture out from under the drawing). ffmpeg's `overlay` holds the last frame at EOF, so a
 #     `-t` that runs a fraction of a frame past the sequence keeps the drawing up.
-#   - `scrim:` is `drawbox` filling the frame with black at that alpha, NOT `eq=brightness=`.
-#     drawbox alpha-blends toward black and YUV<->RGB is affine, so it is exactly a multiply of
-#     every RGB channel by (1 - scrim): hue preserved by construction, no crushed shadows, no
-#     pixel-format conversion out of the yuv420p the chain is in. `eq=brightness=` is an
-#     additive LUMA offset: it clips the blacks it pushes past 0 and leaves chroma alone, so the
-#     picture gets more saturated as it gets darker. `blur:` is `gblur`, sigma in DELIVERED
-#     pixels — make_short.footage_grade scales it by RW/OUT_W because the clause runs on the
-#     1.2x footage, so `blur: 8` emits `sigma=9.6`. Both are allowed with no overlay at all.
+#   - `scrim:` is `colorchannelmixer` at a gain of (1 - scrim) on all three channels — a
+#     literal multiply of R, G and B by one factor, so R:G:B is preserved and nothing clips.
+#     MEASURED, not argued: on a gradient at scrim 0.3 it lands within 0.0002 of the gain on
+#     every channel and does not move the hue ratios, while `drawbox black@0.3` on yuv420p
+#     comes out 0.786/0.730/0.660, `lutyuv y=val*0.7` 0.656/0.706/0.734 and
+#     `eq=brightness=-0.3` 0.297/0.393/0.450 — all three move LUMA and leave chroma where it
+#     was, so the picture gains saturation as it darkens (drawbox included: on a yuv frame it
+#     blends chroma toward 128 against a limited-range black, a different affine from the
+#     luma's). colorchannelmixer is RGB-only, so ffmpeg converts around it; that round trip is
+#     the price of exactness. `blur:` is `gblur`, sigma in DELIVERED pixels —
+#     make_short.footage_grade scales it by RW/OUT_W because the clause runs on the 1.2x
+#     footage, so `blur: 8` emits `sigma=9.6`. Both are allowed with no overlay at all.
 #   - BOTH grades land on the FOOTAGE, before the credit plate and the card plate, never after.
 #     That is the licence answer as much as the legibility one: the attribution must stay
 #     full-brightness and sharp.

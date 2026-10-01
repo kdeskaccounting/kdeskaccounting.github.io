@@ -143,13 +143,20 @@ class TestFootageGrade:
         assert M.footage_grade() == ""
         assert M.footage_grade(0, 0) == ""
 
-    def test_the_scrim_is_an_alpha_blend_toward_black_not_a_brightness_offset(self):
-        """`drawbox` blends toward black, and YUV<->RGB is affine, so it is exactly a multiply
-        of every RGB channel by (1 - scrim): no hue shift and no crushed shadows, which is
-        what `eq=brightness=` would have given."""
-        clause = M.footage_grade(scrim=0.3)
-        assert clause == "drawbox=x=0:y=0:w=iw:h=ih:color=black@0.3000:t=fill"
-        assert "eq=" not in clause
+    def test_the_scrim_multiplies_every_rgb_channel_by_the_same_gain(self):
+        """Which is what keeps the hue: see footage_grade's docstring for the measurement that
+        ruled out drawbox, lutyuv and eq=brightness, all three of which move luma and leave
+        chroma where it was."""
+        assert M.footage_grade(scrim=0.3) == \
+            "colorchannelmixer=rr=0.7000:gg=0.7000:bb=0.7000"
+        for name in ("drawbox", "eq=", "lutyuv"):
+            assert name not in M.footage_grade(scrim=0.3)
+
+    @pytest.mark.parametrize("scrim", [0.1, 0.25, 0.5, M.SCRIM_MAX])
+    def test_the_gain_is_one_minus_the_scrim_all_the_way_up(self, scrim):
+        gain = f"{1 - scrim:.4f}"
+        assert M.footage_grade(scrim=scrim) == \
+            f"colorchannelmixer=rr={gain}:gg={gain}:bb={gain}"
 
     def test_the_blur_sigma_is_scaled_to_the_render_size(self):
         """The clause runs on the 1.2x footage, and the author writes delivered pixels."""
@@ -158,7 +165,7 @@ class TestFootageGrade:
 
     def test_both_are_one_comma_joined_clause(self):
         clause = M.footage_grade(scrim=0.25, blur=4)
-        assert clause.startswith("drawbox=")
+        assert clause.startswith("colorchannelmixer=")
         assert clause.count(",") == 1
         assert ",gblur=sigma=" in clause
 
@@ -227,7 +234,7 @@ def test_the_graph_without_an_overlay_is_the_one_it_has_always_been(stub):
     stub.go()
     graph = _graph(_media_cmds(stub)[1])
     assert "[s0]" not in graph and "[o0]" not in graph
-    assert "drawbox" not in graph and "gblur" not in graph
+    assert "colorchannelmixer" not in graph and "gblur" not in graph
     assert f"scale={M.OUT_W}:{M.OUT_H}:flags=lanczos:out_range=tv," in graph
 
 
@@ -249,7 +256,7 @@ def test_the_scrim_lands_on_the_footage_before_the_credit_plate(stub):
     the plates would be darkening the one thing the licence says has to stay readable."""
     stub.go()
     steps = _graph(_media_cmds(stub)[0]).split(";")
-    graded = [i for i, s in enumerate(steps) if "drawbox=" in s]
+    graded = [i for i, s in enumerate(steps) if "colorchannelmixer=" in s]
     plated = [i for i, s in enumerate(steps) if "[2:v]overlay=" in s]
     assert graded and plated and graded[0] < plated[0]
     assert steps[graded[0]].startswith("[m0]") and steps[graded[0]].endswith("[g0]")

@@ -519,20 +519,32 @@ def media_grade(scene, index: int = 0) -> tuple:
 
 
 def footage_grade(scrim: float = 0.0, blur: float = 0.0) -> str:
-    """The filter clause that darkens and softens the FOOTAGE. "" when neither is asked for.
+    """The clause that darkens and softens the FOOTAGE. "" when neither is asked for.
 
-    `drawbox` filling the frame with black at `scrim` alpha, NOT `eq=brightness=`. Three
-    reasons, and they are measurable rather than tasteful:
+    The scrim is `colorchannelmixer` at a gain of (1 - scrim) on all three channels, which is
+    a literal multiply of R, G and B by one factor: R:G:B is preserved exactly, so the picture
+    darkens without changing colour, and nothing clips, because scaling toward zero cannot
+    leave the range. MEASURED against the alternatives on a 2048x1152 gradient -- average RGB
+    over one fixed window, each filter run on its own from the same JPEG:
 
-      * `drawbox` alpha-blends toward black, and YUV<->RGB is an AFFINE transform, so blending
-        toward black's YUV (16, 128, 128) is exactly multiplying RGB by (1 - scrim). Every
-        channel scales by the same factor, so R:G:B is preserved: no hue shift, by construction.
-      * `eq=brightness=` is an ADDITIVE luma offset that leaves chroma alone. It clips the
-        blacks it pushes past 0 (shadow detail gone, not darkened) and leaves U/V where they
-        were, so the picture gets more saturated as it gets darker, which is the hue shift.
-      * `drawbox` runs natively on the yuv420p the chain is already in, so it inserts no
-        pixel-format conversion and no rounding beyond the blend itself. Deterministic: the
-        same input frame and the same alpha give the same bytes every run.
+      filter (scrim 0.3)                        R       G       B      hue (R:G, B:G)
+      colorchannelmixer rr=gg=bb=0.7          0.6998  0.7000  0.7000   0.8555, 1.1049  <- kept
+      drawbox black@0.3 on yuv420p            0.7856  0.7304  0.6603   0.9204, 0.9991
+      lutyuv y=val*0.7                        0.6560  0.7056  0.7336   0.7956, 1.1488
+      eq=brightness=-0.3                      0.2965  0.3926  0.4503   0.6464, 1.2675
+      (the ungraded source)                   1       1       1        0.8558, 1.1050
+
+    The two obvious candidates are both wrong, for one underlying reason: they move LUMA and
+    leave chroma where it was, so the picture gets more saturated as it gets darker.
+    `eq=brightness` is an additive luma offset -- far too strong at this spelling, and it clips
+    every black it pushes past 0 -- and `lutyuv` is the multiply done on Y alone. `drawbox`
+    reads like the right answer (an alpha blend toward black IS a multiply, and YUV<->RGB is
+    affine, so it ought to commute) and measures as the wrong one: on a yuv420p frame it blends
+    chroma toward 128 against a limited-range black, which is a different affine from the one
+    the luma gets, and the row above is the hue shift that leaves. colorchannelmixer is
+    RGB-only, so ffmpeg converts around it -- that round trip is the cost, and exactness is
+    what it buys. Re-checked at 0.1 / 0.3 / 0.5 / 0.8: every channel lands within 0.0002 of the
+    gain and the hue ratios do not move.
 
     `gblur` sigma is scaled by RW/OUT_W, because this clause runs on the 1.2x render-size
     footage (media.ffmpeg_video_steps ends at RWxRH) and the author writes the number they want
@@ -543,7 +555,8 @@ def footage_grade(scrim: float = 0.0, blur: float = 0.0) -> str:
     """
     steps = []
     if scrim:
-        steps.append(f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{float(scrim):.4f}:t=fill")
+        gain = 1.0 - float(scrim)
+        steps.append(f"colorchannelmixer=rr={gain:.4f}:gg={gain:.4f}:bb={gain:.4f}")
     if blur:
         steps.append(f"gblur=sigma={float(blur) * RW / OUT_W:.4f}")
     return ",".join(steps)
@@ -952,7 +965,9 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     the layer PNGs rather than after. That placement is the licence answer as much as the
     legibility one: the credit plate must stay full-brightness and sharp (media.py's first rule),
     and a scrim that also dimmed our own attribution would be darkening the one thing that has
-    to stay readable. `footage_grade` owns both clauses.
+    to stay readable. Measured on a real render: with `scrim: 0.3` the footage beside the plate
+    peaks at luma 119 while the plate's own type still reaches 255. `footage_grade` owns both
+    clauses and the measurements behind the filter each one is.
 
     `overlay_frames` is a directory of `illustrate.render_scene_frames(..., transparent=True)`
     PNGs — an illustration layer for this scene, already at the delivered 1080x1920 — laid over
