@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 """
 Illustrated, animated 9:16 scenes -- a prototype path OUTSIDE the normal make_short.py /
-build_video.py pipeline. Stephen ruled out licensed-photo stills for the Shorts in
-`marketing/video/illustration-demo/` territory; he wants paper-coloured illustration,
-stick figures, emoji that pop on the word being said, arrows that draw themselves, numbers
-that fly in -- the FirstParkVisit / Zack D. Films look. This module renders exactly that from
-a small YAML scene spec, deterministically, to a PNG sequence and an mp4. No narration, no
-captions, no audio mix: those stay in make_short.py's territory (see the module's own
-docstring for `audio_steps`/`cut_plan_json`). This writes `events.json` -- `[{t, sfx}]`, one
-entry per sound cue, absolute scene time -- and stops there; wiring it into an audio mix is
-future work.
+build_video.py pipeline. Stephen ruled out licensed-photo stills ALONE for the Shorts in
+`marketing/video/illustration-demo/` territory; he wants stick figures, emoji that pop on the
+word being said, arrows that draw themselves, numbers that fly in -- the FirstParkVisit /
+Zack D. Films look. This module renders exactly that from a small YAML scene spec,
+deterministically, to a PNG sequence and an mp4. No narration, no captions, no audio mix:
+those stay in make_short.py's territory (see the module's own docstring for
+`audio_steps`/`cut_plan_json`). This writes `events.json` -- `[{t, sfx}]`, one entry per sound
+cue, absolute scene time -- and stops there; wiring it into an audio mix is future work.
+
+WHAT THE DRAWING SITS ON (2026-10-01). The ruling since this module was first written is that
+illustration is an OVERLAY: it goes over video and over imagery, and the flat ground is
+sprinkled in on the beats with no footage to carry. So two things follow, and both are here.
+Every element wears a white border and a drop shadow (see STICKERS below) so it reads on a
+photograph as well as on a flat ground; and when a scene names no ground at all it gets
+GRAPHITE, the brand's one dark, rather than paper.
 
 MECHANISM -- why a frame loop can be frame-exact
 --------------------------------------------------
@@ -67,7 +73,7 @@ A spec is a YAML mapping with one key, `scenes`, a non-empty list. Every scene:
     - kind: illustration        # required, literal
       seconds: 4.0               # required, > 0 (seconds * 30 fps need not be exact; frame
                                   #   count is round(seconds * fps))
-      bg: "#F7F3EA"               # required, a #rgb or #rrggbb hex colour
+      bg: "#343A46"               # optional, a #rgb or #rrggbb hex colour; default GRAPHITE
       sticker: true               # optional, default true -- see STICKERS below
       elements: [ ... ]           # required, non-empty list, see below
 
@@ -188,6 +194,16 @@ FPS = 30
 W, H = 1080, 1920
 
 HEX_RE = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
+
+#: The ground an illustration scene draws on when it names none. Stephen's ruling
+#: (2026-10-01): the illustration IS the overlay now -- it goes over video and imagery, and the
+#: flat ground is what gets "sprinkled in" on the beats that have no footage to carry. So the
+#: default is the brand's one dark, #343A46, which is the ground the data cards already use in
+#: the sibling ParkSheet repo: a Short that cuts between a photo beat and a drawn beat lands on
+#: the same dark either way instead of flashing to paper. Paper is still allowed -- a scene
+#: that wants it says `bg: "#F7F3EA"` -- it is simply no longer what you get by saying nothing.
+GRAPHITE = "#343A46"
+PAPER = "#F7F3EA"
 
 ELEMENT_TYPES = {"emoji", "label", "tag", "arrow", "squiggle", "figure", "box", "calendar"}
 SFX_KINDS = {"pop", "chime", "hit", "whoosh"}
@@ -504,9 +520,12 @@ def validate_spec(spec):
         seconds = scene.get("seconds")
         if not _num(seconds) or seconds <= 0:
             raise ValueError(f"{tag}: seconds must be a positive number")
-        bg = scene.get("bg")
+        # OPTIONAL, and absent means GRAPHITE -- not "unset". A scene that names a ground is
+        # still held to a hex, because the value is interpolated into CSS unescaped.
+        bg = scene.get("bg", GRAPHITE)
         if not isinstance(bg, str) or not HEX_RE.match(bg):
-            raise ValueError(f"{tag}: bg must be a hex colour like '#F7F3EA'")
+            raise ValueError(f"{tag}: bg must be a hex colour like '{PAPER}' "
+                             f"(omit it for the {GRAPHITE} default), got {scene.get('bg')!r}")
         _sticker(scene, tag)
         elements = scene.get("elements")
         if not isinstance(elements, list) or not elements:
@@ -1104,7 +1123,7 @@ def scene_html(scene):
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 {SHARED_CSS}
 {''.join(css_parts)}
-html,body{{background:{scene["bg"]}}}
+html,body{{background:{scene.get("bg") or GRAPHITE}}}
 </style></head><body>
 {''.join(html_parts)}
 <script>

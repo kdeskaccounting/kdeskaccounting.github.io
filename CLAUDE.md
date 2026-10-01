@@ -278,7 +278,13 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # for a card or a media scene.
 #   - kind: illustration
 #     narration: "Main Street smells like fresh cookies, and the smell is on purpose."
-#     bg: "#F7F3EA"         # required, hex: the paper-coloured ground
+#     bg: "#343A46"         # OPTIONAL, hex. Default #343A46 (illustrate.GRAPHITE), the same
+#                           # dark the sibling repo's data cards sit on, so a Short that cuts
+#                           # between a photo beat and a drawn beat never flashes to paper.
+#                           # Paper (#F7F3EA, illustrate.PAPER) is still allowed by name.
+#     sticker: true         # OPTIONAL, default true: the white border + drop shadow, below.
+#                           # false turns it off for every element of the scene; any element
+#                           # overrides the scene with its own `sticker:`.
 #     elements:             # required, non-empty
 #       - type: label
 #         text: "MAIN STREET"
@@ -315,8 +321,16 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # zoompan and no scale — the motion is in the frames — and `-r 30` is pinned BEFORE the input or
 # an image2 sequence is read at 25 and the scene runs 20% long against its own WAV. Captions are
 # NOT skipped on such a scene: keep the elements below ~0.33 of the frame height and use
-# `captions: {position: top}`, and consider `ink`/`stroke` (see captions below), because white
-# on near-black is the wrong way round over paper-coloured ground.
+# `captions: {position: top}`. The caption DEFAULTS are right over the default ground: white
+# type on a #0A0E14 stroke reads on graphite and on a photograph alike, which is why nothing
+# here second-guesses them. Only a scene that went back to paper wants `ink`/`stroke` inverted
+# (see captions below), and then the spec says so explicitly.
+# EVERY DRAWN ELEMENT WEARS A STICKER BORDER (2026-10-01) — a bubbly white outline and one soft
+# drop shadow, so the illustration reads as something laid ON the picture rather than printed
+# into it. That is the ruling that made `overlay:` on a media scene a thing at all: illustration
+# is b-roll over video and imagery, and the flat ground is sprinkled in on the beats with no
+# footage. Default ON; `sticker: false` on a scene or on one element opts out. Labels keep their
+# #1A1A1A ink — black type inside a white border is what survives landing on a photograph.
 # The elements' `sfx:` are wired to the mix through `audio.sfx.events:` — see SOUND, below.
 
 # How two parts MEET, and how much silence sits in the join (2026-09-18). All three keys are
@@ -457,8 +471,9 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     ink: "#1A1A1A"        # the unlit words' colour (default "#FFFFFF"), HEX ONLY
 #     stroke: "#F7F3EA"     # the outline behind every glyph (default "#0A0E14"), HEX ONLY
 #                           # The defaults ARE the literals caption_html used to carry inline,
-#                           # so a spec that asks for neither is byte-identical. Invert them
-#                           # over an illustration scene's paper-coloured ground.
+#                           # so a spec that asks for neither is byte-identical — and they are
+#                           # also what an illustration scene wants, now that its default ground
+#                           # is graphite. Invert them only over a scene that asked for paper.
 # --captions / --no-captions on make_short.py override the block either way.
 #
 # A cue is a PHRASE, not a sentence: <= 3 words and <= 20 characters, broken at a sentence end

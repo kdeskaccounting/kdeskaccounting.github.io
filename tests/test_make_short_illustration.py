@@ -395,6 +395,27 @@ def test_the_caption_band_is_not_pushed_down_by_an_illustration_scene(stub):
     assert M.scene_card_top({"kind": "illustration", "elements": []}) is None
 
 
+def test_captions_over_a_graphite_scene_keep_the_global_white_on_dark_defaults(stub):
+    """Nothing clever, and that is the ruling (2026-10-01): the ground is dark now and so are
+    photographs, so white type on a dark stroke is right in both places. A spec that wants
+    dark ink on paper still says so with `captions: {ink, stroke}` -- see test_captions.py."""
+    stub.spec = _spec({"enabled": True, "accent": "#ffe234"})
+    del stub.spec["scenes"][0]["bg"]
+    stub.go()
+    plan = json.loads((stub.work / "captions.json").read_text())
+    assert plan["ink"] == captions.DEFAULT_INK == "#FFFFFF"
+    assert plan["stroke"] == captions.DEFAULT_STROKE == "#0A0E14"
+
+
+def test_an_illustration_scene_may_name_no_ground_at_all(stub):
+    """`bg:` is optional now; illustrate draws the default graphite under the elements."""
+    del stub.spec["scenes"][0]["bg"]
+    stub.go()
+    scene, _path = stub.rendered[0]
+    assert "bg" not in scene
+    assert "background:#343A46" in illustrate.scene_html(scene)
+
+
 # --- the element sounds, end to end --------------------------------------------------------
 
 #: A bed plus one file per role the two scenes ask for. `whoosh` is both the cut sound and an

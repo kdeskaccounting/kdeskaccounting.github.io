@@ -98,6 +98,16 @@ class TestValidateSpec:
     def test_accepts_three_digit_hex_bg(self):
         I.validate_spec(_spec(bg="#fff"))
 
+    def test_bg_is_optional_and_a_scene_without_one_is_valid(self):
+        scene = _scene()
+        del scene["bg"]
+        I.validate_spec({"scenes": [scene]})
+
+    def test_a_scene_that_names_no_bg_still_hears_about_a_bad_one(self):
+        """`bg: null` is a spec that TRIED to name a ground, not one that said nothing."""
+        with pytest.raises(ValueError, match="bg"):
+            I.validate_spec(_spec(bg=None))
+
     def test_rejects_empty_elements(self):
         with pytest.raises(ValueError, match="elements"):
             I.validate_spec(_spec(elements=[]))
@@ -523,6 +533,18 @@ class TestSceneHtml:
         assert "window.seek" in doc
         assert "#ABCDEF" in doc
         assert doc.lower().startswith("<!doctype html>")
+
+    def test_a_scene_with_no_bg_draws_on_graphite(self):
+        """The brand's one dark, and the ground the sibling repo's data cards already use:
+        a Short that cuts between a photo beat and a drawn beat lands on the same dark
+        either way instead of flashing to paper."""
+        scene = _scene()
+        del scene["bg"]
+        assert I.GRAPHITE == "#343A46"
+        assert f"background:{I.GRAPHITE}" in I.scene_html(scene)
+
+    def test_paper_is_still_available_to_a_scene_that_asks(self):
+        assert f"background:{I.PAPER}" in I.scene_html(_scene(bg=I.PAPER))
 
     def test_includes_every_element(self):
         doc = I.scene_html(_scene(elements=[
