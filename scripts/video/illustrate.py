@@ -242,6 +242,12 @@ SQUIGGLE_SAMPLES = 60
 # Spec validation -- pure, no I/O, runs in the bare `uv run --with pytest` environment.
 # --------------------------------------------------------------------------------------------
 
+def is_illustration(scene) -> bool:
+    """Is this scene one of ours? The one place that string is compared, as `media.is_media`
+    and `cards.is_card` are for their kinds -- make_short.py asks it per scene."""
+    return (scene or {}).get("kind") == "illustration"
+
+
 def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
@@ -461,7 +467,7 @@ def validate_spec(spec):
         tag = f"scene {si}"
         if not isinstance(scene, dict):
             raise ValueError(f"{tag}: must be a mapping")
-        if scene.get("kind") != "illustration":
+        if not is_illustration(scene):
             raise ValueError(f"{tag}: kind must be 'illustration', got {scene.get('kind')!r}")
         seconds = scene.get("seconds")
         if not _num(seconds) or seconds <= 0:

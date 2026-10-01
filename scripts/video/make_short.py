@@ -12,6 +12,13 @@ Output: scripts/video/build/<slug>/<slug>-short.mp4 (+ short-review/*.png sample
   --captions / --no-captions override the spec's top-level `captions:` block (default: off)
 All text is rendered into PNGs via HTML (this ffmpeg has no drawtext).
 
+Scene kinds: `media` (footage or a still, optionally cut into `beats:`), `card` (a full-frame
+data card, optionally drawn step by step with `steps:`), `illustration` (an animated illustrated
+scene — scripts/video/illustrate.py draws a PNG per frame from the scene's `elements:`, whose
+times may be written as the WORDS they land on), and the legacy sheet/pan layout for everything
+else. Every kind gets the same narration, pad, captions, join, mix and `cuts.json` treatment;
+only the picture differs.
+
 Word-timed ("karaoke") captions, when a spec asks for them, are burned into the TOP of the
 frame in the pass that already joins the parts — that concat was a stream copy, so this is
 the Short's only re-encode, loudnorm and all, rather than a second one. The rules and the
@@ -27,6 +34,7 @@ HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
 import captions
 import cards
+import illustrate
 import media
 from short_variants import safe_slug, select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
@@ -326,6 +334,77 @@ def beat_spans(beats, dur: float) -> list:
     return spans
 
 
+def illustration_preflight(scene, index: int) -> None:
+    """One `kind: illustration` scene, checked before a frame is rendered. Raises SystemExit.
+
+    `illustrate.validate_spec` wants a whole spec and a `seconds` on every scene, and an
+    illustration scene in a Short has no `seconds` to give: its length is its narration's,
+    which is not known until narrate.py has run. So it is asked about a one-scene spec with a
+    placeholder -- the elements are what this is checking, and no element's validity depends on
+    how long the scene is.
+
+    A `seconds:` an author did write is ANNOUNCED rather than refused or silently honoured: the
+    narration decides, and a spec that says otherwise should hear so from the renderer rather
+    than discover it by counting frames.
+    """
+    scene = dict(scene or {})
+    if scene.get("seconds") is not None:
+        print(f"scene {index:02d}: illustration `seconds: {scene['seconds']}` ignored — an "
+              f"illustration scene is as long as its narration (plus the scene pad), the way "
+              f"every other scene kind is.", flush=True)
+    scene["seconds"] = 1.0
+    try:
+        illustrate.validate_spec({"scenes": [scene]})
+    except ValueError as exc:
+        raise SystemExit(f"scene {index} (kind: illustration): {exc}") from None
+
+
+def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
+    """Where the PICTURE changes inside one illustration scene, as spans summing to `dur`.
+
+    An illustration scene is one continuous render — there is no file to cut to and no card to
+    redraw — but it is not one picture: an emoji popping in, a tag dropping, a calendar filling
+    a square at a time are all picture changes, and `cuts.json` is the renderer's own record of
+    those (nothing can detect them afterwards: see `cut_plan_json`). So the scene's distinct
+    ELEMENT ENTRY times are the beat boundaries, and this is the same arithmetic `beat_spans`
+    does for a media scene's beats: durations, in order, summing to the part.
+
+    Takes a RESOLVED scene (`illustrate.resolve_times`), because a word reference has no
+    seconds to sort. An element with no `enter` is on screen from frame 0 and therefore
+    contributes the span that starts at 0 rather than a cut; a walking figure enters at its
+    `t0`; a calendar enters once per CELL, which is what makes a week filling in seven
+    pictures rather than one.
+
+    Deduplicated BY FRAME, not by float: two elements 8 ms apart are one picture change at
+    30 fps, and a span shorter than a frame would be a cut nobody can see. Times at or past
+    `dur` are dropped for the same reason — the picture does not change after the last frame.
+    """
+    times = []
+    for el in (scene or {}).get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        if el.get("type") == "figure" and el.get("pose") == "walk":
+            times.append(float(el.get("t0", 0.0)))
+            continue
+        if el.get("type") == "calendar":
+            times.extend(illustrate.calendar_cell_times(
+                float(el.get("t0", 0.0)), float(el["step"]), len(el.get("cells") or ())))
+            continue
+        enter = el.get("enter") or {}
+        times.append(float(enter.get("t", 0.0)) if enter else 0.0)
+    last = round(float(dur) * int(fps))
+    frames = sorted({round(float(at) * int(fps)) for at in times})
+    cuts = [frame / float(fps) for frame in frames if 0 < frame < last]
+    spans, previous = [], 0.0
+    for at in cuts:
+        spans.append(round(at - previous, 3))
+        previous = at
+    # The last span absorbs the rounding, exactly as it does in `beat_spans`: the sum has to be
+    # `dur` to the millisecond or the cut list drifts off the cuts it is recording.
+    spans.append(round(float(dur) - sum(spans), 3))
+    return spans
+
+
 def prepare_beats(beats, spec_path) -> list:
     """scene_beats() output -> what encode_media_scene() renders. The other half of the pair.
 
@@ -429,6 +508,40 @@ def encode_scene(png, wav, dur, crf, join=DEFAULT_JOIN):
     out = pathlib.Path(png).with_suffix(".mp4")
     run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-i", str(wav),
          "-filter_complex",
+         f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+         f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
+         "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
+         "-bsf:v", RANGE_BSF, "-c:a", "aac", "-b:a", "128k", str(out)])
+    return out
+
+
+#: The frame files `illustrate.render_scene_frames` writes, as an ffmpeg input pattern.
+ILLUSTRATION_FRAME_GLOB = "frame_%04d.png"
+
+
+def encode_illustration_scene(frames_dir, wav, dur, crf, out, join=DEFAULT_JOIN):
+    """One illustration scene's PNG sequence + its narration WAV -> an mp4. Returns `out`.
+
+    `encode_scene` with the picture half replaced and the audio half identical, clause for
+    clause: apad so the last word is never clipped, the 0.05 s afade-in, 48 kHz stereo, the
+    `fade_steps` pair under `join: fade` and none under `join: cut`, `-t dur`, libx264 at the
+    same preset and crf, yuv420p, `-color_range tv` + RANGE_BSF. The parts are concatenated
+    with `-c:v copy`, so an illustration part that encoded differently would break the concat.
+
+    No zoompan, and no `scale`: the frames come off `illustrate.render_scene_frames` already at
+    the delivered 1080x1920 (illustrate.W/H), so there is nothing to resize and nothing to
+    push. A Ken Burns zoom over illustrated line art would soften the one thing the look is
+    made of, and the motion is in the frames already.
+
+    `-r FPS` BEFORE the input, not only after it: an image2 sequence has no timebase of its
+    own, so the input rate is what decides which frame is which second. Without it ffmpeg
+    reads the sequence at 25 fps and the scene runs 20% long against its own WAV.
+    """
+    vf = f"{fade_steps(dur, join)}format=yuv420p"
+    run(["ffmpeg", "-y", "-loglevel", "error",
+         "-r", str(FPS), "-i", str(pathlib.Path(frames_dir) / ILLUSTRATION_FRAME_GLOB),
+         "-i", str(wav), "-filter_complex",
          f"[0:v]{vf}[v];[1:a]apad=pad_dur=2,afade=t=in:d=0.05,"
          f"aformat=sample_rates=48000:channel_layouts=stereo[a]",
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
@@ -724,15 +837,20 @@ def scene_card_top(scene, width=OUT_W, height=OUT_H):
     A `media` scene is imagery: the top of the frame is free unless it carries a card overlay,
     and then the constraint is media.overlay_box, the same rectangle every media scene uses.
     A `kind: card` scene is moved below the band instead (card_box_under_captions), so it
-    reports that box's top and constrains nothing. EVERYTHING else owns the top of the frame
-    from y=0 — the legacy sheet/pan layout puts the Short's hook there — and a caption over
-    one of those is text printed on text.
+    reports that box's top and constrains nothing. An `illustration` scene is like a media
+    scene with no overlay: the elements are placed by the spec, which is the author's job to
+    keep out of the band (`captions.position: top` and nothing above ~0.25 of the frame), and
+    nothing in the scene owns the top of the frame by construction. EVERYTHING else owns the
+    top of the frame from y=0 — the legacy sheet/pan layout puts the Short's hook there — and a
+    caption over one of those is text printed on text.
     """
     scene = scene or {}
     if media.is_media(scene):
         return media.overlay_box(width, height)[1] if scene.get("overlay") else None
     if cards.is_card(scene):
         return card_box_under_captions(width, height)[1]
+    if illustrate.is_illustration(scene):
+        return None
     return 0
 
 
@@ -1480,7 +1598,7 @@ def main():
     # shape of a scene's `beats:` belongs to this module (it is the render that consumes it),
     # so it is checked in the same pass rather than when the loop below reaches that scene.
     media.validate_spec(spec, spec_path)
-    for _scene in spec.get("scenes") or []:
+    for _index, _scene in enumerate(spec.get("scenes") or []):
         if media.is_media(_scene or {}):
             scene_beats(_scene)
             if (_scene or {}).get("steps"):
@@ -1495,6 +1613,13 @@ def main():
                     "a `card` scene carries `beats:`, which only a `media` scene renders — "
                     "a beat cuts to a picture, and a card scene's picture is the card. Use "
                     "`steps:` to draw the card a row at a time.")
+        elif illustrate.is_illustration(_scene or {}):
+            illustration_preflight(_scene, _index)
+            if (_scene or {}).get("beats") or (_scene or {}).get("steps"):
+                raise SystemExit(
+                    "an `illustration` scene carries `beats:` or `steps:`, and neither is read "
+                    "for this kind — its pictures are its elements, each entering on its own "
+                    "`enter.t` (or on the word it belongs to). Nothing would have read it.")
         elif (_scene or {}).get("beats") or (_scene or {}).get("steps"):
             raise SystemExit(
                 f"a `{(_scene or {}).get('kind')}` scene carries `beats:` or `steps:`, and "
@@ -1586,6 +1711,10 @@ def main():
     ranges = {str(k): v for k, v in (sh.get("ranges") or {}).items()}
     btokens = cards.brand_tokens(spec.get("brand"))
     wbv = wbf = None
+    #: (scene index, RESOLVED scene) per illustration scene, in render order: the sound events
+    #: its elements ask for are placed on the finished timeline after the loop, when every
+    #: part's `start` is known.
+    illustrated = []
     for k, idx in enumerate(sh["scenes"]):
         sc = spec["scenes"][idx]; mode = "cover"; fx = fy = 0.5; pan = None
         if media.is_media(sc):
@@ -1648,6 +1777,34 @@ def main():
             out = encode_scene(png, wav, dur, a.crf, join=tr.join)
             add_part(out, idx); print(f"scene {idx:02d}: card {dur:.1f}s -> {out.name}", flush=True)
             continue
+        if illustrate.is_illustration(sc):
+            # An illustrated, animated scene: `illustrate` draws the picture (one HTML page, one
+            # PNG per frame, at the delivered 1080x1920 — its own W/H, not the 1.2x RW/RH the
+            # zoompan paths render at, because there is no zoompan here to feed), and everything
+            # else about the scene is this module's: the WAV, the pad, the word-timed captions,
+            # the join, the mix.
+            wav = build / "audio" / f"scene_{idx:02d}.wav"
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            # The words are what the elements' `when:` times are resolved against, and they are
+            # already on this scene's own WAV clock — frame 0 of the scene is t=0 of the WAV —
+            # so no offset arithmetic happens here. The captions read the same file again,
+            # against the finished timeline, which is a different question about the same words.
+            words = captions.read_words(wav)
+            try:
+                scene = illustrate.resolve_times(sc, words)
+            except ValueError as exc:
+                raise SystemExit(f"scene {idx:02d} (kind: illustration): {exc}") from None
+            scene["seconds"] = dur
+            frames_dir = work / f"scene_{k}_frames"
+            illustrate.render_scene_frames(scene, frames_dir)
+            out = encode_illustration_scene(frames_dir, wav, dur, a.crf,
+                                            work / f"scene_{k}.mp4", join=tr.join)
+            spans = illustration_spans(scene, dur)
+            add_part(out, idx, spans)
+            illustrated.append((idx, scene))
+            print(f"scene {idx:02d}: illustration {len(scene['elements'])} elements "
+                  f"{dur:.1f}s -> {out.name}", flush=True)
+            continue
         if str(idx) in ranges:  # dedicated portrait-friendly render of a narrower range, trimmed to the table
             if wbv is None:
                 from openpyxl import load_workbook
@@ -1682,6 +1839,12 @@ def main():
         wav = build / "audio" / f"scene_{idx:02d}.wav"; adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
         out = encode_scene(png, wav, dur, a.crf, join=tr.join)
         add_part(out, idx); print(f"scene {idx:02d}: {dur:.1f}s -> {out.name}", flush=True)
+    # An illustration scene drives ONE Chrome page per scene over Playwright and keeps it open
+    # across its frame loop (render_sheets._pw_page), so the browser has to be let go of once
+    # the pictures are all drawn — exactly where illustrate.render_spec() does it. Every other
+    # render path in this module shoots through the one-shot `chrome --screenshot` CLI and
+    # leaves nothing open, so this is a no-op on a Short that has no illustration scene.
+    R.close_driver()
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
     if end_card_wanted(sh, a.end_card):
         hp = work / "end.html"; hp.write_text(end_html(sh.get("cta"), brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)

@@ -268,9 +268,11 @@ def test_the_scene_pad_and_narrates_lead_in_fit_inside_the_join_budget():
 
 
 def test_every_scene_kind_reads_the_same_pad_helper(stub_main):
-    """Media, card and legacy sheet scenes all take `pad` from scene_pad() — one place."""
+    """Media, card, illustration and legacy sheet scenes all take `pad` from scene_pad() —
+    one place. The count is a census of the scene kinds in main(); a new kind that read the
+    pad from anywhere else is the thing this catches."""
     src = pathlib.Path(M.__file__).read_text(encoding="utf-8")
-    assert src.count("dur = adur + pad") == 3
+    assert src.count("dur = adur + pad") == 4
     assert "dur = adur + SCENE_PAD" not in src
     assert "dur = adur + 0.6" not in src
 
