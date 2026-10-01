@@ -537,6 +537,92 @@ class TestSceneHtml:
         assert "window.seek(0)" in doc
 
 
+# --------------------------------------------------------------------------------------------
+# The sticker treatment: a white border and a drop shadow on every drawn element, so an
+# illustration survives being laid over a photograph (Stephen's ruling, 2026-10-01).
+# --------------------------------------------------------------------------------------------
+
+#: One element of every type, each at its own index, with the ROOT node the class has to land
+#: on. (type dict, the opening tag fragment that must carry ` sticker`).
+STICKER_ROOTS = [
+    ({"type": "emoji", "glyph": "x", "at": [0.5, 0.5]}, '<div class="el sticker"'),
+    ({"type": "label", "text": "HI", "at": [0.5, 0.5]}, '<div class="el sticker"'),
+    ({"type": "tag", "text": "$39", "at": [0.5, 0.5]}, '<div class="el sticker"'),
+    ({"type": "box", "at": [0.5, 0.5], "w": 0.4, "h": 0.2}, '<div class="el sticker"'),
+    ({"type": "arrow", "from": [0.1, 0.1], "to": [0.9, 0.9]}, '<svg class="arrow-svg sticker"'),
+    ({"type": "squiggle", "from": [0.1, 0.1], "to": [0.9, 0.9]},
+     '<svg class="arrow-svg sticker"'),
+    ({"type": "figure", "pose": "stand", "at": [0.5, 0.8]}, '<div class="el sticker"'),
+    ({"type": "figure", "pose": "walk", "from": [0.1, 0.8], "to": [0.6, 0.8],
+      "t0": 0.0, "t1": 1.0}, '<div class="el sticker"'),
+    ({"type": "calendar", "at": [0.5, 0.5], "cols": 2, "step": 0.3,
+      "cells": [{"label": "Mon", "value": "$19", "tone": "low"}]},
+     '<div class="cal-grid sticker"'),
+]
+
+
+class TestSticker:
+    def test_the_rule_is_in_the_shared_css_exactly_as_it_was_approved(self):
+        assert ".sticker{filter:" in I.SHARED_CSS
+        assert I.SHARED_CSS.count("drop-shadow(0 0 2.5px #fff)") == 3
+        assert "drop-shadow(0 0 2px #fff)" in I.SHARED_CSS
+        assert "drop-shadow(0 10px 14px rgba(0,0,0,.45))" in I.SHARED_CSS
+
+    @pytest.mark.parametrize("el,root", STICKER_ROOTS,
+                             ids=[f"{e['type']}-{e.get('pose', '')}".rstrip("-")
+                                  for e, _ in STICKER_ROOTS])
+    def test_every_element_type_wears_it_on_its_root_node_by_default(self, el, root):
+        html, _ = I.render_element(el, 0)
+        assert root in html
+
+    @pytest.mark.parametrize("el,root", STICKER_ROOTS,
+                             ids=[f"{e['type']}-{e.get('pose', '')}".rstrip("-")
+                                  for e, _ in STICKER_ROOTS])
+    def test_an_element_can_opt_out_of_it(self, el, root):
+        html, _ = I.render_element(dict(el, sticker=False), 0)
+        assert "sticker" not in html
+
+    def test_the_scene_default_reaches_every_element(self):
+        doc = I.scene_html(_scene(sticker=False, elements=[el for el, _ in STICKER_ROOTS]))
+        body = doc.split("</style>", 1)[1]        # the rule itself always stays in the <style>
+        assert "sticker" not in body
+
+    def test_an_element_overrides_a_scene_that_turned_it_off(self):
+        doc = I.scene_html(_scene(sticker=False, elements=[
+            {"type": "label", "text": "PLAIN", "at": [0.5, 0.3]},
+            {"type": "label", "text": "STUCK ON", "at": [0.5, 0.6], "sticker": True},
+        ]))
+        assert doc.count('class="el sticker"') == 1
+
+    def test_the_class_is_on_the_same_root_the_animation_is_nested_under(self):
+        """The enter animation stays on the inner node; the filter goes on the root. Both
+        placements were rendered and diffed (nothing here is a compositor animation, so a
+        parent filter does not freeze the child) and the root is what keeps the white edge
+        2.5 px of FRAME while a pop is still scaling up."""
+        html, _ = I.render_element(
+            {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+             "enter": {"t": 0.4, "how": "pop"}}, 0)
+        assert '<div class="el sticker"' in html
+        assert 'class="emoji-glyph anim"' in html
+
+    def test_labels_keep_their_black_ink_inside_the_white_border(self):
+        """Black type in a white border is what reads on graphite AND on a photograph."""
+        assert "color:#1A1A1A" in I.SHARED_CSS
+
+    def test_a_non_boolean_sticker_is_refused_on_a_scene(self):
+        with pytest.raises(ValueError, match="true or false"):
+            I.validate_spec(_spec(sticker="false"))
+
+    def test_a_non_boolean_sticker_is_refused_on_an_element(self):
+        with pytest.raises(ValueError, match="true or false"):
+            I.validate_spec(_spec({"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                                   "sticker": "no"}))
+
+    def test_booleans_are_accepted_on_both(self):
+        I.validate_spec(_spec({"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                               "sticker": False}, sticker=True))
+
+
 # --- the first demo render clipped a label and crowded the calendar ---------------------
 
 

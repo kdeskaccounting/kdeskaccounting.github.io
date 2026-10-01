@@ -68,14 +68,16 @@ A spec is a YAML mapping with one key, `scenes`, a non-empty list. Every scene:
       seconds: 4.0               # required, > 0 (seconds * 30 fps need not be exact; frame
                                   #   count is round(seconds * fps))
       bg: "#F7F3EA"               # required, a #rgb or #rrggbb hex colour
+      sticker: true               # optional, default true -- see STICKERS below
       elements: [ ... ]           # required, non-empty list, see below
 
 Positions (`at`, `from`, `to`) are always `[x, y]` fractions of the 1080x1920 frame, where
 (0, 0) is the top-left corner; off-canvas staging is allowed up to [-0.2, 1.2]. An `enter`
 block, where a type accepts one, is `{t: <seconds, scene-local>, how: <style>}`; omitting
 `enter` renders the element always-on, unanimated. `sfx`, where a type accepts it, is one of
-pop | chime | hit | whoosh and becomes one row of `events.json`. Every time in a scene may
-also be written as a WORD -- see TIMES AS WORDS below.
+pop | chime | hit | whoosh and becomes one row of `events.json`. Every element also takes
+`sticker: false` to opt out of the white border. Every time in a scene may also be written as
+a WORD -- see TIMES AS WORDS below.
 
   emoji   {glyph, at, size: 0-1 fraction of frame width (default 0.16),
            enter?: {t, how: pop|fade}, sfx?}
@@ -126,6 +128,24 @@ also be written as a WORD -- see TIMES AS WORDS below.
           this module requires a literal, fully-specified `cells` list.)
 
 Everything above also accepts any JSON/YAML-safe extra keys; they are ignored.
+
+STICKERS -- the white border and the drop shadow
+------------------------------------------------
+Every drawn element wears a bubbly white border and one soft dark shadow, so it reads as a
+3D sticker laid ON the ground rather than as ink printed into it (Stephen's ruling, 2026-10-01:
+illustration is b-roll laid over video and imagery, and a drawn element has to survive landing
+on a photograph as well as on the graphite ground). That is the `.sticker` rule in SHARED_CSS:
+four stacked white `drop-shadow`s, which is how a CSS filter spells an outline that follows an
+arbitrary shape -- an emoji's silhouette, a stroked path, a run of bold type -- plus one
+`drop-shadow(0 10px 14px rgba(0,0,0,.45))` for the lift.
+
+Default ON for every scene and every element. A scene turns it off for all of its elements
+with `sticker: false`, and any single element overrides the scene either way with its own
+`sticker:` key. The class lands on the element's ROOT node, which is a measured choice rather
+than a stylistic one -- see `_sticker_cls()` for what was measured and why.
+
+Labels keep their `#1A1A1A` ink: black type inside a white border is what reads on graphite
+AND on a photograph, which is the whole reason the border exists.
 
 TIMES AS WORDS
 --------------
@@ -339,6 +359,18 @@ def _sfx(el, tag):
         raise ValueError(f"{tag}: sfx must be one of {sorted(SFX_KINDS)}, got {el['sfx']!r}")
 
 
+def _sticker(block, tag):
+    """`sticker:` is a boolean on a scene and on an element alike, and nothing else.
+
+    A STRING here is the trap worth refusing by hand: YAML's `sticker: "false"` is a non-empty
+    string, which is truthy, so a spec that meant to turn the border off would render with it
+    on and look identical to one that never asked. Both spellings go through this one check so
+    the scene default and the element override cannot disagree about what counts as off.
+    """
+    if "sticker" in block and not isinstance(block["sticker"], bool):
+        raise ValueError(f"{tag}: 'sticker' must be true or false, got {block['sticker']!r}")
+
+
 def _validate_emoji(el, tag):
     if not isinstance(el.get("glyph"), str) or not el["glyph"]:
         raise ValueError(f"{tag}: emoji requires a non-empty 'glyph'")
@@ -475,6 +507,7 @@ def validate_spec(spec):
         bg = scene.get("bg")
         if not isinstance(bg, str) or not HEX_RE.match(bg):
             raise ValueError(f"{tag}: bg must be a hex colour like '#F7F3EA'")
+        _sticker(scene, tag)
         elements = scene.get("elements")
         if not isinstance(elements, list) or not elements:
             raise ValueError(f"{tag}: elements must be a non-empty list")
@@ -486,6 +519,7 @@ def validate_spec(spec):
             if t not in ELEMENT_TYPES:
                 raise ValueError(f"{etag}: type must be one of {sorted(ELEMENT_TYPES)}, got {t!r}")
             _sfx(el, etag)
+            _sticker(el, etag)
             _VALIDATORS[t](el, etag)
 
 
@@ -685,6 +719,9 @@ html,body{{margin:0;padding:0;width:{W}px;height:{H}px;overflow:hidden;
   font-family:-apple-system,'Helvetica Neue',Arial,sans-serif}}
 .el{{position:absolute;transform:translate(-50%,-50%)}}
 .anim{{animation-play-state:paused}}
+.sticker{{filter:
+  drop-shadow(0 0 2.5px #fff) drop-shadow(0 0 2.5px #fff) drop-shadow(0 0 2.5px #fff)
+  drop-shadow(0 0 2px #fff) drop-shadow(0 10px 14px rgba(0,0,0,.45));}}
 .emoji-glyph{{font-family:'Apple Color Emoji','Segoe UI Emoji',sans-serif;line-height:1;display:block}}
 .label-text{{font-weight:800;letter-spacing:.01em;white-space:nowrap;color:#1A1A1A;display:block}}
 .tag{{position:relative;display:inline-flex;align-items:center;justify-content:center;
@@ -715,6 +752,28 @@ def _el_id(idx):
     return f"el{idx}"
 
 
+def _sticker_cls(el, default=True):
+    """` sticker`, or `` for an element that opts out. See STICKER in the module docstring.
+
+    The class goes on the element's ROOT node -- `.el`, the `arrow`/`squiggle` svg, the
+    calendar grid -- not on the inner node that carries the animation, and that placement was
+    measured rather than assumed. A CSS `filter` on the PARENT of an animated child is the
+    classic way to rasterise that child into a single painted layer, which would freeze the
+    pops and draws; a two-frame diff of every enter animation under this exact CSS (pop on an
+    emoji, slide-left on a label, draw on an arrow, with the filter on the parent and, as a
+    control, on the animated node itself) shows both placements animating identically, because
+    nothing here is a compositor animation in the first place: every animation is `paused` and
+    the frame loop repaints the whole page per `seek()`.
+
+    What the two placements DO differ in is the border's width while an element is mid-pop.
+    On the root the filter is applied before the child's `transform: scale()`, so the white
+    edge stays 2.5 px of FRAME whatever the pop is doing; on the animated node it scales with
+    it and all but vanishes at scale 0. A sticker's edge does not shrink when the sticker is
+    thrown at the camera, so the root is also the right answer for the look.
+    """
+    return " sticker" if el.get("sticker", default) else ""
+
+
 def _enter_parts(enter):
     """-> (style_fragment, data_attr_fragment, class_fragment) for a simple enter-animated
     element; all three are "" when `enter` is None, i.e. the element is always on-screen,
@@ -727,47 +786,51 @@ def _enter_parts(enter):
     return style, f' data-t0="{t0:.4f}"', " anim"
 
 
-def _emoji_html(el, idx):
+def _emoji_html(el, idx, sticker=True):
     x, y = el["at"]
     size_px = el.get("size", 0.16) * W
     glyph = _html.escape(el["glyph"])
     style, data, cls = _enter_parts(el.get("enter"))
-    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
             f'<span class="emoji-glyph{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
             f'{glyph}</span></div>')
     return frag, ""
 
 
-def _label_html(el, idx):
+def _label_html(el, idx, sticker=True):
     x, y = el["at"]
     size_px = fit_label_px(el["text"], el.get("size", 0.05) * H)
     text = _html.escape(el["text"])
     style, data, cls = _enter_parts(el.get("enter"))
-    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;'
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;'
             f'max-width:{SAFE_W*100:.1f}%;text-align:center;">'
             f'<span class="label-text{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
             f'{text}</span></div>')
     return frag, ""
 
 
-def _tag_html(el, idx):
+def _tag_html(el, idx, sticker=True):
     x, y = el["at"]
     text = _html.escape(el["text"])
     style, data, cls = _enter_parts(el.get("enter"))
-    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
             f'<div class="tag{cls}" style="font-size:{0.045*H:.1f}px;{style}"{data}>{text}</div>'
             f'</div>')
     return frag, ""
 
 
-def _box_html(el, idx):
+def _box_html(el, idx, sticker=True):
     x, y = el["at"]
     w_px, h_px = el["w"] * W, el["h"] * H
     label = el.get("label")
     style, data, cls = _enter_parts(el.get("enter"))
     inner = (f'<span class="label-text" style="font-size:{0.045*H:.1f}px;color:#fff;">'
              f'{_html.escape(label)}</span>') if label else ""
-    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
             f'<div class="box-rect{cls}" style="width:{w_px:.1f}px;height:{h_px:.1f}px;'
             f'display:flex;align-items:center;justify-content:center;{style}"'
             f'{data}>{inner}</div></div>')
@@ -784,7 +847,7 @@ def _box_html(el, idx):
 ARROWHEAD_POP_DUR = 0.15
 
 
-def _arrow_html(el, idx):
+def _arrow_html(el, idx, sticker=True):
     x1, y1 = el["from"]
     x2, y2 = el["to"]
     px1, py1, px2, py2 = x1 * W, y1 * H, x2 * W, y2 * H
@@ -805,8 +868,8 @@ def _arrow_html(el, idx):
     else:
         head_style, head_data = "", ""
     frag = (
-        f'<svg class="arrow-svg" id="{_el_id(idx)}" width="{W}" height="{H}" '
-        f'viewBox="0 0 {W} {H}">'
+        f'<svg class="arrow-svg{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+        f'width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
         f'<defs><marker id="{marker_id}" markerWidth="9" markerHeight="9" refX="5" refY="4.5" '
         f'orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#1A1A1A" class="anim" '
         f'style="{head_style}"{head_data}/></marker></defs>'
@@ -840,7 +903,7 @@ def squiggle_points(p_from, p_to, amplitude=SQUIGGLE_AMPLITUDE, waves=SQUIGGLE_W
     return points
 
 
-def _squiggle_html(el, idx):
+def _squiggle_html(el, idx, sticker=True):
     points = squiggle_points(el["from"], el["to"],
                              el.get("amplitude", SQUIGGLE_AMPLITUDE),
                              el.get("waves", SQUIGGLE_WAVES))
@@ -852,8 +915,8 @@ def _squiggle_html(el, idx):
     # constant rate without anything here knowing how long the curve actually is. No marker:
     # a scent line has no arrowhead (and the arrowhead was the one thing on `arrow` that
     # needed its own animation to stay hidden).
-    frag = (f'<svg class="arrow-svg" id="{_el_id(idx)}" width="{W}" height="{H}" '
-            f'viewBox="0 0 {W} {H}">'
+    frag = (f'<svg class="arrow-svg{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
             f'<path class="{cls.strip()}" pathLength="1" d="{d}" stroke="#1A1A1A" '
             f'stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" '
             f'style="stroke-dasharray:1;{style}"{data}/></svg>')
@@ -894,7 +957,7 @@ def _walk_leg_keyframes(idx, duration):
     return css
 
 
-def _figure_html(el, idx):
+def _figure_html(el, idx, sticker=True):
     pose = el["pose"]
     eid = _el_id(idx)
     head, torso, arms = _figure_pose_svg(pose)
@@ -925,14 +988,16 @@ def _figure_html(el, idx):
                         f"animation-delay:{t0:.4f}s;")
         legs_svg = (f'<g class="anim" style="{legs_a_style}" data-t0="{t0:.4f}">{LEGS_A}</g>'
                     f'<g class="anim" style="{legs_b_style}" data-t0="{t0:.4f}">{LEGS_B}</g>')
-        frag = (f'<div class="el" id="{eid}" style="left:{x0*100:.4f}%;top:{y0*100:.4f}%;">'
+        frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{eid}" '
+                f'style="left:{x0*100:.4f}%;top:{y0*100:.4f}%;">'
                 f'<div class="anim" style="{move_style}" data-t0="{t0:.4f}">'
                 f'<svg width="{FIG_W}" height="{FIG_H}" viewBox="0 0 {FIG_W} {FIG_H}" '
                 f'class="figure">{head}{torso}{arms}{legs_svg}</svg></div></div>')
         return frag, pos_kf + legs_kf
     x, y = el["at"]
     style, data, cls = _enter_parts(el.get("enter"))
-    frag = (f'<div class="el{cls}" id="{eid}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;{style}"'
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}{cls}" id="{eid}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;{style}"'
             f'{data}><svg width="{FIG_W}" height="{FIG_H}" viewBox="0 0 {FIG_W} {FIG_H}" '
             f'class="figure">{head}{torso}{arms}{LEGS_IDLE}</svg></div>')
     return frag, ""
@@ -976,7 +1041,7 @@ def calendar_geometry(cols, width=W, safe=SAFE_W):
     return cell, gap
 
 
-def _calendar_html(el, idx):
+def _calendar_html(el, idx, sticker=True):
     x, y = el["at"]
     cols = int(el["cols"])
     cells = el["cells"]
@@ -1003,7 +1068,8 @@ def _calendar_html(el, idx):
                   f"width:{grid_w:.1f}px;height:{grid_h:.1f}px;"
                   f"grid-template-columns:repeat({cols},{cell_w:.1f}px);"
                   f"grid-auto-rows:{cell_h:.1f}px;gap:{gap:.1f}px;font-size:{cell_w*0.42:.1f}px;")
-    frag = f'<div class="cal-grid" id="{_el_id(idx)}" style="{grid_style}">{"".join(cell_html)}</div>'
+    frag = (f'<div class="cal-grid{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="{grid_style}">{"".join(cell_html)}</div>')
     return frag, ""
 
 
@@ -1014,18 +1080,24 @@ _BUILDERS = {
 }
 
 
-def render_element(el, idx):
+def render_element(el, idx, sticker=True):
     """-> (html, css) for one element dict. The thin, testable entry point `scene_html()`
     uses for every element; kept separate so "pure HTML generation per element type" can be
-    asserted type by type without building a whole scene."""
-    return _BUILDERS[el["type"]](el, idx)
+    asserted type by type without building a whole scene.
+
+    `sticker` is the SCENE's default (see `scene_html`); the element's own `sticker:` key, when
+    it has one, wins. Defaulted here as well as there so a caller testing one element type gets
+    the treatment every element really renders with.
+    """
+    return _BUILDERS[el["type"]](el, idx, sticker)
 
 
 def scene_html(scene):
     """The full, self-contained, frame-exact HTML page for one `kind: illustration` scene."""
+    sticker = scene.get("sticker", True)
     html_parts, css_parts = [], []
     for idx, el in enumerate(scene["elements"]):
-        h, c = render_element(el, idx)
+        h, c = render_element(el, idx, sticker)
         html_parts.append(h)
         if c:
             css_parts.append(c)
