@@ -534,3 +534,33 @@ class TestSceneHtml:
     def test_calls_seek_zero_so_a_freshly_loaded_page_matches_frame_zero(self):
         doc = I.scene_html(_scene())
         assert "window.seek(0)" in doc
+
+
+# --- the first demo render clipped a label and crowded the calendar ---------------------
+
+
+class TestSafeWidth:
+    def test_a_short_label_keeps_the_size_the_spec_asked_for(self):
+        assert I.fit_label_px("MAIN STREET", 100.0) == 100.0
+
+    def test_a_long_label_is_shrunk_to_the_safe_width(self):
+        # 22 glyphs at 0.042 H = 80.6 px would be ~1,206 px wide on a 1,080 px frame.
+        px = I.fit_label_px("ONE WEEK, SEVEN PRICES", 0.042 * I.H)
+        assert px < 0.042 * I.H
+        assert len("ONE WEEK, SEVEN PRICES") * I.LABEL_EM_PER_CHAR * px <= I.W * I.SAFE_W + 1e-6
+
+    def test_the_label_html_carries_the_fitted_size_and_a_max_width(self):
+        frag, _ = I._label_html({"type": "label", "text": "ONE WEEK, SEVEN PRICES",
+                                 "at": [0.5, 0.14], "size": 0.042}, 0)
+        assert "max-width:86.0%" in frag
+        fitted = I.fit_label_px("ONE WEEK, SEVEN PRICES", 0.042 * I.H)
+        assert f"font-size:{fitted:.1f}px" in frag
+
+    def test_a_three_column_calendar_keeps_the_nominal_cell(self):
+        cell, gap = I.calendar_geometry(3)
+        assert cell == I.CAL_CELL_W * I.W
+
+    def test_a_seven_column_calendar_fits_the_safe_width(self):
+        cell, gap = I.calendar_geometry(7)
+        assert cell < I.CAL_CELL_W * I.W
+        assert 7 * cell + 6 * gap <= I.W * I.SAFE_W + 1e-6

@@ -503,10 +503,11 @@ def _emoji_html(el, idx):
 
 def _label_html(el, idx):
     x, y = el["at"]
-    size_px = el.get("size", 0.05) * H
+    size_px = fit_label_px(el["text"], el.get("size", 0.05) * H)
     text = _html.escape(el["text"])
     style, data, cls = _enter_parts(el.get("enter"))
-    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;'
+            f'max-width:{SAFE_W*100:.1f}%;text-align:center;">'
             f'<span class="label-text{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
             f'{text}</span></div>')
     return frag, ""
@@ -658,8 +659,40 @@ def _figure_html(el, idx):
 
 #: Cell geometry as fractions of the frame width -- fixed, since the spec gives no per-element
 #: size knob for a calendar (only `cols`, which drives the grid's own width).
+#: Widest anything may be, as a fraction of W: the 80 % title-safe zone the card renderer
+#: and the caption band already honour, plus a little, because an illustration label is
+#: centred and has nothing beside it.
+SAFE_W = 0.86
+#: Average advance of a bold Helvetica/Arial capital, em per glyph. The caption band keeps a
+#: per-glyph table (captions.py); a label is one line of a few words, so the mean is enough
+#: here and it errs wide (M and W are the only glyphs that beat it).
+LABEL_EM_PER_CHAR = 0.68
+
+
+def fit_label_px(text, size_px, width=W, safe=SAFE_W, em=LABEL_EM_PER_CHAR):
+    """The font size that keeps `text` on one line inside the safe width.
+
+    The spec's `size` is a ceiling, not a promise: "ONE WEEK, SEVEN PRICES" at 0.042 H is
+    1,150 px of bold caps on a 1,080 px frame and clipped both edges in the first demo
+    render. Pure, so the test suite can pin the arithmetic without a browser.
+    """
+    max_px = (width * safe) / (max(len(text), 1) * em)
+    return min(float(size_px), max_px)
+
+
 CAL_CELL_W = 0.12
 CAL_GAP = 0.016
+
+
+def calendar_geometry(cols, width=W, safe=SAFE_W):
+    """(cell_px, gap_px): CAL_CELL_W cells unless `cols` of them would leave the safe width.
+
+    Seven 0.12 W cells plus gaps are 0.936 W -- inside the frame, outside the safe zone,
+    and the first demo render showed the row flush against the left edge. Pure.
+    """
+    gap = CAL_GAP * width
+    cell = min(CAL_CELL_W * width, (width * safe - (cols - 1) * gap) / cols)
+    return cell, gap
 
 
 def _calendar_html(el, idx):
@@ -669,8 +702,8 @@ def _calendar_html(el, idx):
     step, t0 = float(el["step"]), float(el.get("t0", 0.0))
     n = len(cells)
     rows = math.ceil(n / cols)
-    cell_w = cell_h = CAL_CELL_W * W
-    gap = CAL_GAP * W
+    cell_w, gap = calendar_geometry(cols)
+    cell_h = cell_w
     grid_w = cols * cell_w + (cols - 1) * gap
     grid_h = rows * cell_h + (rows - 1) * gap
     times = calendar_cell_times(t0, step, n)
