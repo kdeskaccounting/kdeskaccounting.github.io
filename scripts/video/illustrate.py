@@ -74,7 +74,8 @@ Positions (`at`, `from`, `to`) are always `[x, y]` fractions of the 1080x1920 fr
 (0, 0) is the top-left corner; off-canvas staging is allowed up to [-0.2, 1.2]. An `enter`
 block, where a type accepts one, is `{t: <seconds, scene-local>, how: <style>}`; omitting
 `enter` renders the element always-on, unanimated. `sfx`, where a type accepts it, is one of
-pop | chime | hit | whoosh and becomes one row of `events.json`.
+pop | chime | hit | whoosh and becomes one row of `events.json`. Every time in a scene may
+also be written as a WORD -- see TIMES AS WORDS below.
 
   emoji   {glyph, at, size: 0-1 fraction of frame width (default 0.16),
            enter?: {t, how: pop|fade}, sfx?}
@@ -94,6 +95,13 @@ pop | chime | hit | whoosh and becomes one row of `events.json`.
           An SVG path with an arrowhead marker. draw is a stroke-dash reveal from `from` to
           `to` over 0.5 s (DRAW_DUR), using the SVG `pathLength="1"` normalisation so the
           dash math never depends on the path's actual on-screen length.
+
+  squiggle {from, to, amplitude?: 0-0.1 fraction of frame WIDTH (default 0.02),
+            waves?: positive int (default 3), enter?: {t, how: draw|fade}, sfx?}
+          The scent line: a sine wave of `waves` full cycles around the from->to chord,
+          revealed by the same `pathLength="1"` stroke-dash mechanism as `arrow` and with no
+          arrowhead. An integer number of waves is what puts both ends of the path exactly on
+          `from` and `to` (sin 0 = sin 2(pi)n = 0), which is why `waves` is not a float.
 
   figure  {pose: stand|point|walk, ...}
           stand/point: {at, enter?: {t, how: pop|fade}, sfx?} -- a static stick figure (SVG
@@ -119,14 +127,31 @@ pop | chime | hit | whoosh and becomes one row of `events.json`.
 
 Everything above also accepts any JSON/YAML-safe extra keys; they are ignored.
 
+TIMES AS WORDS
+--------------
+Anywhere a scene takes a time in seconds -- `enter.t`, a figure walk's `t0`/`t1`, a calendar's
+`t0` -- it may instead take a WORD REFERENCE, so an element lands on the word the narration is
+saying rather than on a hand-counted second:
+
+    enter: {when: {word: "cookies", nth: 1, offset: -0.05, edge: start}, how: pop}
+    t0: {word: "patent"}        # a bare mapping carrying `word` is the same thing
+
+`word` is matched against the narration's words case-insensitively with surrounding
+punctuation stripped ("Smellitzer." matches `smellitzer`), `nth` picks which occurrence
+(default 1), `edge` is the word's `start` (default) or `end`, and `offset` shifts it by
+seconds (default 0). `resolve_times(scene, words)` turns every one of them into a float
+against the word timings narrate.py writes beside the scene's WAV (`captions.read_words`);
+`validate_spec` accepts either spelling, and the HTML builders below only ever see numbers.
+
 STILL MISSING to carry a full ~28 s Short (see the report this module was built for):
-captions overlaid on top of a rendered scene, aligning cuts/beats to narration timing the
-way make_short.py's `beat_spans`/`step_frames` do, and turning `events.json` into an actual
-audio mix (`make_short.audio_steps` is the pattern to borrow, not reuse directly: this
-module's events are per-element cues, not sfx_placements rows).
+captions overlaid on top of a rendered scene, and turning `events.json` into an actual audio
+mix (`make_short.audio_steps` is the pattern to borrow, not reuse directly: this module's
+events are per-element cues, not sfx_placements rows). Aligning the picture to the narration
+is no longer missing: that is what `resolve_times()` above is.
 """
 from __future__ import annotations
 
+import copy
 import html as _html
 import json
 import math
@@ -144,8 +169,16 @@ W, H = 1080, 1920
 
 HEX_RE = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
 
-ELEMENT_TYPES = {"emoji", "label", "tag", "arrow", "figure", "box", "calendar"}
+ELEMENT_TYPES = {"emoji", "label", "tag", "arrow", "squiggle", "figure", "box", "calendar"}
 SFX_KINDS = {"pop", "chime", "hit", "whoosh"}
+
+#: A word reference -- the mapping form of a time (see TIMES AS WORDS in the module docstring).
+WORDREF_KEYS = ("word", "nth", "offset", "edge")
+WORD_EDGES = ("start", "end")
+#: Stripped off both ends of a word before it is matched, so `word: "cookies"` finds
+#: "cookies," and `word: "Smellitzer"` finds "Smellitzer.". Only the ENDS: an apostrophe
+#: inside "don't" is part of the word.
+WORD_TRIM = " \t\n\"'`.,!?;:()[]{}<>-—–‘’“”…"
 
 #: Animation durations, in seconds. Named so a number only ever has one spelling in this file.
 POP_DUR = 0.35
@@ -184,6 +217,7 @@ ENTER_HOW_BY_TYPE = {
     "label": {"pop", "fade", "slide-left", "slide-right"},
     "tag": {"pop", "fade", "drop"},
     "arrow": {"draw", "fade"},
+    "squiggle": {"draw", "fade"},
     "box": {"pop", "fade", "box"},
     "figure": {"pop", "fade"},  # stand/point only; walk does not use `enter`
 }
@@ -191,6 +225,17 @@ ENTER_HOW_BY_TYPE = {
 TONE_COLORS = {"low": "#2E7D46", "mid": "#D98F1E", "high": "#C1443C"}
 
 FIG_W, FIG_H = 120, 170
+
+#: The scent line. `amplitude` is a fraction of the frame WIDTH (the same unit every other
+#: size in this module uses for a horizontal measure) and is capped well below a quarter of
+#: the frame: past that the "squiggle" is a loop, not a wisp of smell.
+SQUIGGLE_AMPLITUDE = 0.02
+SQUIGGLE_AMPLITUDE_MAX = 0.1
+SQUIGGLE_WAVES = 3
+#: Line segments per squiggle. 60 puts a vertex every ~6 px on a frame-tall line, which is
+#: smaller than the 10 px stroke -- i.e. the polyline reads as a curve. Fixed, so the path a
+#: spec renders twice is the same path twice.
+SQUIGGLE_SAMPLES = 60
 
 
 # --------------------------------------------------------------------------------------------
@@ -211,18 +256,76 @@ def _point(el, key, tag):
     return (float(x), float(y))
 
 
+def is_wordref(value):
+    """Is this value a time written as a WORD rather than as a number?
+
+    One rule, used by the validators and by `resolve_times` alike, so "a bare mapping
+    carrying `word`" means exactly the same thing in both: a mapping with a `word` key.
+    """
+    return isinstance(value, dict) and "word" in value
+
+
+def _check_wordref(ref, tag, key):
+    """Raise unless `ref` is a usable word reference. Returns nothing; see `resolve_times`.
+
+    Unknown keys are refused by name rather than ignored (the only place in this module that
+    does): `offest: -0.05` would otherwise shift an element by nothing at all, and a word-timed
+    pop that is 50 ms late is exactly the defect these mappings exist to remove.
+    """
+    unknown = set(ref) - set(WORDREF_KEYS)
+    if unknown:
+        raise ValueError(f"{tag}: unknown {key} key(s) {', '.join(sorted(unknown))}; "
+                         f"known: {', '.join(WORDREF_KEYS)}")
+    if not isinstance(ref.get("word"), str) or not ref["word"].strip():
+        raise ValueError(f"{tag}: {key}.word must be a non-empty string")
+    nth = ref.get("nth", 1)
+    if not isinstance(nth, int) or isinstance(nth, bool) or nth < 1:
+        raise ValueError(f"{tag}: {key}.nth must be a positive integer (1 is the first time "
+                         f"the narration says the word), got {nth!r}")
+    edge = ref.get("edge", "start")
+    if edge not in WORD_EDGES:
+        raise ValueError(f"{tag}: {key}.edge must be one of {', '.join(WORD_EDGES)}, "
+                         f"got {edge!r}")
+    if not _num(ref.get("offset", 0.0)):
+        raise ValueError(f"{tag}: {key}.offset must be a number of seconds")
+
+
+def _check_time(value, tag, key):
+    """Raise unless `value` is a non-negative number OR a word reference.
+
+    Every time in a scene goes through this, so the two spellings cannot drift apart: a type
+    that accepts `t0: 0.4` accepts `t0: {word: "patent"}`, and nothing but this function
+    decides that.
+    """
+    if is_wordref(value):
+        _check_wordref(value, tag, key)
+        return
+    if not _num(value) or value < 0:
+        raise ValueError(f"{tag}: {key} must be a non-negative number of seconds, or a word "
+                         f"reference like {{word: \"cookies\"}}, got {value!r}")
+
+
 def _enter(el, tag, allowed_how):
     enter = el.get("enter")
     if enter is None:
         return None
     if not isinstance(enter, dict):
         raise ValueError(f"{tag}: 'enter' must be a mapping with 't' and 'how'")
-    t0, how = enter.get("t"), enter.get("how")
-    if not _num(t0) or t0 < 0:
-        raise ValueError(f"{tag}: enter.t must be a non-negative number")
+    how = enter.get("how")
     if how not in allowed_how:
         raise ValueError(f"{tag}: enter.how must be one of {sorted(allowed_how)}, got {how!r}")
-    return {"t": float(t0), "how": how}
+    # `when:` is the word-reference spelling of `t:` -- nothing but the key name differs, and
+    # `resolve_times` folds it back onto `t` before anything renders. Both are accepted here
+    # (and a word reference under `t:` too) so the schema has one answer to "may this be a
+    # word?": yes, everywhere.
+    if "when" in enter:
+        if "t" in enter:
+            raise ValueError(f"{tag}: enter carries both 't' and 'when', which are two "
+                             f"spellings of the same time. Keep one.")
+        _check_time(enter["when"], tag, "enter.when")
+        return {"t": enter["when"], "how": how}
+    _check_time(enter.get("t"), tag, "enter.t")
+    return {"t": enter["t"], "how": how}
 
 
 def _sfx(el, tag):
@@ -274,6 +377,22 @@ def _validate_box(el, tag):
     _enter(el, tag, ENTER_HOW_BY_TYPE["box"])
 
 
+def _validate_squiggle(el, tag):
+    _point(el, "from", tag)
+    _point(el, "to", tag)
+    amplitude = el.get("amplitude", SQUIGGLE_AMPLITUDE)
+    if not _num(amplitude) or not (0 <= amplitude <= SQUIGGLE_AMPLITUDE_MAX):
+        raise ValueError(f"{tag}: squiggle 'amplitude' must be a number in "
+                         f"[0, {SQUIGGLE_AMPLITUDE_MAX}] (a fraction of the frame width), "
+                         f"got {amplitude!r}")
+    waves = el.get("waves", SQUIGGLE_WAVES)
+    if not isinstance(waves, int) or isinstance(waves, bool) or waves < 1:
+        raise ValueError(f"{tag}: squiggle 'waves' must be a positive integer -- a whole "
+                         f"number of waves is what lands both ends of the path on 'from' and "
+                         f"'to' -- got {waves!r}")
+    _enter(el, tag, ENTER_HOW_BY_TYPE["squiggle"])
+
+
 def _validate_figure(el, tag):
     pose = el.get("pose")
     if pose not in ("stand", "point", "walk"):
@@ -282,9 +401,11 @@ def _validate_figure(el, tag):
         _point(el, "from", tag)
         _point(el, "to", tag)
         t0, t1 = el.get("t0"), el.get("t1")
-        if not _num(t0) or t0 < 0:
-            raise ValueError(f"{tag}: figure walk 't0' must be a non-negative number")
-        if not _num(t1) or t1 <= t0:
+        _check_time(t0, tag, "figure walk 't0'")
+        _check_time(t1, tag, "figure walk 't1'")
+        # Only when BOTH are numbers: a word-referenced pair cannot be ordered until
+        # `resolve_times` has the narration, and it re-checks this once they are floats.
+        if _num(t0) and _num(t1) and t1 <= t0:
             raise ValueError(f"{tag}: figure walk 't1' must be a number greater than t0")
     else:
         _point(el, "at", tag)
@@ -314,15 +435,13 @@ def _validate_calendar(el, tag):
     step = el.get("step")
     if not _num(step) or step <= 0:
         raise ValueError(f"{tag}: calendar 'step' must be a positive number")
-    t0 = el.get("t0", 0.0)
-    if not _num(t0) or t0 < 0:
-        raise ValueError(f"{tag}: calendar 't0' must be a non-negative number")
+    _check_time(el.get("t0", 0.0), tag, "calendar 't0'")
 
 
 _VALIDATORS = {
     "emoji": _validate_emoji, "label": _validate_label, "tag": _validate_tag,
-    "arrow": _validate_arrow, "box": _validate_box, "figure": _validate_figure,
-    "calendar": _validate_calendar,
+    "arrow": _validate_arrow, "squiggle": _validate_squiggle, "box": _validate_box,
+    "figure": _validate_figure, "calendar": _validate_calendar,
 }
 
 
@@ -395,6 +514,115 @@ def seek_delay(t_event, frame_t):
     return round(float(t_event) - float(frame_t), 6)
 
 
+def normalise_word(text):
+    """A spoken word as `resolve_times` matches it: lower-cased, end punctuation stripped.
+
+    "Smellitzer." -> `smellitzer`, "cookies," -> `cookies`, "don't" -> `don't`. The same
+    function normalises BOTH sides of the comparison, so a spec may write the word with its
+    punctuation attached and still match.
+    """
+    return str(text or "").strip().strip(WORD_TRIM).lower()
+
+
+def word_rows(words):
+    """`captions.read_words()` output -> [(normalised text, start, end)] for usable entries.
+
+    `None` (no words.json, or a provider that returned no alignment) and a list with
+    unusable rows in it both come back as the rows that ARE usable, so the caller's error
+    message can show what the narration actually gave it.
+    """
+    rows = []
+    for raw in words or ():
+        if isinstance(raw, dict):
+            text, start, end = raw.get("text"), raw.get("start"), raw.get("end")
+        else:
+            text = getattr(raw, "text", None)
+            start, end = getattr(raw, "start", None), getattr(raw, "end", None)
+        word = normalise_word(text)
+        if not word:
+            continue
+        try:
+            start, end = float(start), float(end)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(start) and math.isfinite(end)):
+            continue
+        rows.append((word, start, max(start, end)))
+    return rows
+
+
+def resolve_time(value, rows, tag, key):
+    """One time -- a number or a word reference -- as a float of scene-local seconds.
+
+    A number passes through untouched (`float()` and nothing else), which is what keeps every
+    spec written before word references rendering the same frames. A word reference is looked
+    up in `rows` (`word_rows()` of the scene's own words.json): `nth` occurrence, `edge` end,
+    plus `offset`, clamped at 0 because a scene has no frames before its first one.
+
+    An unresolvable word raises ValueError naming the word, the nth it asked for, and every
+    word the scene actually says -- the three things needed to fix the spec, since the usual
+    cause is a word the narration spells differently (or a nth past how often it is said).
+    """
+    if not is_wordref(value):
+        return float(value)
+    want = normalise_word(value["word"])
+    nth = int(value.get("nth", 1))
+    edge = value.get("edge", "start")
+    hits = [row for row in rows if row[0] == want]
+    if len(hits) < nth:
+        spoken = " ".join(row[0] for row in rows)
+        raise ValueError(
+            f"{tag}: {key} asks for occurrence {nth} of the word {value['word']!r} and this "
+            f"scene's narration says it {len(hits)} time(s). The scene's words are: "
+            + (spoken if spoken else "(none -- this scene has no word timings; narrate.py "
+                                     "writes scene_NN.words.json beside the WAV)"))
+    _word, start, end = hits[nth - 1]
+    at = (end if edge == "end" else start) + float(value.get("offset", 0.0))
+    return round(max(0.0, at), 4)
+
+
+def resolve_times(scene, words):
+    """A deep copy of `scene` with every word-referenced time replaced by a float.
+
+    This is the join between the picture and the voice: `words` is what
+    `captions.read_words(wav)` returns for THIS scene, whose times are already against the
+    finished WAV, and frame 0 of the scene is t=0 of that WAV -- so a resolved time is
+    directly a scene-local second, with no offset arithmetic anywhere.
+
+    Deep-copied rather than edited in place: the scene dict belongs to the caller's parsed
+    spec, and make_short.py validates the spec's own (unresolved) scenes at preflight, which
+    a mutated scene would have made a different question the second time it was asked.
+
+    Every time the schema has goes through it -- `enter.t` / `enter.when`, a figure walk's
+    `t0`/`t1`, a calendar's `t0` -- and `enter.when` is folded onto `enter.t`, so the HTML
+    builders below never learn that word references exist.
+    """
+    out = copy.deepcopy(scene)
+    rows = word_rows(words)
+    for index, el in enumerate(out.get("elements") or []):
+        etag = f"element {index} ({el.get('type')})" if isinstance(el, dict) else f"element {index}"
+        if not isinstance(el, dict):
+            continue
+        enter = el.get("enter")
+        if isinstance(enter, dict):
+            if "when" in enter:
+                enter["t"] = resolve_time(enter.pop("when"), rows, etag, "enter.when")
+            elif "t" in enter:
+                enter["t"] = resolve_time(enter["t"], rows, etag, "enter.t")
+        for key in ("t0", "t1"):
+            if key in el:
+                el[key] = resolve_time(el[key], rows, etag, key)
+        # Re-checked here and not only in `_validate_figure`: a word-referenced pair cannot be
+        # ordered before the narration is known, and a walk whose t1 landed on or before its
+        # t0 is a negative CSS animation duration -- which renders as no walk at all.
+        if el.get("type") == "figure" and el.get("pose") == "walk" and el["t1"] <= el["t0"]:
+            raise ValueError(
+                f"{etag}: the walk resolves to t0={el['t0']:.4f}s and t1={el['t1']:.4f}s, "
+                f"so it would have no duration. The words these came from are said in the "
+                f"other order, or are the same word.")
+    return out
+
+
 def calendar_cell_times(t0, step, n):
     """Absolute scene time each of `n` calendar cells starts popping in: one every `step`
     seconds from `t0`. Pure arithmetic; both the CSS delay and events.json read this."""
@@ -403,6 +631,9 @@ def calendar_cell_times(t0, step, n):
 
 def scene_events(scene):
     """[{t, sfx}] for one scene, absolute (scene-local) time, sorted by t.
+
+    Takes a RESOLVED scene (see `resolve_times`): every time it reads is a number, because a
+    word reference has no absolute seconds to put in an event row.
 
     One row per element that carries an `sfx` (or, for `calendar`, one row per CELL that
     resolves an `sfx` -- its own, or the calendar element's as a default). See
@@ -579,6 +810,50 @@ def _arrow_html(el, idx):
     return frag, ""
 
 
+def squiggle_points(p_from, p_to, amplitude=SQUIGGLE_AMPLITUDE, waves=SQUIGGLE_WAVES,
+                    samples=SQUIGGLE_SAMPLES, width=W, height=H):
+    """The on-frame pixel points of a wavy path from `p_from` to `p_to`. Pure.
+
+    A sine of `waves` whole cycles, `amplitude * width` px at the peak, measured along the
+    NORMAL to the from->to chord rather than along y -- so a vertical scent line waves
+    sideways and a diagonal one waves across itself, both the same way. An integer `waves`
+    puts the first and last sample exactly on the two endpoints (sin 0 = sin 2(pi)n = 0),
+    which is what `_validate_squiggle` is enforcing when it refuses a float.
+    """
+    x0, y0 = float(p_from[0]) * width, float(p_from[1]) * height
+    x1, y1 = float(p_to[0]) * width, float(p_to[1]) * height
+    dx, dy = x1 - x0, y1 - y0
+    span = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / span, dx / span
+    amp = float(amplitude) * width
+    points = []
+    for i in range(int(samples) + 1):
+        s = i / float(samples)
+        off = amp * math.sin(2 * math.pi * int(waves) * s)
+        points.append((round(x0 + dx * s + nx * off, 2), round(y0 + dy * s + ny * off, 2)))
+    return points
+
+
+def _squiggle_html(el, idx):
+    points = squiggle_points(el["from"], el["to"],
+                             el.get("amplitude", SQUIGGLE_AMPLITUDE),
+                             el.get("waves", SQUIGGLE_WAVES))
+    head, *rest = points
+    d = f"M{head[0]:.2f},{head[1]:.2f} " + " ".join(f"L{x:.2f},{y:.2f}" for x, y in rest)
+    style, data, cls = _enter_parts(el.get("enter"))
+    # `pathLength="1"` + `stroke-dasharray:1` is `arrow`'s mechanism verbatim: the dash maths
+    # is normalised to the path's own length, so a 60-segment sine reveals end to end at a
+    # constant rate without anything here knowing how long the curve actually is. No marker:
+    # a scent line has no arrowhead (and the arrowhead was the one thing on `arrow` that
+    # needed its own animation to stay hidden).
+    frag = (f'<svg class="arrow-svg" id="{_el_id(idx)}" width="{W}" height="{H}" '
+            f'viewBox="0 0 {W} {H}">'
+            f'<path class="{cls.strip()}" pathLength="1" d="{d}" stroke="#1A1A1A" '
+            f'stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" '
+            f'style="stroke-dasharray:1;{style}"{data}/></svg>')
+    return frag, ""
+
+
 def _figure_pose_svg(pose):
     head = '<circle cx="60" cy="22" r="20"/>'
     torso = '<line x1="60" y1="42" x2="60" y2="115"/>'
@@ -728,7 +1003,8 @@ def _calendar_html(el, idx):
 
 _BUILDERS = {
     "emoji": _emoji_html, "label": _label_html, "tag": _tag_html, "arrow": _arrow_html,
-    "figure": _figure_html, "box": _box_html, "calendar": _calendar_html,
+    "squiggle": _squiggle_html, "figure": _figure_html, "box": _box_html,
+    "calendar": _calendar_html,
 }
 
 

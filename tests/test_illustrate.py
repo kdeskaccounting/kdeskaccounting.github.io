@@ -9,6 +9,7 @@ no render venv required. The actual rendering path (scene -> PNG sequence -> mp4
 hand against marketing/video/illustration-demo/scenes.yaml, not by a test here, because it
 needs the render venv and a real headless Chrome.
 """
+import copy
 import pathlib
 
 import pytest
@@ -564,3 +565,284 @@ class TestSafeWidth:
         cell, gap = I.calendar_geometry(7)
         assert cell < I.CAL_CELL_W * I.W
         assert 7 * cell + 6 * gap <= I.W * I.SAFE_W + 1e-6
+
+
+# --------------------------------------------------------------------------------------------
+# Times written as WORDS: `resolve_times` against a scene's own words.json
+# --------------------------------------------------------------------------------------------
+
+#: One scene's narration as narrate.py writes it beside the WAV (captions.read_words shape):
+#: "Main Street smells like fresh cookies for a reason, and the reason has a patent."
+WORDS = [
+    {"text": "Main", "start": 0.30, "end": 0.52},
+    {"text": "Street", "start": 0.52, "end": 0.90},
+    {"text": "smells", "start": 0.90, "end": 1.26},
+    {"text": "like", "start": 1.26, "end": 1.44},
+    {"text": "fresh", "start": 1.44, "end": 1.78},
+    {"text": "cookies", "start": 1.78, "end": 2.31},
+    {"text": "for", "start": 2.31, "end": 2.45},
+    {"text": "a", "start": 2.45, "end": 2.52},
+    {"text": "reason,", "start": 2.52, "end": 3.04},
+    {"text": "and", "start": 3.20, "end": 3.38},
+    {"text": "the", "start": 3.38, "end": 3.49},
+    {"text": "reason", "start": 3.49, "end": 3.95},
+    {"text": "has", "start": 3.95, "end": 4.18},
+    {"text": "a", "start": 4.18, "end": 4.26},
+    {"text": "patent.", "start": 4.26, "end": 4.90},
+]
+
+
+def _emoji(**over):
+    el = {"type": "emoji", "glyph": "\U0001F36A", "at": [0.5, 0.4]}
+    el.update(over)
+    return el
+
+
+class TestResolveTimes:
+    def test_a_number_passes_through_untouched(self):
+        scene = _scene(elements=[_emoji(enter={"t": 0.4, "how": "pop"})])
+        out = I.resolve_times(scene, WORDS)
+        assert out["elements"][0]["enter"] == {"t": 0.4, "how": "pop"}
+
+    def test_a_scene_with_no_word_reference_resolves_without_any_words(self):
+        scene = _scene(elements=[_emoji(enter={"t": 0.4, "how": "pop"})])
+        assert I.resolve_times(scene, None) == scene
+
+    def test_when_resolves_to_the_words_start_and_folds_onto_t(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "cookies"}, "how": "pop"})])
+        out = I.resolve_times(scene, WORDS)
+        assert out["elements"][0]["enter"] == {"t": 1.78, "how": "pop"}
+        assert "when" not in out["elements"][0]["enter"]
+
+    def test_edge_end_resolves_to_the_words_end(self):
+        scene = _scene(elements=[
+            _emoji(enter={"when": {"word": "cookies", "edge": "end"}, "how": "pop"})])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["enter"]["t"] == 2.31
+
+    def test_an_offset_shifts_the_resolved_time(self):
+        scene = _scene(elements=[
+            _emoji(enter={"when": {"word": "cookies", "offset": -0.05}, "how": "pop"})])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["enter"]["t"] == pytest.approx(1.73)
+
+    def test_an_offset_cannot_push_a_time_before_the_first_frame(self):
+        scene = _scene(elements=[
+            _emoji(enter={"when": {"word": "Main", "offset": -2.0}, "how": "pop"})])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["enter"]["t"] == 0.0
+
+    def test_nth_picks_which_occurrence(self):
+        first = _scene(elements=[_emoji(enter={"when": {"word": "reason"}, "how": "pop"})])
+        second = _scene(elements=[
+            _emoji(enter={"when": {"word": "reason", "nth": 2}, "how": "pop"})])
+        assert I.resolve_times(first, WORDS)["elements"][0]["enter"]["t"] == 2.52
+        assert I.resolve_times(second, WORDS)["elements"][0]["enter"]["t"] == 3.49
+
+    def test_punctuation_is_stripped_from_both_sides_of_the_match(self):
+        """`reason,` in the narration and `patent.` with its full stop both match the bare
+        word, and a spec that writes the punctuation in matches too."""
+        bare = _scene(elements=[_emoji(enter={"when": {"word": "patent"}, "how": "pop"})])
+        written = _scene(elements=[_emoji(enter={"when": {"word": "Patent."}, "how": "pop"})])
+        assert I.resolve_times(bare, WORDS)["elements"][0]["enter"]["t"] == 4.26
+        assert I.resolve_times(written, WORDS)["elements"][0]["enter"]["t"] == 4.26
+
+    def test_the_match_is_case_insensitive(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "MAIN"}, "how": "pop"})])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["enter"]["t"] == 0.30
+
+    def test_a_bare_mapping_under_t_is_the_same_thing(self):
+        scene = _scene(elements=[
+            _emoji(enter={"t": {"word": "cookies"}, "how": "pop"})])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["enter"]["t"] == 1.78
+
+    def test_a_figure_walk_resolves_both_ends(self):
+        scene = _scene(elements=[
+            {"type": "figure", "pose": "walk", "from": [0.1, 0.8], "to": [0.6, 0.8],
+             "t0": {"word": "Main"}, "t1": {"word": "cookies", "edge": "end"}}])
+        el = I.resolve_times(scene, WORDS)["elements"][0]
+        assert (el["t0"], el["t1"]) == (0.30, 2.31)
+
+    def test_a_calendar_t0_resolves(self):
+        scene = _scene(elements=[
+            {"type": "calendar", "at": [0.5, 0.5], "cols": 2, "step": 0.3,
+             "t0": {"word": "reason", "nth": 2},
+             "cells": [{"label": "Mon", "value": "$1", "tone": "low"},
+                       {"label": "Tue", "value": "$2", "tone": "mid"}]}])
+        assert I.resolve_times(scene, WORDS)["elements"][0]["t0"] == 3.49
+
+    def test_the_spec_the_caller_handed_in_is_never_mutated(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "cookies"}, "how": "pop"})])
+        before = copy.deepcopy(scene)
+        I.resolve_times(scene, WORDS)
+        assert scene == before
+
+    def test_a_resolved_scene_validates_and_renders(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "cookies"}, "how": "pop"},
+                                        sfx="pop")])
+        out = I.resolve_times(scene, WORDS)
+        I.validate_spec({"scenes": [out]})
+        assert 'data-t0="1.7800"' in I.scene_html(out)
+        assert I.scene_events(out) == [{"t": 1.78, "sfx": "pop"}]
+
+    def test_an_unknown_word_names_the_word_the_nth_and_the_scenes_own_words(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "smellitzer"}, "how": "pop"})])
+        with pytest.raises(ValueError) as excinfo:
+            I.resolve_times(scene, WORDS)
+        message = str(excinfo.value)
+        assert "smellitzer" in message
+        assert "occurrence 1" in message
+        assert "cookies" in message and "patent" in message
+
+    def test_an_nth_past_the_last_occurrence_is_refused(self):
+        scene = _scene(elements=[
+            _emoji(enter={"when": {"word": "reason", "nth": 3}, "how": "pop"})])
+        with pytest.raises(ValueError) as excinfo:
+            I.resolve_times(scene, WORDS)
+        assert "occurrence 3" in str(excinfo.value)
+        assert "says it 2 time(s)" in str(excinfo.value)
+
+    def test_a_scene_with_no_word_timings_at_all_says_so(self):
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "cookies"}, "how": "pop"})])
+        with pytest.raises(ValueError) as excinfo:
+            I.resolve_times(scene, None)
+        assert "words.json" in str(excinfo.value)
+
+    def test_unusable_word_rows_are_skipped_rather_than_crashing(self):
+        words = [{"text": "cookies", "start": None, "end": 1.0},
+                 {"text": "", "start": 0.0, "end": 0.1},
+                 {"text": "cookies", "start": 2.0, "end": 2.5}]
+        scene = _scene(elements=[_emoji(enter={"when": {"word": "cookies"}, "how": "pop"})])
+        assert I.resolve_times(scene, words)["elements"][0]["enter"]["t"] == 2.0
+
+    def test_a_walk_whose_words_resolve_backwards_is_refused(self):
+        scene = _scene(elements=[
+            {"type": "figure", "pose": "walk", "from": [0.1, 0.8], "to": [0.6, 0.8],
+             "t0": {"word": "patent"}, "t1": {"word": "Main"}}])
+        with pytest.raises(ValueError, match="no duration"):
+            I.resolve_times(scene, WORDS)
+
+
+class TestWordReferenceValidation:
+    def test_a_word_reference_is_accepted_everywhere_a_number_is(self):
+        I.validate_spec(_spec(
+            {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+             "enter": {"when": {"word": "cookies", "nth": 1, "offset": -0.05,
+                                "edge": "start"}, "how": "pop"}},
+            {"type": "figure", "pose": "walk", "from": [0.1, 0.8], "to": [0.6, 0.8],
+             "t0": {"word": "Main"}, "t1": {"word": "patent"}},
+            {"type": "calendar", "at": [0.5, 0.5], "cols": 2, "step": 0.3,
+             "t0": {"word": "reason"},
+             "cells": [{"label": "Mon", "value": "$1", "tone": "low"},
+                       {"label": "Tue", "value": "$2", "tone": "mid"}]},
+        ))
+
+    def test_a_word_reference_with_no_word_is_refused(self):
+        with pytest.raises(ValueError, match="word"):
+            I.validate_spec(_spec(
+                {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                 "enter": {"when": {"nth": 2}, "how": "pop"}}))
+
+    def test_a_misspelled_word_reference_key_is_refused_by_name(self):
+        with pytest.raises(ValueError, match="offest"):
+            I.validate_spec(_spec(
+                {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                 "enter": {"when": {"word": "cookies", "offest": -0.05}, "how": "pop"}}))
+
+    def test_a_zero_or_negative_nth_is_refused(self):
+        with pytest.raises(ValueError, match="nth"):
+            I.validate_spec(_spec(
+                {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                 "enter": {"when": {"word": "cookies", "nth": 0}, "how": "pop"}}))
+
+    def test_an_unknown_edge_is_refused_by_name(self):
+        with pytest.raises(ValueError, match="edge"):
+            I.validate_spec(_spec(
+                {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                 "enter": {"when": {"word": "cookies", "edge": "middle"}, "how": "pop"}}))
+
+    def test_both_t_and_when_on_one_enter_is_refused(self):
+        with pytest.raises(ValueError, match="two"):
+            I.validate_spec(_spec(
+                {"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                 "enter": {"t": 0.2, "when": {"word": "cookies"}, "how": "pop"}}))
+
+    def test_a_walk_whose_times_are_words_is_not_ordered_at_validation(self):
+        """t1 > t0 cannot be checked before the narration is known; resolve_times does it."""
+        I.validate_spec(_spec(
+            {"type": "figure", "pose": "walk", "from": [0.1, 0.8], "to": [0.6, 0.8],
+             "t0": {"word": "patent"}, "t1": {"word": "Main"}}))
+
+
+# --------------------------------------------------------------------------------------------
+# squiggle: the scent line
+# --------------------------------------------------------------------------------------------
+
+class TestSquiggle:
+    def test_it_is_an_element_type(self):
+        assert "squiggle" in I.ELEMENT_TYPES
+
+    def test_a_minimal_squiggle_validates(self):
+        I.validate_spec(_spec({"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3]}))
+
+    def test_every_knob_validates(self):
+        I.validate_spec(_spec(
+            {"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3], "amplitude": 0.04,
+             "waves": 5, "enter": {"when": {"word": "smells"}, "how": "draw"}, "sfx": "whoosh"}))
+
+    def test_an_amplitude_past_the_cap_is_refused(self):
+        with pytest.raises(ValueError, match="amplitude"):
+            I.validate_spec(_spec({"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3],
+                                   "amplitude": 0.4}))
+
+    def test_a_fractional_wave_count_is_refused_because_the_ends_would_not_meet(self):
+        with pytest.raises(ValueError, match="waves"):
+            I.validate_spec(_spec({"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3],
+                                   "waves": 2.5}))
+
+    def test_a_pop_enter_is_refused_it_draws_or_fades(self):
+        with pytest.raises(ValueError, match="how"):
+            I.validate_spec(_spec({"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3],
+                                   "enter": {"t": 0.2, "how": "pop"}}))
+
+    def test_it_renders_a_path_with_the_pathlength_dash_mechanism(self):
+        frag, css = I.render_element(
+            {"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3],
+             "enter": {"t": 0.4, "how": "draw"}}, 2)
+        assert "<path" in frag
+        assert 'pathLength="1"' in frag
+        assert "stroke-dasharray:1" in frag
+        assert "kf-draw" in frag
+        assert 'data-t0="0.4000"' in frag
+        assert css == ""
+
+    def test_it_carries_no_arrowhead(self):
+        frag, _ = I.render_element({"type": "squiggle", "from": [0, 0], "to": [1, 1]}, 0)
+        assert "marker" not in frag
+
+    def test_both_ends_of_the_path_land_on_from_and_to(self):
+        points = I.squiggle_points([0.2, 0.8], [0.7, 0.2])
+        assert points[0] == (pytest.approx(0.2 * I.W), pytest.approx(0.8 * I.H))
+        assert points[-1] == (pytest.approx(0.7 * I.W), pytest.approx(0.2 * I.H))
+
+    def test_the_wave_peaks_at_the_amplitude_measured_off_the_chord(self):
+        """A vertical chord waves sideways by amplitude * W, never along its own direction."""
+        points = I.squiggle_points([0.5, 0.9], [0.5, 0.1], amplitude=0.03, waves=1)
+        xs = [x for x, _y in points]
+        assert max(xs) == pytest.approx(0.5 * I.W + 0.03 * I.W, abs=1.0)
+        assert min(xs) == pytest.approx(0.5 * I.W - 0.03 * I.W, abs=1.0)
+
+    def test_the_point_count_is_fixed_so_two_renders_are_the_same_path(self):
+        a = I.squiggle_points([0.1, 0.1], [0.9, 0.9])
+        b = I.squiggle_points([0.1, 0.1], [0.9, 0.9])
+        assert a == b
+        assert len(a) == I.SQUIGGLE_SAMPLES + 1
+
+    def test_its_sfx_fires_when_the_line_finishes_drawing(self):
+        scene = _scene(elements=[
+            {"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3],
+             "enter": {"t": 1.0, "how": "draw"}, "sfx": "whoosh"}])
+        assert I.scene_events(scene) == [{"t": round(1.0 + I.DRAW_DUR, 4), "sfx": "whoosh"}]
+
+    def test_a_scene_of_squiggles_renders_a_whole_page(self):
+        doc = I.scene_html(_scene(elements=[
+            {"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3]},
+            {"type": "squiggle", "from": [0.3, 0.6], "to": [0.3, 0.3], "waves": 4}]))
+        assert doc.count('pathLength="1"') == 2
