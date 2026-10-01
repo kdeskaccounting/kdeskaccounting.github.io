@@ -267,6 +267,58 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # committed; marketing/video/media-demo/assets/generate.py remakes them.
 scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/video/media-demo/scenes.yaml
 
+# The `illustration` scene kind (2026-10-01) — an illustrated, ANIMATED scene drawn from a list
+# of elements: stick figures, emoji that pop on the word being said, arrows and scent-line
+# squiggles that draw themselves, price tags that drop, a calendar that fills a square a beat.
+# scripts/video/illustrate.py renders the picture (one self-contained HTML page per scene with
+# every animation authored as a PAUSED CSS @keyframes, screenshotted once per frame after a
+# `window.seek(t)` — frame-exact and deterministic, see that module's docstring); make_short
+# owns everything else, which is the whole point of it being a scene kind: narration, the scene
+# pad, word-timed captions, the join, the ducked mix and cuts.json all behave exactly as they do
+# for a card or a media scene.
+#   - kind: illustration
+#     narration: "Main Street smells like fresh cookies, and the smell is on purpose."
+#     bg: "#F7F3EA"         # required, hex: the paper-coloured ground
+#     elements:             # required, non-empty
+#       - type: label
+#         text: "MAIN STREET"
+#         at: [0.5, 0.36]   # [x, y] FRACTIONS of the 1080x1920 frame, (0,0) top-left
+#         enter: {t: 0.0, how: slide-left}
+#       - type: squiggle    # the scent line: a sine around the from->to chord, no arrowhead
+#         from: [0.5, 0.62]
+#         to: [0.5, 0.46]
+#         enter: {when: {word: "smells"}, how: draw}
+#         sfx: whoosh       # pop | chime | hit | whoosh -> audio.sfx.events, see SOUND below
+#       - type: emoji
+#         glyph: "🍪"
+#         at: [0.5, 0.68]
+#         enter: {when: {word: "cookies", offset: -0.05}, how: pop}
+#         sfx: pop
+#       - type: figure
+#         pose: walk        # stand | point | walk
+#         from: [0.12, 0.88]
+#         to: [0.62, 0.88]
+#         t0: {word: "Main"}
+#         t1: {word: "cookies", edge: end}
+# TIMES MAY BE WORDS. Anywhere a scene takes seconds — `enter.t` (spelled `enter.when` for the
+# mapping form), a figure walk's `t0`/`t1`, a calendar's `t0` — it may take
+# `{word, nth, offset, edge}` instead: matched against the scene's own `scene_NN.words.json`
+# case-insensitively with end punctuation stripped (so `patent` finds "patent."), `nth` picking
+# the occurrence (default 1), `edge` the word's `start` (default) or `end`. An unresolvable word
+# refuses the render naming the word, the nth and every word the scene says. `illustrate.resolve_times`
+# does it; the number form is untouched, so a hand-timed spec renders the same frames.
+# NO `seconds:` — the scene is as long as its narration plus the pad, like every other kind, and
+# a `seconds:` an author wrote is announced as ignored. No `beats:`/`steps:` either: the ELEMENTS
+# are the pictures, and `make_short.illustration_spans` turns their distinct entry times (a
+# calendar enters once per CELL) into the `beats` row of cuts.json, deduplicated by frame.
+# The frames come off illustrate at exactly the delivered 1080x1920, so the part carries no
+# zoompan and no scale — the motion is in the frames — and `-r 30` is pinned BEFORE the input or
+# an image2 sequence is read at 25 and the scene runs 20% long against its own WAV. Captions are
+# NOT skipped on such a scene: keep the elements below ~0.33 of the frame height and use
+# `captions: {position: top}`, and consider `ink`/`stroke` (see captions below), because white
+# on near-black is the wrong way round over paper-coloured ground.
+# The elements' `sfx:` are wired to the mix through `audio.sfx.events:` — see SOUND, below.
+
 # How two parts MEET, and how much silence sits in the join (2026-09-18). All three keys are
 # OPTIONAL and every existing spec — and every golden — renders byte-identically without them.
 #   transitions:            # optional; absent == {join: fade}, today's 0.3 s dips to black
@@ -320,6 +372,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #       gain_db: -6
 #       lead: 0.20          # start this far before the boundary so it peaks on it
 #       beats: 3            # whooshes land on the 2 boundaries between 3 beats, not on cuts
+#       events:             # optional (2026-10-01); the ELEMENT sounds of an illustration
+#         pop: media/audio/mixkit-pop-xxxx.wav        # scene — one file per ROLE, and the
+#         hit: {src: media/audio/hit.wav, gain_db: -12}   # SCENES decide when each fires.
+#         chime: media/audio/chime.wav                # Roles are the four an element's own
+#         whoosh: media/audio/whoosh.wav              # `sfx:` may name; unknown ones refuse.
 #     master: {lufs: -16, tp: -1.5, lra: 11}
 # The whole mix rides the pass that already re-encodes the audio, so it costs almost nothing:
 # measured at 3.4 s for 43.6 s of output with `-c:v copy`. A mixed render also ships AAC at
@@ -397,6 +454,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #                           # it. `large` is 0.185 / 0.347 over two lines: 92.1 px -> 123.2 px.
 #     pop: 1.14             # scale the lit word; 1.0 (default) emits no extra CSS at all
 #     hook_seconds: 3.0     # cues starting before this take a 2-word / 14-char cap
+#     ink: "#1A1A1A"        # the unlit words' colour (default "#FFFFFF"), HEX ONLY
+#     stroke: "#F7F3EA"     # the outline behind every glyph (default "#0A0E14"), HEX ONLY
+#                           # The defaults ARE the literals caption_html used to carry inline,
+#                           # so a spec that asks for neither is byte-identical. Invert them
+#                           # over an illustration scene's paper-coloured ground.
 # --captions / --no-captions on make_short.py override the block either way.
 #
 # A cue is a PHRASE, not a sentence: <= 3 words and <= 20 characters, broken at a sentence end
