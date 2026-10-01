@@ -744,9 +744,9 @@ html,body{{margin:0;padding:0;width:{W}px;height:{H}px;overflow:hidden;
 .emoji-glyph{{font-family:'Apple Color Emoji','Segoe UI Emoji',sans-serif;line-height:1;display:block}}
 .label-text{{font-weight:800;letter-spacing:.01em;white-space:nowrap;color:#1A1A1A;display:block}}
 .tag{{position:relative;display:inline-flex;align-items:center;justify-content:center;
-  background:#E2574C;color:#fff;font-weight:800;border-radius:10px;padding:.3em .7em;
+  background:#E2574C;color:#fff;font-weight:800;border-radius:10px;padding:.3em .7em .3em 1.15em;
   clip-path:polygon(14% 0,100% 0,100% 100%,14% 100%,0 50%)}}
-.tag:after{{content:"";position:absolute;left:20%;top:50%;width:.16em;height:.16em;
+.tag:after{{content:"";position:absolute;left:.5em;top:50%;width:.16em;height:.16em;
   margin-top:-.08em;background:#fff;border-radius:50%}}
 .box-rect{{border-radius:28px;background:#1F3864}}
 .figure line{{stroke:#1A1A1A;stroke-width:9;stroke-linecap:round}}
@@ -1060,10 +1060,12 @@ def calendar_geometry(cols, width=W, safe=SAFE_W):
     return cell, gap
 
 
-#: How much of an em a tag's clip-path notch and its `.3em .7em` padding add around its text,
-#: as (extra width in em, total height in em). Read off `.tag` in SHARED_CSS: .7em of padding
-#: either side plus the 14% notch, and .3em of padding above and below one line.
-TAG_PAD_EM, TAG_H_EM = 1.6, 1.6
+#: How much of an em a tag's clip-path notch and its padding add around its text, as (extra
+#: width in em, total height in em). Read off `.tag` in SHARED_CSS: 1.15em of padding on the
+#: notched side (the punch-hole dot sits at .5em, inside that, so it can never land under the
+#: text -- Stephen, 2026-10-01: "little bullets ... overlap with the text"), .7em on the
+#: other, the 14% notch, and .3em above and below one line.
+TAG_PAD_EM, TAG_H_EM = 2.05, 1.6
 #: Half the sticker filter's reach, as a fraction of the frame width: the four white
 #: drop-shadows blur 2.5 px and the dark one is offset 10 px down with a 14 px blur, so an
 #: element's painted extent is a little larger than its box. Folded into every bbox below, so
