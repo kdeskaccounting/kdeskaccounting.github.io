@@ -895,3 +895,58 @@ def test_the_default_fraction_cap_is_still_the_module_constant():
     assert C.PLATE_MAX_WORD_CHARS == int(
         (C.PLATE_ASPECT * (1 - 2 * C.SAFE_X_FRAC))
         / (C.PLATE_HEADLINE_PX_FRAC * C.FONT_EM_PER_CHAR))
+
+
+# --- the caption's own two colours (`ink` / `stroke`) ---------------------------------------
+#
+# White on near-black is right over footage and over a dark card, and wrong over an
+# illustrated scene's paper-coloured ground (illustrate's #F7F3EA). Both are spec keys now;
+# both defaults are the literals caption_html used to carry inline, so the goldens stand.
+
+def test_the_defaults_are_white_type_on_the_near_black_outline():
+    assert (C.DEFAULT_INK, C.DEFAULT_STROKE) == ("#FFFFFF", "#0A0E14")
+    cfg = C.settings({"captions": {"enabled": True}})
+    assert (cfg.ink, cfg.stroke) == (C.DEFAULT_INK, C.DEFAULT_STROKE)
+
+
+def test_the_default_colours_emit_exactly_the_css_they_always_did():
+    """Golden guard: naming the two literals must not move a single byte of the default CSS."""
+    box = C.caption_box(1080, 1920)
+    asked = C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, box,
+                           ink=C.DEFAULT_INK, stroke=C.DEFAULT_STROKE)
+    silent = C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, box)
+    assert asked == silent
+    assert "color:#FFFFFF" in silent
+    assert "#0A0E14;paint-order:stroke fill" in silent
+
+
+def test_a_spec_may_invert_them_for_an_illustrated_short():
+    cfg = C.settings({"captions": {"enabled": True, "ink": "#1A1A1A",
+                                   "stroke": "#F7F3EA"}})
+    assert (cfg.ink, cfg.stroke) == ("#1A1A1A", "#F7F3EA")
+    doc = C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080,
+                         C.caption_box(1080, 1920), ink=cfg.ink, stroke=cfg.stroke)
+    assert "color:#1A1A1A" in doc
+    assert "#F7F3EA;paint-order:stroke fill" in doc
+    assert "#FFFFFF" not in doc and "#0A0E14" not in doc
+
+
+def test_the_lit_word_still_wins_over_the_ink():
+    doc = C.caption_html(_cue("MAGIC", "KINGDOM"), 1, "#ffe234", _tokens(), 1080,
+                         C.caption_box(1080, 1920), ink="#1A1A1A")
+    assert ".line{" in doc.replace(" ", "")
+    assert ".lit{color:#ffe234}" in doc
+
+
+@pytest.mark.parametrize("key", ["ink", "stroke"])
+def test_a_non_hex_colour_is_refused_because_it_lands_in_css_unescaped(key):
+    with pytest.raises(ValueError) as excinfo:
+        C.settings({"captions": {"enabled": True, key: "black; } body{display:none"}})
+    assert key in str(excinfo.value)
+
+
+@pytest.mark.parametrize("key", ["ink", "stroke"])
+def test_a_non_hex_colour_is_refused_at_the_html_too(key):
+    with pytest.raises(ValueError, match=key):
+        C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, C.caption_box(1080, 1920),
+                       **{key: "white"})

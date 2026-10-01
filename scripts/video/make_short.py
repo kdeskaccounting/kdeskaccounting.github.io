@@ -925,7 +925,8 @@ def render_captions(cues, cfg, brand, work, box):
     out = []
     for n, win in enumerate(captions.word_windows(cues)):
         doc = captions.caption_html(cues[win.cue], win.word, cfg.accent, brand, OUT_W, box,
-                                    pop=cfg.pop, size=cfg.size)
+                                    pop=cfg.pop, size=cfg.size, ink=cfg.ink,
+                                    stroke=cfg.stroke)
         hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
         png = work / f"cap_{n:04d}.png"
         R.screenshot(hp, png, OUT_W, band_h, transparent=True)
@@ -944,8 +945,8 @@ def caption_plan_json(cues, overlays, box, cfg):
 
     The settings are recorded beside the band because the band alone cannot say what drew
     it: `size` and `position` chose the geometry, `pop` and `hook_seconds` chose the type
-    and the phrasing, and a sidecar that named the PNGs without naming those could not tell
-    a `large` render from a `default` one. `band` is where the captions actually LANDED
+    and the phrasing, `ink` and `stroke` chose its two colours, and a sidecar that named the
+    PNGs without naming those could not tell a `large` render from a `default` one. `band` is where the captions actually LANDED
     (a full-frame card overrides `position` back to the top); `position` is what was asked.
     """
     rows = []
@@ -953,9 +954,9 @@ def caption_plan_json(cues, overlays, box, cfg):
         cue = cues[win.cue]
         rows.append({"start": round(start, 3), "end": round(end, 3), "text": cue.text,
                      "lit": cue.words[win.word].text, "png": pathlib.Path(png).name})
-    return {"band": list(box), "accent": cfg.accent, "position": cfg.position,
-            "size": cfg.size, "pop": cfg.pop, "hook_seconds": cfg.hook_seconds,
-            "windows": rows}
+    return {"band": list(box), "accent": cfg.accent, "ink": cfg.ink, "stroke": cfg.stroke,
+            "position": cfg.position, "size": cfg.size, "pop": cfg.pop,
+            "hook_seconds": cfg.hook_seconds, "windows": rows}
 
 
 def cut_plan_json(rows, join: str, total: float, extra_cuts=(), sfx=()) -> dict:

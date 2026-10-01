@@ -186,6 +186,15 @@ MIN_FONT_PX = 44.0
 #: The reference's yellow. Overridable per spec.
 DEFAULT_ACCENT = "#ffe234"
 
+#: The caption's own two colours: white type on a near-black outline, which is what keeps a
+#: word legible over bright footage and over a dark card alike. Overridable per spec, because
+#: an illustrated Short is drawn on paper-coloured ground (illustrate's #F7F3EA) where white
+#: type on near-black is the wrong way round for the picture. The DEFAULTS are exactly the
+#: literals caption_html carried inline before they were named, so every spec that does not
+#: ask for either renders the byte-identical PNG it has always rendered.
+DEFAULT_INK = "#FFFFFF"
+DEFAULT_STROKE = "#0A0E14"
+
 POSITIONS = ("top", "center", "lower")
 
 #: The first seconds of a Short read faster than the rest of it, so the cue caps tighten
@@ -259,6 +268,8 @@ class CaptionConfig:
     size: str = "default"
     pop: float = DEFAULT_POP
     hook_seconds: float = 0.0
+    ink: str = DEFAULT_INK
+    stroke: str = DEFAULT_STROKE
 
 
 # --- the words file -----------------------------------------------------------------------
@@ -574,16 +585,27 @@ def font_size(text: str, box, lines: int | None = None, size: str = "default",
     return max(MIN_FONT_PX, min(band_frac * band_h, fit))
 
 
-def _checked_accent(value: object) -> str:
-    """The accent lands in a <style> block unescaped, so it is validated as a hex literal."""
+def _checked_hex(value: object, what: str = "accent") -> str:
+    """A colour that lands in a <style> block unescaped, validated as a hex literal.
+
+    One function for all three of them (accent, ink, stroke), because every one of them is
+    interpolated into CSS and `red; } body{display:none` is a valid CSS colour followed by a
+    stylesheet.
+    """
     text = str(value)
     if not _HEX.match(text):
-        raise ValueError(f"caption accent must be a hex colour like '#ffe234', got {text!r}")
+        raise ValueError(f"caption {what} must be a hex colour like '#ffe234', got {text!r}")
     return text
 
 
+def _checked_accent(value: object) -> str:
+    """The accent lands in a <style> block unescaped, so it is validated as a hex literal."""
+    return _checked_hex(value, "accent")
+
+
 def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
-                 pop: float = DEFAULT_POP, size: str = "default") -> str:
+                 pop: float = DEFAULT_POP, size: str = "default",
+                 ink: str = DEFAULT_INK, stroke: str = DEFAULT_STROKE) -> str:
     """One frame of one cue: every word of the phrase, with word `lit` in the accent colour.
 
     The page is the BAND, not the whole frame — make_short overlays it at the band's own y —
@@ -592,16 +614,20 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
     alone.
 
     ALL CAPS (Stephen's call, 2026-09-16: `text-transform: uppercase`, so words.json and the
-    cue text stay as spoken while the frame reads in capitals). White on a thick dark stroke,
+    cue text stay as spoken while the frame reads in capitals). `ink` on a thick `stroke`,
     `paint-order: stroke fill` so the outline sits behind the
     glyph instead of eating into it: the captions have to stay legible over bright footage as
-    well as over a dark card.
+    well as over a dark card. The defaults are white on near-black; an illustrated Short drawn
+    on paper-coloured ground inverts them.
 
     `pop` scales the lit word. At DEFAULT_POP (1.0) it emits no CSS at all, and `size`
     defaults to the day-3 type, so a spec that asks for neither renders the byte-identical
-    PNG it rendered before either existed.
+    PNG it rendered before either existed. Same for `ink`/`stroke` at their defaults: the two
+    literals they replace were exactly these.
     """
     colour = _checked_accent(accent)
+    ink_colour = _checked_hex(ink, "ink")
+    stroke_colour = _checked_hex(stroke, "stroke")
     left, top, _right, bottom = box
     band_h = bottom - top
     fs = font_size(cue.text, box, size=size, pop=pop)
@@ -621,8 +647,8 @@ html,body{{width:{int(width)}px;height:{band_h}px;overflow:hidden;background:tra
 .band{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   padding:0 {left}px}}
 .line{{text-align:center;font-weight:700;font-size:{fs:.1f}px;line-height:1.06;
-  letter-spacing:.01em;text-transform:uppercase;color:#FFFFFF;
-  -webkit-text-stroke:{0.085 * fs:.1f}px #0A0E14;paint-order:stroke fill;
+  letter-spacing:.01em;text-transform:uppercase;color:{ink_colour};
+  -webkit-text-stroke:{0.085 * fs:.1f}px {stroke_colour};paint-order:stroke fill;
   text-shadow:0 {0.07 * fs:.1f}px {0.11 * fs:.1f}px rgba(0,0,0,.72)}}
 .lit{{color:{colour}}}{pop_css}
 </style></head><body>
@@ -793,6 +819,8 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
       captions:
         enabled: true
         accent: "#ffe234"     # hex only: it is interpolated into CSS unescaped
+        ink: "#FFFFFF"        # the unlit words' colour, hex only
+        stroke: "#0A0E14"     # the outline behind every glyph, hex only
         position: top         # top | center | lower
         size: large           # default (the day-3 band and type) | large
         pop: 1.14             # scale the lit word; 1.0 emits no extra CSS at all
@@ -826,4 +854,6 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
     return CaptionConfig(enabled=enabled,
                          accent=_checked_accent(block.get("accent", DEFAULT_ACCENT)),
                          position=position, size=size, pop=pop,
-                         hook_seconds=hook_seconds)
+                         hook_seconds=hook_seconds,
+                         ink=_checked_hex(block.get("ink", DEFAULT_INK), "ink"),
+                         stroke=_checked_hex(block.get("stroke", DEFAULT_STROKE), "stroke"))
