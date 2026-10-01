@@ -1099,6 +1099,35 @@ class SfxCue:
     gain_db: float = -9.0
 
 
+#: Default gain for an ELEMENT sound (`audio.sfx.events`). Lower than a cue's -9/-12 on
+#: purpose: a cue is one riser or one hit in a whole Short, while an illustration scene pops an
+#: emoji, draws a line and fills a calendar square — many small sounds, close together, and at
+#: cue level they stack into the voice instead of punctuating it.
+EVENT_GAIN_DB = -14.0
+
+#: How thin an illustrated scene's element sounds are mixed, from the ParkSheet gate:
+#: nothing inside EVENT_GUARD_S of the first spoken word (S16), nothing closer than
+#: EVENT_MIN_GAP_S to the sound before it, and no more than EVENT_WINDOW_MAX in any trailing
+#: EVENT_WINDOW_S (S17). See `thin_events`.
+EVENT_MIN_GAP_S = 0.35
+EVENT_WINDOW_S = 10.0
+EVENT_WINDOW_MAX = 4
+EVENT_GUARD_S = 0.5
+
+
+@dataclasses.dataclass(frozen=True)
+class SfxEvent:
+    """One ELEMENT sound: the file that plays wherever an illustration element asks for it.
+
+    A cue is keyed to a moment in the Short; an event is keyed to a moment in the PICTURE —
+    `illustrate.scene_events()` is the list, one row per element that carries an `sfx:` — so
+    the spec gives a file per ROLE and the scenes decide when it fires, however often.
+    """
+    role: str
+    src: str
+    gain_db: float = EVENT_GAIN_DB
+
+
 @dataclasses.dataclass(frozen=True)
 class Sfx:
     src: str
@@ -1116,6 +1145,10 @@ class Sfx:
     #: Sounds keyed to a MOMENT rather than to the cadence. Empty on every spec written
     #: before cues existed, so the mix such a spec produces is unchanged.
     cues: tuple[SfxCue, ...] = ()
+    #: One file per ROLE, fired by an illustration scene's elements. Empty on every spec
+    #: written before events existed — and on every spec with no illustration scene, which
+    #: may configure them and simply never fire one.
+    events: tuple[SfxEvent, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1259,6 +1292,124 @@ def _sfx_cues(raw, resolve) -> tuple:
     return tuple(cues)
 
 
+def _sfx_events(raw, resolve) -> tuple:
+    """`audio.sfx.events:` -> a tuple of SfxEvent, one per role. `()` when the spec has none.
+
+        events:
+          pop:   {src: media/audio/mixkit-pop-xxxx.wav, gain_db: -14}
+          chime: media/audio/mixkit-chime-xxxx.wav
+
+    A bare string is the `src`, because a role with nothing but a file is the common case. The
+    roles are `illustrate.SFX_KINDS` — the same four words an illustration element's own `sfx:`
+    may be — and an unknown one is refused BY NAME: `whosh: …` would otherwise configure a
+    sound that no element can ever ask for, and the Short would ship missing it.
+
+    `resolve` is `audio_settings`'s own `resolved(name, raw)`, so an event's file is checked and
+    made absolute exactly the way the bed, the whoosh and the cues are: a missing file refuses
+    the render rather than silently dropping the sound.
+
+    Returned in role order, so the ffmpeg inputs a spec produces do not depend on YAML key
+    order.
+    """
+    if raw is None:
+        return ()
+    block = _only(raw, tuple(sorted(illustrate.SFX_KINDS)), "sfx.events")
+    events = []
+    for role in sorted(block):
+        entry = block[role]
+        if isinstance(entry, str):
+            entry = {"src": entry}
+        if not isinstance(entry, dict):
+            raise SystemExit(f"audio.sfx.events.{role} is {type(entry).__name__}; give it a "
+                             f"path, or a mapping with `src` (and optionally `gain_db`).")
+        entry = _only(entry, ("src", "gain_db"), f"sfx.events.{role}")
+        if not entry.get("src"):
+            raise SystemExit(f"audio.sfx.events.{role} has no `src`, so there is no file to "
+                             f"mix for the {role} every element asking for one would fire.")
+        events.append(SfxEvent(role=role, src=resolve(f"sfx.events.{role}", entry),
+                               gain_db=float(entry.get("gain_db", EVENT_GAIN_DB))))
+    return tuple(events)
+
+
+def thin_events(events, first_speech_s, min_gap: float = EVENT_MIN_GAP_S,
+                window=(EVENT_WINDOW_S, EVENT_WINDOW_MAX), guard: float = EVENT_GUARD_S):
+    """(kept, dropped): an illustrated Short's element sounds, thinned to a mix.
+
+    One illustration scene can ask for a sound on every element it has — that is what makes the
+    look work on screen — and the same list played in full is a cartoon, which is the defect
+    the ParkSheet gate's two sound rules exist to catch. So the picture keeps its events and the
+    MIX takes a subset, by three rules, in this order:
+
+      * nothing inside `guard` of the first spoken word (S16). The opening is the one moment the
+        feed judges; a pop over the first syllable is heard as a glitch, not as design.
+      * nothing closer than `min_gap` to the sound already kept before it. Two pops 80 ms apart
+        are one dirty pop.
+      * no more than `window[1]` sounds in any trailing `window[0]` seconds (S17), counting the
+        ones already KEPT — so a dense passage thins to a cadence instead of being cut whole.
+
+    Pure, and ordered first: ties break by role so a spec renders the same mix twice. `dropped`
+    rows carry a `why` for the line the renderer prints — nothing silently disappears.
+    """
+    span, cap = float(window[0]), int(window[1])
+    floor = float(first_speech_s or 0.0) + float(guard)
+    rows = sorted(({"at": round(float(row["at"]), 3), "role": str(row["role"])}
+                   for row in events or ()),
+                  key=lambda row: (row["at"], row["role"]))
+    kept, dropped = [], []
+    for row in rows:
+        at = row["at"]
+        if at < floor:
+            dropped.append({**row, "why": f"inside the {float(guard):g}s guard after the first "
+                                          f"word ({floor:.2f}s)"})
+            continue
+        if kept and at - kept[-1]["at"] < float(min_gap):
+            dropped.append({**row, "why": f"{at - kept[-1]['at']:.2f}s after the "
+                                          f"{kept[-1]['role']} at {kept[-1]['at']:.2f}s, under "
+                                          f"the {float(min_gap):g}s floor"})
+            continue
+        if sum(1 for earlier in kept if at - earlier["at"] < span) >= cap:
+            dropped.append({**row, "why": f"the {cap + 1}th sound inside {span:g}s"})
+            continue
+        kept.append(row)
+    return kept, dropped
+
+
+def first_speech_seconds(rows, audio_dir):
+    """When the Short's first word is HEARD, on the finished timeline. None if nothing says.
+
+    The first scene's first word timing plus that scene's own start — which is 0.0 for the
+    first row, and the arithmetic is written out anyway so a Short that opens on a scene with
+    no timings can fall through to the next one rather than give up. `thin_events` reads it as
+    the point its guard is measured from; None there means the guard runs from second zero.
+    """
+    for row in rows or ():
+        words = captions.read_words(pathlib.Path(audio_dir) / f"scene_{row['scene']:02d}.wav")
+        starts = [word.get("start") for word in (words or ())
+                  if isinstance(word, dict) and isinstance(word.get("start"), (int, float))]
+        if starts:
+            return round(float(row["start"]) + min(float(at) for at in starts), 3)
+    return None
+
+
+def illustration_events(illustrated, rows) -> list:
+    """Every illustration scene's element sounds, moved onto the finished timeline.
+
+    `illustrated` is [(scene index, RESOLVED scene)] and `rows` the cut rows, which is where a
+    scene's `start` comes from — the same probed number the captions are offset by, so a sound
+    keyed to the word a pop lands on stays with it. Rows come back as
+    `sfx_placements`-shaped `{at, role}`, because they end up in the same `cuts.json` list.
+    """
+    starts = {row["scene"]: float(row["start"]) for row in rows or ()}
+    out = []
+    for index, scene in illustrated or ():
+        if index not in starts:
+            continue
+        for event in illustrate.scene_events(scene):
+            out.append({"at": round(starts[index] + float(event["t"]), 3),
+                        "role": str(event["sfx"])})
+    return sorted(out, key=lambda row: (row["at"], row["role"]))
+
+
 def audio_settings(spec: dict, spec_path):
     """The spec's `audio:` block, with every file resolved and checked. None when absent.
 
@@ -1318,7 +1469,8 @@ def audio_settings(spec: dict, spec_path):
     # even when `audio.bed.src` also happens to be missing, rather than lose the word "cuez"
     # behind whichever block's file check runs first.
     if block.get("sfx"):
-        _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues"), "sfx")
+        _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events"),
+              "sfx")
     bed = None
     if block.get("bed"):
         raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
@@ -1352,8 +1504,8 @@ def audio_settings(spec: dict, spec_path):
     if block.get("sfx"):
         # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
         # accepted as the spelling every other block in this renderer uses.
-        raw = _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues"),
-                    "sfx")
+        raw = _only(block["sfx"],
+                    ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events"), "sfx")
         beats = int(raw.get("beats", 3))
         if beats < 2:
             # `beats - 1` boundaries: one beat has none, and the whole sfx block would be
@@ -1364,10 +1516,11 @@ def audio_settings(spec: dict, spec_path):
                 f"would be configured and never heard. Use 2 or more (3 is the default: two "
                 f"whooshes), or drop `sfx:`.")
         cues = _sfx_cues(raw.get("cues"), resolved)
+        events = _sfx_events(raw.get("events"), resolved)
         whoosh_src = raw.get("on_cut") or raw.get("src")
         if whoosh_src:
             src = resolved("sfx", {"src": whoosh_src})
-        elif cues:
+        elif cues or events:
             # A cue-only sfx block: ParkSheet's `cards.without_sfx`-exempt data days (and
             # any lore day rendered before a whoosh is vetted) write
             # `audio.sfx: {gain_db, lead, beats, cues: [...]}` with no `on_cut`/`src` at
@@ -1378,14 +1531,15 @@ def audio_settings(spec: dict, spec_path):
             src = ""
         else:
             raise SystemExit(
-                "audio.sfx has neither on_cut/src nor cues: nothing for this block to "
-                "mix. Give it a whoosh (`on_cut:`/`src:`), a payoff cue (`cues:`), or "
-                "drop `sfx:`.")
+                "audio.sfx has neither on_cut/src nor cues nor events: nothing for this "
+                "block to mix. Give it a whoosh (`on_cut:`/`src:`), a payoff cue (`cues:`), "
+                "an element sound (`events:`), or drop `sfx:`.")
         sfx = Sfx(src=src,
                   gain_db=float(raw.get("gain_db", -9.0)),
                   lead=float(raw.get("lead", 0.20)),
                   beats=beats,
-                  cues=cues)
+                  cues=cues,
+                  events=events)
     duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
     master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
     return AudioMix(bed=bed,
@@ -1395,7 +1549,8 @@ def audio_settings(spec: dict, spec_path):
 
 
 def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_indexes,
-                cue_indexes=(), payoff_s=None, voice: str = "0:a") -> list:
+                cue_indexes=(), payoff_s=None, voice: str = "0:a",
+                events=(), event_indexes=()) -> list:
     """The audio half of the final filter graph. Verified end to end at full scale.
 
     `runtime` is the FINISHED Short's length, not the sum of the scene rows: a closing CTA
@@ -1406,6 +1561,12 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
     `payoff_s` is where the payoff frame starts -- the last scene's start on the finished
     timeline. With no payoff (a spec with no scene rows) no cue is placed: a sound with
     nowhere to land is not quietly dropped onto second zero.
+
+    `events` are the ELEMENT sounds an illustration scene asked for, already absolute on the
+    finished timeline and already thinned (`thin_events`), and `event_indexes` their inputs in
+    the same order -- one input per event, because the same pop fires at four different times
+    and `adelay` delays an input, not a copy of it. Each is the same clause a cue is, down to
+    the atrim/apad that stops a sound near the end running the music bus past the last frame.
     """
     master = mix.master
     if mix.bed is None:
@@ -1448,6 +1609,16 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
                          f"atrim=0:{float(runtime):.3f},"
                          f"apad=whole_dur={float(runtime):.3f}[q{n}]")
             labels.append(f"q{n}")
+    if mix.sfx is not None and event_indexes:
+        gains = {event.role: event.gain_db for event in mix.sfx.events}
+        for n, (index, row) in enumerate(zip(event_indexes, events), start=1):
+            delay = max(0, round(float(row["at"]) * 1000))
+            steps.append(f"[{index}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                         f"volume={gains.get(row['role'], EVENT_GAIN_DB):g}dB,"
+                         f"adelay={delay}|{delay},"
+                         f"atrim=0:{float(runtime):.3f},"
+                         f"apad=whole_dur={float(runtime):.3f}[e{n}]")
+            labels.append(f"e{n}")
     steps.append("".join(f"[{label}]" for label in labels)
                  + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
     steps.append(f"[vox][music]amix=inputs=2:normalize=0,alimiter=limit=0.97,"
@@ -1488,6 +1659,37 @@ def audio_inputs(mix: AudioMix, boundaries, bed_index: int):
             args += ["-i", cue.src]
             count += 1
     return args, bed_index, sfx_indexes, cue_indexes
+
+
+def event_inputs(mix: AudioMix, events, next_index: int):
+    """The `-i` arguments for the kept element sounds, and the input indexes they take.
+
+    A SEPARATE function rather than another return value from `audio_inputs`, because these
+    inputs come after every one of its own and `next_index` is arithmetic the caller already
+    has to do explicitly (the bed's `-stream_loop -1` makes any count off the argument list
+    wrong). One input per EVENT, not per role: `adelay` delays an input, so the same pop at
+    four different times is four inputs of the same file.
+
+    Returns (args, event_indexes), in the order `events` was given -- which is the order
+    `audio_steps` zips them in.
+    """
+    args, indexes = [], []
+    if mix is None or mix.sfx is None:
+        return args, indexes
+    by_role = {event.role: event for event in mix.sfx.events}
+    count = int(next_index)
+    for row in events or ():
+        event = by_role.get(row["role"])
+        if event is None:
+            # Unreachable from main(), which drops the roles it has no file for and says so.
+            raise SystemExit(f"an illustration element asks for the sound {row['role']!r} at "
+                             f"{float(row['at']):.2f}s and audio.sfx.events has no file for "
+                             f"it. Add `{row['role']}:` under `audio.sfx.events:`, or take the "
+                             f"`sfx:` off the element.")
+        indexes.append(count)
+        args += ["-i", event.src]
+        count += 1
+    return args, indexes
 
 
 def highlight_bbox(im):
@@ -1891,6 +2093,30 @@ def main():
         if mix.sfx is not None and mix.sfx.src:
             boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
     placed = sfx_placements(mix if mixed else None, boundaries, payoff_s)
+    # The element sounds the illustration scenes asked for, on the finished timeline. The
+    # PICTURE keeps all of them; the mix takes the subset thin_events leaves, and every drop is
+    # printed. A role with no file configured fires nothing and is said out loud too — a
+    # partial `events:` block is a legitimate spec (a Short with pops and no chime), and
+    # silence is the one outcome nobody can see in the render.
+    kept_events = []
+    scene_sounds = illustration_events(illustrated, cut_rows)
+    if scene_sounds:
+        playable = {event.role for event in (mix.sfx.events if mixed and mix.sfx else ())}
+        missing = sorted({row["role"] for row in scene_sounds if row["role"] not in playable})
+        if missing:
+            silent = sum(1 for row in scene_sounds if row["role"] in missing)
+            why = (f"audio.sfx.events has no {', '.join(missing)}" if mixed else
+                   "this spec mixes no music bed, and there is no bed-less path through the "
+                   "mix for a sound to ride")
+            print(f"audio: {silent} element sound(s) fire nothing — {why}", flush=True)
+        kept_events, dropped_events = thin_events(
+            [row for row in scene_sounds if row["role"] in playable],
+            first_speech_seconds(cut_rows, build / "audio"))
+        if dropped_events:
+            print("audio: sfx events thinned — "
+                  + "; ".join(f"{row['at']:.2f}s {row['role']} ({row['why']})"
+                              for row in dropped_events), flush=True)
+        placed = sorted(placed + kept_events, key=lambda row: (row["at"], row["role"]))
     if cap.enabled and not overlays:
         # A spec that asked for captions and got none is almost always a narration problem,
         # not a caption one — and an uncaptioned Short that nobody was warned about is how a
@@ -1934,9 +2160,15 @@ def main():
         if mixed:
             extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, inputs)
             args += extra
+            # Counted, not derived: the bed's `-stream_loop -1` sits in front of its own `-i`,
+            # so arithmetic on the argument list is off by one from the bed onwards.
+            e_args, event_indexes = event_inputs(
+                mix, kept_events, bed_index + 1 + len(sfx_indexes) + len(cue_indexes))
+            args += e_args
             steps.extend(audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                      sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
-                                     payoff_s=payoff_s))
+                                     payoff_s=payoff_s, events=kept_events,
+                                     event_indexes=event_indexes))
         else:
             steps.append(plain_audio_steps(mix.master if mix is not None else Master()))
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
@@ -1951,12 +2183,15 @@ def main():
             # -c:v copy: the video is untouched, so the whole mix costs 0.81 s for 12.8 s of
             # output. This is exactly the command the filtergraph was verified with.
             extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, 1)
+            e_args, event_indexes = event_inputs(
+                mix, kept_events, bed_index + 1 + len(sfx_indexes) + len(cue_indexes))
             run(["ffmpeg", "-y", "-loglevel", "error", *CONCAT_INPUT_ARGS,
-                 "-f", "concat", "-safe", "0", "-i", str(lst), *extra,
+                 "-f", "concat", "-safe", "0", "-i", str(lst), *extra, *e_args,
                  "-filter_complex", ";".join(
                      audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                  sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
-                                 payoff_s=payoff_s)),
+                                 payoff_s=payoff_s, events=kept_events,
+                                 event_indexes=event_indexes)),
                  "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
                  "-b:a", "160k", "-movflags", "+faststart", str(final)])
         else:

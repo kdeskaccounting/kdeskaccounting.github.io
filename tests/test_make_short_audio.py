@@ -580,3 +580,263 @@ def test_cut_plan_json_always_carries_an_sfx_list():
     assert M.cut_plan_json(rows, "cut", 10.0)["sfx"] == []
     placed = [{"at": 9.77, "role": "whoosh"}]
     assert M.cut_plan_json(rows, "cut", 10.0, sfx=placed)["sfx"] == placed
+
+
+# --- element sounds: `audio.sfx.events` fired by an illustration scene -----------------------
+#
+# A cue is one riser in a Short. An EVENT is a pop on an emoji, and an illustration scene asks
+# for one on nearly every element it has -- which is right on screen and a cartoon in the ears,
+# so the picture keeps them all and `thin_events` decides which ones are mixed.
+
+EVENTS = {"pop": {"src": "media/audio/pop.wav", "gain_db": -14},
+          "chime": "media/audio/chime.wav"}
+
+
+def _mix_with_events(*events, **kw):
+    return M.AudioMix(
+        bed=M.Bed(src="/abs/b.mp3", lufs=-13.2), duck=M.Duck(),
+        sfx=M.Sfx(src="/abs/w.wav",
+                  events=events or (M.SfxEvent(role="pop", src="/abs/pop.wav"),)),
+        master=M.Master(), **kw)
+
+
+def test_the_default_event_gain_is_minus_fourteen_not_a_cues_minus_nine():
+    """Pops are many and small; at cue level they stack into the voice."""
+    assert M.SfxEvent(role="pop", src="p.wav").gain_db == -14.0
+    assert M.EVENT_GAIN_DB == -14.0
+
+
+def test_events_are_parsed_off_the_sfx_block(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"on_cut": "w.wav", "events": dict(EVENTS)}}}
+    mix = M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert [(e.role, e.src, e.gain_db) for e in mix.sfx.events] == [
+        ("chime", "/abs/media/audio/chime.wav", -14.0),
+        ("pop", "/abs/media/audio/pop.wav", -14.0)]
+
+
+def test_an_events_only_sfx_block_needs_no_whoosh_and_no_cue(tmp_path, monkeypatch):
+    """An illustrated Short may want pops and nothing else."""
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"events": {"pop": "pop.wav"}}}}
+    mix = M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert mix.sfx.src == ""
+    assert [e.role for e in mix.sfx.events] == ["pop"]
+
+
+def test_events_without_any_illustration_scene_are_accepted_and_fire_nothing(stub, tmp_path):
+    """The media spec the other tests in this file render, with an events block bolted on."""
+    audio_dir = tmp_path / "media" / "audio"
+    (audio_dir / "pop.wav").write_bytes(b"\0")
+    stub.spec["audio"] = {"bed": dict(BED), "sfx": {**SFX, "events": {"pop": "media/audio/pop.wav"}}}
+    stub.go()
+    cmd = _final(stub)
+    assert not any("pop.wav" in str(arg) for arg in cmd)
+    cuts = json.loads(next((tmp_path / "build" / "aud-demo").rglob("cuts.json")).read_text())
+    assert [row["role"] for row in cuts["sfx"]] == ["whoosh", "whoosh"]
+
+
+def test_a_missing_event_file_refuses_the_render(tmp_path):
+    spec_path = tmp_path / "scenes.yaml"
+    spec_path.write_text("slug: x\n")
+    (tmp_path / "media" / "audio").mkdir(parents=True)
+    (tmp_path / "media" / "audio" / "bed.mp3").write_bytes(b"\0")
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings({"audio": {"bed": dict(BED),
+                                    "sfx": {"events": {"pop": "media/audio/nope.wav"}}}},
+                         spec_path)
+    assert "nope.wav" in str(excinfo.value)
+
+
+def test_an_unknown_role_under_events_is_refused_by_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"events": {"whosh": "w.wav"}}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert "whosh" in str(excinfo.value)
+
+
+def test_an_unknown_key_inside_one_event_is_refused_by_name(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"events": {"pop": {"src": "p.wav", "gain": -14}}}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert "gain" in str(excinfo.value)
+
+
+def test_an_event_with_no_src_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(M.media, "resolve_src", lambda spec_path, src: f"/abs/{src}")
+    spec = {"audio": {"bed": {"src": "b.mp3", "lufs": -13.2},
+                      "sfx": {"events": {"pop": {"gain_db": -14}}}}}
+    with pytest.raises(SystemExit) as excinfo:
+        M.audio_settings(spec, tmp_path / "scenes.yaml")
+    assert "no `src`" in str(excinfo.value)
+
+
+def test_the_event_roles_are_the_ones_an_illustration_element_may_ask_for():
+    """A role a `sfx:` cannot name is a file that can never fire."""
+    import illustrate
+    assert illustrate.SFX_KINDS == {"pop", "chime", "hit", "whoosh"}
+
+
+# --- thinning ------------------------------------------------------------------------------
+
+def _ev(*pairs):
+    return [{"at": at, "role": role} for at, role in pairs]
+
+
+class TestThinEvents:
+    def test_an_event_inside_the_guard_after_the_first_word_is_dropped(self):
+        kept, dropped = M.thin_events(_ev((0.40, "pop"), (0.95, "pop")), first_speech_s=0.30)
+        assert [row["at"] for row in kept] == [0.95]
+        assert [row["at"] for row in dropped] == [0.40]
+        assert "guard" in dropped[0]["why"]
+
+    def test_the_guard_is_measured_from_the_first_word_not_from_zero(self):
+        kept, _ = M.thin_events(_ev((0.60, "pop")), first_speech_s=2.0)
+        assert kept == []
+        kept, _ = M.thin_events(_ev((0.60, "pop")), first_speech_s=0.0)
+        assert [row["at"] for row in kept] == [0.60]
+
+    def test_no_first_speech_runs_the_guard_from_second_zero(self):
+        kept, _ = M.thin_events(_ev((0.20, "pop"), (0.80, "pop")), first_speech_s=None)
+        assert [row["at"] for row in kept] == [0.80]
+
+    def test_an_event_closer_than_the_min_gap_to_the_one_before_is_dropped(self):
+        kept, dropped = M.thin_events(
+            _ev((2.00, "pop"), (2.20, "chime"), (2.60, "pop")), first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.00, 2.60]
+        assert [row["at"] for row in dropped] == [2.20]
+        assert "floor" in dropped[0]["why"]
+
+    def test_the_gap_is_measured_against_the_last_KEPT_event(self):
+        """A dropped sound does not become the thing the next one is measured against: three
+        pops inside 0.35 s are ONE pop, not a 0.2 s chain of them."""
+        kept, _ = M.thin_events(_ev((2.0, "pop"), (2.2, "pop"), (2.3, "pop")),
+                                first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.0]
+        kept, _ = M.thin_events(_ev((2.0, "pop"), (2.2, "pop"), (2.4, "pop")),
+                                first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.0, 2.4]
+
+    def test_the_fifth_sound_inside_ten_seconds_is_dropped(self):
+        kept, dropped = M.thin_events(
+            _ev((2.0, "pop"), (3.0, "pop"), (4.0, "pop"), (5.0, "pop"), (6.0, "pop")),
+            first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.0, 3.0, 4.0, 5.0]
+        assert [row["at"] for row in dropped] == [6.0]
+        assert "5th sound inside 10s" in dropped[0]["why"]
+
+    def test_the_window_is_trailing_so_a_later_passage_gets_its_own_four(self):
+        kept, _ = M.thin_events(
+            _ev((2.0, "pop"), (3.0, "pop"), (4.0, "pop"), (5.0, "pop"),
+                (13.0, "pop"), (14.0, "pop")),
+            first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.0, 3.0, 4.0, 5.0, 13.0, 14.0]
+
+    def test_events_are_sorted_before_they_are_thinned(self):
+        kept, _ = M.thin_events(_ev((5.0, "pop"), (2.0, "chime"), (3.5, "hit")),
+                                first_speech_s=0.3)
+        assert [row["at"] for row in kept] == [2.0, 3.5, 5.0]
+
+    def test_ties_break_by_role_so_one_spec_mixes_the_same_way_twice(self):
+        kept, _ = M.thin_events(_ev((2.0, "pop"), (2.0, "chime")), first_speech_s=0.3)
+        assert kept[0]["role"] == "chime"
+
+    def test_the_rows_that_survive_are_sfx_placement_shaped(self):
+        kept, _ = M.thin_events(_ev((2.0, "pop")), first_speech_s=0.3)
+        assert kept == [{"at": 2.0, "role": "pop"}]
+
+    def test_nothing_at_all_thins_to_nothing(self):
+        assert M.thin_events([], first_speech_s=0.3) == ([], [])
+
+
+# --- into the graph ------------------------------------------------------------------------
+
+def test_every_kept_event_becomes_its_own_input_queued_after_the_cues():
+    mix = _mix_with_events(M.SfxEvent(role="pop", src="/abs/pop.wav"),
+                           M.SfxEvent(role="chime", src="/abs/chime.wav"))
+    args, bed_index, sfx_indexes, cue_indexes = M.audio_inputs(mix, [5.0, 20.0], 1)
+    assert (bed_index, sfx_indexes, cue_indexes) == (1, [2, 3], [])
+    events = [{"at": 4.0, "role": "pop"}, {"at": 9.0, "role": "pop"},
+              {"at": 12.0, "role": "chime"}]
+    e_args, event_indexes = M.event_inputs(mix, events, 4)
+    assert e_args == ["-i", "/abs/pop.wav", "-i", "/abs/pop.wav", "-i", "/abs/chime.wav"]
+    assert event_indexes == [4, 5, 6]
+
+
+def test_an_event_is_delayed_to_its_own_absolute_time_and_joins_the_music_bus():
+    mix = _mix_with_events(M.SfxEvent(role="pop", src="/abs/pop.wav"),
+                           M.SfxEvent(role="chime", src="/abs/chime.wav", gain_db=-11))
+    events = [{"at": 4.25, "role": "pop"}, {"at": 12.0, "role": "chime"}]
+    graph = ";".join(M.audio_steps(mix, runtime=38.0, cuts=[12.0, 26.0], bed_index=1,
+                                   sfx_indexes=[2, 3], cue_indexes=[],
+                                   events=events, event_indexes=[4, 5]))
+    assert ("[4:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=-14dB,"
+            "adelay=4250|4250,atrim=0:38.000,apad=whole_dur=38.000[e1]") in graph
+    assert "volume=-11dB,adelay=12000|12000" in graph
+    # bedduck + 2 whooshes + 2 events
+    assert "amix=inputs=5:normalize=0:dropout_transition=0[music]" in graph
+
+
+def test_an_events_only_mix_has_no_whoosh_in_the_graph():
+    mix = M.AudioMix(bed=M.Bed(src="/abs/b.mp3", lufs=-13.2), duck=M.Duck(),
+                     sfx=M.Sfx(src="", events=(M.SfxEvent(role="pop", src="/abs/pop.wav"),)),
+                     master=M.Master())
+    graph = ";".join(M.audio_steps(mix, runtime=20.0, cuts=[5.0], bed_index=1,
+                                   sfx_indexes=[], cue_indexes=[],
+                                   events=[{"at": 3.0, "role": "pop"}], event_indexes=[2]))
+    assert "amix=inputs=2:normalize=0:dropout_transition=0[music]" in graph
+    assert "[e1]" in graph
+
+
+def test_no_events_leaves_the_graph_exactly_as_it_was():
+    """Golden guard: a spec with no illustration scene must mix byte-identically."""
+    mix = _mix_with_cues()
+    before = M.audio_steps(mix, runtime=38.0, cuts=[12.0, 26.0], bed_index=1,
+                           sfx_indexes=[2, 3], cue_indexes=[4, 5], payoff_s=30.0)
+    after = M.audio_steps(mix, runtime=38.0, cuts=[12.0, 26.0], bed_index=1,
+                          sfx_indexes=[2, 3], cue_indexes=[4, 5], payoff_s=30.0,
+                          events=[], event_indexes=[])
+    assert before == after
+    assert "[e1]" not in ";".join(after)
+
+
+def test_illustration_events_are_offset_by_their_scenes_start():
+    rows = [{"scene": 0, "start": 0.0, "seconds": 3.0, "beats": [3.0]},
+            {"scene": 1, "start": 3.0, "seconds": 2.0, "beats": [2.0]}]
+    illustrated = [
+        (0, {"elements": [{"type": "emoji", "glyph": "x", "at": [0.5, 0.5],
+                           "enter": {"t": 1.2, "how": "pop"}, "sfx": "pop"}]}),
+        (1, {"elements": [{"type": "tag", "text": "P", "at": [0.5, 0.5],
+                           "enter": {"t": 0.4, "how": "drop"}, "sfx": "hit"}]}),
+    ]
+    assert M.illustration_events(illustrated, rows) == [
+        {"at": 1.2, "role": "pop"},
+        {"at": 4.0, "role": "hit"},   # 3.0 + 0.4 + the drop's own 0.6 s fall
+    ]
+
+
+def test_first_speech_is_the_first_word_plus_its_scenes_start(tmp_path):
+    rows = [{"scene": 0, "start": 0.0, "seconds": 3.0, "beats": [3.0]}]
+    captions.write_words(tmp_path / "scene_00.wav",
+                         [{"text": "Main", "start": 0.42, "end": 0.9}])
+    assert M.first_speech_seconds(rows, tmp_path) == 0.42
+
+
+def test_first_speech_falls_through_a_scene_with_no_timings(tmp_path):
+    rows = [{"scene": 0, "start": 0.0, "seconds": 3.0, "beats": [3.0]},
+            {"scene": 1, "start": 3.0, "seconds": 2.0, "beats": [2.0]}]
+    captions.write_words(tmp_path / "scene_00.wav", None)
+    captions.write_words(tmp_path / "scene_01.wav",
+                         [{"text": "Next", "start": 0.3, "end": 0.8}])
+    assert M.first_speech_seconds(rows, tmp_path) == 3.3
+
+
+def test_first_speech_of_a_short_with_no_timings_at_all_is_none(tmp_path):
+    rows = [{"scene": 0, "start": 0.0, "seconds": 3.0, "beats": [3.0]}]
+    assert M.first_speech_seconds(rows, tmp_path) is None

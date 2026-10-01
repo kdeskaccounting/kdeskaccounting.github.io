@@ -96,6 +96,11 @@ def stub(tmp_path, monkeypatch):
     audio = build / "audio"
     audio.mkdir(parents=True)
     (audio / "durations.json").write_text(json.dumps(DURATIONS))
+    assets = tmp_path / "media" / "audio"
+    assets.mkdir(parents=True)
+    for name in ("bed.mp3", "pop.wav", "whoosh.wav", "hit.wav"):
+        (assets / name).write_bytes(b"\0")
+    holder.assets = assets
     monkeypatch.setattr(M, "HERE", tmp_path)
     monkeypatch.setattr(M, "dur_of", lambda p: PART_SECONDS)
     monkeypatch.setattr(M, "subprocess", types.SimpleNamespace(
@@ -369,3 +374,81 @@ def test_an_illustration_scene_is_captioned_like_a_media_scene(stub):
 
 def test_the_caption_band_is_not_pushed_down_by_an_illustration_scene(stub):
     assert M.scene_card_top({"kind": "illustration", "elements": []}) is None
+
+
+# --- the element sounds, end to end --------------------------------------------------------
+
+#: A bed plus one file per role the two scenes ask for. `whoosh` is both the cut sound and an
+#: element sound here, which is the point of keeping the two lists separate.
+AUDIO = {"bed": {"src": "media/audio/bed.mp3", "lufs": -28.9},
+         "sfx": {"events": {"pop": "media/audio/pop.wav",
+                            "hit": {"src": "media/audio/hit.wav", "gain_db": -12},
+                            "whoosh": "media/audio/whoosh.wav"}}}
+
+
+def _audio_cmd(stub):
+    return [c for c in stub.cmds if any("concat" in str(arg) for arg in c)][-1]
+
+
+def test_the_event_inputs_are_queued_after_every_caption_png_and_after_the_bed(stub):
+    """An input queued before the caption PNGs moves every overlay and burns the wrong word
+    onto the wrong frame; one queued before the bed breaks the bed's own index."""
+    stub.spec = _spec({"enabled": True, "accent": "#ffe234"})
+    stub.spec["audio"] = AUDIO
+    stub.go()
+    cmd = [str(arg) for arg in _audio_cmd(stub)]
+    inputs = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "-i"]
+    assert inputs[0].endswith("concat.txt")
+    assert inputs[1].endswith("cap_0000.png")
+    sounds = [pathlib.Path(name).name for name in inputs if name.endswith((".mp3", ".wav"))]
+    assert sounds[0] == "bed.mp3"
+    assert set(sounds[1:]) <= {"pop.wav", "hit.wav", "whoosh.wav"}
+    assert all(name.endswith(".png") for name in inputs[1:1 + len(inputs) - 1 - len(sounds)])
+
+
+def test_each_kept_event_is_delayed_to_where_its_element_fires(stub):
+    stub.spec["audio"] = AUDIO
+    stub.go()
+    graph = _audio_cmd(stub)[_audio_cmd(stub).index("-filter_complex") + 1]
+    # scene 0 starts at 0.0, so the squiggle's whoosh lands where it finishes DRAWING
+    # (0.90 + 0.50 s) and scene 1 starts at 3.0, so its tag's hit lands where the drop
+    # finishes FALLING (1.18 + 0.60 s) -- illustrate.EVENT_OFFSET owns both of those.
+    assert "adelay=1400|1400" in graph
+    assert "volume=-12dB,adelay=4780|4780" in graph
+    # and the cookie's pop at 1.44 s is 0.04 s behind the whoosh, so the thinning took it
+    assert "adelay=1440|1440" not in graph
+
+
+def test_the_kept_events_are_recorded_in_cuts_json_beside_the_whooshes(stub):
+    stub.spec["audio"] = AUDIO
+    stub.go()
+    cuts = json.loads((stub.work / "cuts.json").read_text())
+    assert cuts["sfx"] == [{"at": 1.4, "role": "whoosh"}, {"at": 4.78, "role": "hit"}]
+
+
+def test_two_element_sounds_far_enough_apart_both_reach_the_mix(stub):
+    """The squiggle moved onto the first word: its whoosh now lands at 0.80 s, clear of both
+    the guard and the pop, and all three sounds survive."""
+    stub.spec["audio"] = AUDIO
+    stub.spec["scenes"][0]["elements"][2]["enter"] = {"when": {"word": "Main"}, "how": "draw"}
+    stub.go()
+    cuts = json.loads((stub.work / "cuts.json").read_text())
+    assert cuts["sfx"] == [{"at": 0.8, "role": "whoosh"}, {"at": 1.44, "role": "pop"},
+                           {"at": 4.78, "role": "hit"}]
+
+
+def test_an_element_sound_with_no_file_configured_fires_nothing_and_says_so(stub, capsys):
+    stub.spec["audio"] = {"bed": dict(AUDIO["bed"]),
+                          "sfx": {"events": {"pop": "media/audio/pop.wav"}}}
+    stub.go()
+    out = capsys.readouterr().out
+    assert "fire nothing" in out and "hit" in out and "whoosh" in out
+    cuts = json.loads((stub.work / "cuts.json").read_text())
+    assert [row["role"] for row in cuts["sfx"]] == ["pop"]
+
+
+def test_an_illustrated_short_with_no_audio_block_mixes_no_events_at_all(stub, capsys):
+    stub.go()
+    cuts = json.loads((stub.work / "cuts.json").read_text())
+    assert cuts["sfx"] == []
+    assert "no music bed" in capsys.readouterr().out
