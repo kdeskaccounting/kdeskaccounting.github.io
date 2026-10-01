@@ -188,7 +188,14 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     validated by media.validate_spec BEFORE anything renders — so a typo on scene 7 costs
 #     nothing, instead of surfacing after six scenes have been narrated and encoded.
 #     credit: "Imagery: Google Earth, Maxar Technologies"   # REQUIRED when src is a still
-#     overlay: {template: …, data: {…}}    # optional; the `card` contract unchanged
+#     overlay:              # optional; what goes OVER the footage. Either half, or both.
+#       template: …         #   the card plate: the `kind: card` contract, unchanged
+#       data: {…}
+#       elements: [ … ]     #   the ILLUSTRATION layer (2026-10-01): the same element schema
+#                           #   a `kind: illustration` scene draws, `when:` times and all,
+#                           #   rendered transparent and composited over the finished picture
+#     scrim: 0.25           # optional, 0–0.8: darken the footage by this fraction
+#     blur: 0               # optional, 0–12 px: soften the footage (a chart beat under a label)
 #     fill: crop            # optional; crop | blur. Absent: the source's ratio decides
 #                           # (media.BLUR_FILL_RATIO), which is today's behaviour.
 #     focus: [0.50, 0.42]   # optional; what to keep when cropping. Default [0.5, 0.5].
@@ -257,6 +264,45 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # UPWARD inside media.credit_box and stay clear of the Earth Studio watermark zone. A scene
 # with no `beats:` renders the plate it always rendered, and the graph it always built, input
 # order included.
+# ILLUSTRATION OVER IMAGERY (2026-10-01). Stephen's ruling: illustration is b-roll and
+# graphics laid OVER video and photographs, and the flat graphite ground is sprinkled in only
+# where there is no footage. So a media scene's `overlay:` now carries `elements:` as well as
+# the card plate's `template:`/`data:`, and they are told apart by the key each one REQUIRES —
+# they are disjoint, both are mandatory in their own branch, and they are different layers at
+# different points of the graph, so one mapping may hold both. An `overlay:` with neither is
+# refused by name (it used to be a KeyError four scenes into a render), and so is an
+# `overlay.bg:` or `overlay.seconds:` — an overlay has no ground of its own (the footage is the
+# ground) and no length of its own (the narration is). `overlay:`/`scrim:`/`blur:` on a CARD
+# scene are refused the way `beats:` is: nothing would have read them.
+#   - Rendered by illustrate.render_scene_frames(..., transparent=True) into
+#     <work>/scene_<k>_overlay/frame_NNNN.png, one PNG per frame at the delivered 1080x1920,
+#     with its `when:` times resolved against THIS scene's own words (frame 0 of the layer is
+#     t=0 of the scene's WAV, so nothing is offset).
+#   - Composited in the SAME ffmpeg call that encodes the footage — one part, one encode. The
+#     sequence is one more input, read at `-r 30`, overlaid AFTER the final scale to 1080x1920
+#     (the frames are already delivered-size; scaling them with the footage would resample line
+#     art) and BEFORE the fades (a join dips the whole composite to black rather than fading the
+#     picture out from under the drawing). ffmpeg's `overlay` holds the last frame at EOF, so a
+#     `-t` that runs a fraction of a frame past the sequence keeps the drawing up.
+#   - `scrim:` is `drawbox` filling the frame with black at that alpha, NOT `eq=brightness=`.
+#     drawbox alpha-blends toward black and YUV<->RGB is affine, so it is exactly a multiply of
+#     every RGB channel by (1 - scrim): hue preserved by construction, no crushed shadows, no
+#     pixel-format conversion out of the yuv420p the chain is in. `eq=brightness=` is an
+#     additive LUMA offset: it clips the blacks it pushes past 0 and leaves chroma alone, so the
+#     picture gets more saturated as it gets darker. `blur:` is `gblur`, sigma in DELIVERED
+#     pixels — make_short.footage_grade scales it by RW/OUT_W because the clause runs on the
+#     1.2x footage, so `blur: 8` emits `sigma=9.6`. Both are allowed with no overlay at all.
+#   - BOTH grades land on the FOOTAGE, before the credit plate and the card plate, never after.
+#     That is the licence answer as much as the legibility one: the attribution must stay
+#     full-brightness and sharp.
+#   - The elements' entry times join that part's `beats` row in cuts.json (make_short.merge_spans
+#     unions them with the beat boundaries and dedupes BY FRAME — two cuts inside one frame are
+#     one picture change), and their `sfx:` join `audio.sfx.events` exactly as an illustration
+#     scene's do, thinning and all.
+#   - An illustration overlay constrains the caption band NOWHERE (a card plate still does):
+#     its elements are placed by the spec, and keeping them out of the band — and out of
+#     media.WATERMARK_*, the Earth Studio attribution zone, which nothing checks for an
+#     overlay — is the author's job.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end

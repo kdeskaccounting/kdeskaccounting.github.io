@@ -19,6 +19,14 @@ times may be written as the WORDS they land on), and the legacy sheet/pan layout
 else. Every kind gets the same narration, pad, captions, join, mix and `cuts.json` treatment;
 only the picture differs.
 
+Illustration is an OVERLAY, not only a scene kind (Stephen's ruling, 2026-10-01): the drawn
+elements go OVER video and imagery, with the flat graphite ground sprinkled in on the beats
+that have no footage. So a `kind: media` scene may carry the same `elements:` under its
+`overlay:` key — drawn transparent at the delivered size and composited in the same ffmpeg
+call that encodes the footage — plus `scrim:` to darken the picture under them and `blur:` to
+soften it. The elements' entry times join that part's `cuts.json` spans and their `sfx:` join
+the mix, exactly as an illustration scene's do.
+
 Word-timed ("karaoke") captions, when a spec asks for them, are burned into the TOP of the
 frame in the pass that already joins the parts — that concat was a stream copy, so this is
 the Short's only re-encode, loudnorm and all, rather than a second one. The rules and the
@@ -359,6 +367,49 @@ def illustration_preflight(scene, index: int) -> None:
         raise SystemExit(f"scene {index} (kind: illustration): {exc}") from None
 
 
+def media_overlay_preflight(scene, index: int) -> None:
+    """One media scene's `overlay:`, `scrim:` and `blur:`, checked before a frame is rendered.
+
+    The illustration layer is asked of `illustrate.validate_spec`, the same function the
+    `kind: illustration` preflight uses and for the same reason: the element schema has one
+    owner. It wants a whole spec with a `seconds` on every scene, and an overlay has no seconds
+    of its own — it is as long as the media scene, which is as long as its narration — so it is
+    wrapped with a placeholder exactly as `illustration_preflight` wraps a scene. No `bg`
+    either: an overlay has no ground, the footage IS the ground, and a spec that named one
+    hears so rather than having it silently dropped at render time.
+
+    An `overlay:` that is neither a card plate (`template:`) nor an illustration layer
+    (`elements:`) is refused here. It used to be a KeyError inside `cards.card_html` four
+    scenes into a render.
+    """
+    block = (scene or {}).get("overlay")
+    media_grade(scene, index)
+    if block is None:
+        return
+    where = f"scene {index} (kind: media)"
+    if not isinstance(block, dict):
+        raise SystemExit(f"{where}: `overlay:` must be a mapping, got "
+                         f"{type(block).__name__}")
+    if not block.get("template") and not block.get("elements"):
+        raise SystemExit(
+            f"{where}: `overlay:` carries neither `template:` (the card plate, the `kind: card` "
+            f"data contract on a transparent plate) nor `elements:` (an illustration layer over "
+            f"the footage). Nothing would have been drawn.")
+    for key in ("bg", "seconds"):
+        if key in block:
+            raise SystemExit(
+                f"{where}: `overlay.{key}:` is not read — an overlay has no ground of its own "
+                f"(the footage is the ground) and no length of its own (the scene's narration "
+                f"is). Take it off, or make this a `kind: illustration` scene.")
+    overlay = media_overlay(scene)
+    if overlay is None:
+        return
+    try:
+        illustrate.validate_spec({"scenes": [dict(overlay, seconds=1.0)]})
+    except ValueError as exc:
+        raise SystemExit(f"{where} overlay: {exc}") from None
+
+
 def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
     """Where the PICTURE changes inside one illustration scene, as spans summing to `dur`.
 
@@ -403,6 +454,159 @@ def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
     # `dur` to the millisecond or the cut list drifts off the cuts it is recording.
     spans.append(round(float(dur) - sum(spans), 3))
     return spans
+
+
+#: How far a `scrim:` may darken a media scene's footage. Past 0.8 the picture is a texture,
+#: not a shot, and the scene should be a `kind: illustration` on the graphite ground instead.
+SCRIM_MAX = 0.8
+#: How far a `blur:` may soften it, in DELIVERED pixels (see `footage_grade`). 12 px on a
+#: 1080-wide frame is already "that was a photograph once"; past it the source is wasted.
+BLUR_MAX = 12.0
+
+
+def media_overlay(scene):
+    """The ILLUSTRATION layer a media scene's `overlay:` carries, or None when it carries none.
+
+    `overlay:` on a media scene predates this and means the card plate -- the `kind: card` data
+    contract on a transparent plate, `media.overlay_html` -> `cards.card_html`. It now carries
+    either or both, and the two are told apart by the key each one REQUIRES: `template:` is the
+    card plate, `elements:` is the illustration layer. They are disjoint, they are both
+    mandatory in their own branch, and they are different layers at different points of the
+    graph (the plate is composited at the 1.2x render size under the final scale; the drawn
+    elements at the delivered 1080x1920 on top of it), so a mapping may legitimately hold both:
+    `overlay:` is simply what goes over the footage.
+
+    Comes back shaped as a one-scene illustration scene, which is what every illustrate.py
+    entry point wants (`validate_spec`, `resolve_times`, `scene_html`, `render_scene_frames`)
+    and what `illustration_spans`/`illustration_events` already read.
+    """
+    block = (scene or {}).get("overlay") or {}
+    if not isinstance(block, dict) or not block.get("elements"):
+        return None
+    out = {"kind": "illustration", "elements": block["elements"]}
+    if "sticker" in block:
+        out["sticker"] = block["sticker"]
+    return out
+
+
+def media_grade(scene, index: int = 0) -> tuple:
+    """(scrim, blur) for one media scene, checked. Absent -> (0.0, 0.0), i.e. no filter at all.
+
+    Both are OPTIONAL and both are allowed without an `overlay:` -- a scrim under a caption and
+    a blur under a chart beat are each a reason on their own. Out of range refuses the render
+    rather than clamping: a `scrim: 25` is somebody writing a percentage, and silently rendering
+    it as 0.8 would look like the renderer ignoring the key.
+    """
+    scene = scene or {}
+    out = []
+    for key, ceiling in (("scrim", SCRIM_MAX), ("blur", BLUR_MAX)):
+        value = scene.get(key, 0.0)
+        if value is None:
+            value = 0.0
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            raise SystemExit(f"scene {index} (kind: media): `{key}:` must be a number, got "
+                             f"{value!r}")
+        if not (0 <= float(value) <= ceiling):
+            raise SystemExit(
+                f"scene {index} (kind: media): `{key}: {value}` is outside [0, {ceiling:g}]. "
+                + ("`scrim` is the FRACTION of the footage's brightness to take away, so 0.25 "
+                   "is a quarter-stop of dark under a caption and 1.0 would be a black frame."
+                   if key == "scrim" else
+                   "`blur` is a gaussian sigma in delivered pixels; 12 is already 'that was a "
+                   "photograph once'."))
+        out.append(float(value))
+    return tuple(out)
+
+
+def footage_grade(scrim: float = 0.0, blur: float = 0.0) -> str:
+    """The filter clause that darkens and softens the FOOTAGE. "" when neither is asked for.
+
+    `drawbox` filling the frame with black at `scrim` alpha, NOT `eq=brightness=`. Three
+    reasons, and they are measurable rather than tasteful:
+
+      * `drawbox` alpha-blends toward black, and YUV<->RGB is an AFFINE transform, so blending
+        toward black's YUV (16, 128, 128) is exactly multiplying RGB by (1 - scrim). Every
+        channel scales by the same factor, so R:G:B is preserved: no hue shift, by construction.
+      * `eq=brightness=` is an ADDITIVE luma offset that leaves chroma alone. It clips the
+        blacks it pushes past 0 (shadow detail gone, not darkened) and leaves U/V where they
+        were, so the picture gets more saturated as it gets darker, which is the hue shift.
+      * `drawbox` runs natively on the yuv420p the chain is already in, so it inserts no
+        pixel-format conversion and no rounding beyond the blend itself. Deterministic: the
+        same input frame and the same alpha give the same bytes every run.
+
+    `gblur` sigma is scaled by RW/OUT_W, because this clause runs on the 1.2x render-size
+    footage (media.ffmpeg_video_steps ends at RWxRH) and the author writes the number they want
+    to SEE. 8 px of blur on the delivered frame is 9.6 px here.
+
+    The two commute -- a uniform multiply through a linear blur is the same either way -- so
+    the order is just the order they are written in the spec.
+    """
+    steps = []
+    if scrim:
+        steps.append(f"drawbox=x=0:y=0:w=iw:h=ih:color=black@{float(scrim):.4f}:t=fill")
+    if blur:
+        steps.append(f"gblur=sigma={float(blur) * RW / OUT_W:.4f}")
+    return ",".join(steps)
+
+
+def merge_spans(spans, other, dur: float, fps: int = FPS) -> list:
+    """Two span lists over the SAME part -> one whose cuts are the union of both.
+
+    A media scene with an illustration `overlay:` changes its picture twice over: at every beat
+    boundary (`beat_spans`) and at every overlay element's entry (`illustration_spans`). Both
+    are real picture changes and `cuts.json` is the renderer's own record of them -- nothing can
+    detect either afterwards -- so the part's `beats` row is the two lists merged, not whichever
+    one happened to be computed last.
+
+    Deduplicated BY FRAME for the same reason `illustration_spans` is: two cuts 8 ms apart are
+    one picture change at 30 fps, and a span shorter than a frame is a cut nobody can see. The
+    last span absorbs the rounding so the sum is `dur` to the millisecond.
+    """
+    frames = set()
+    for group in (spans, other):
+        at = 0.0
+        for span in list(group)[:-1]:
+            at += float(span)
+            frames.add(round(at * int(fps)))
+    last = round(float(dur) * int(fps))
+    out, previous = [], 0.0
+    for frame in sorted(frames):
+        if not (0 < frame < last):
+            continue
+        at = frame / float(fps)
+        out.append(round(at - previous, 3))
+        previous = at
+    out.append(round(float(dur) - sum(out), 3))
+    return out
+
+
+@dataclasses.dataclass(frozen=True)
+class MediaInputs:
+    """Which ffmpeg input index every piece of a media part's graph takes.
+
+    Counted in one place because the graph names every one of them and two of them move: the
+    beat sources are 0..sources-1 (one source, index 0, when the scene has no `beats:`), the
+    narration WAV comes next, then one input per layer PNG in `media_layers()` order, then the
+    illustration overlay's PNG sequence if the scene has one. Nothing here collides with the
+    FINAL pass's numbering (`caption_filter` puts the hook plate at 1 and the word PNGs after
+    it; `audio_inputs` queues the bed and the sfx last of all) because that is a different
+    ffmpeg call over a different input list -- these indexes exist only inside one part's
+    encode.
+    """
+    sources: int
+    audio: int
+    layers: tuple
+    overlay: int | None
+
+
+def media_inputs(beats, layers, overlay: bool = False) -> MediaInputs:
+    """`MediaInputs` for a scene with these beats, these layer PNGs and (maybe) an overlay."""
+    sources = len(beats) if beats else 1
+    first_layer = sources + 1
+    return MediaInputs(
+        sources=sources, audio=sources,
+        layers=tuple(first_layer + i for i in range(len(layers))),
+        overlay=(first_layer + len(layers)) if overlay else None)
 
 
 def prepare_beats(beats, spec_path) -> list:
@@ -722,7 +926,8 @@ def focus_notice(idx: int, fill, focus, sources) -> str | None:
 
 
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
-                       fill=None, focus=(0.5, 0.5), beats=()):
+                       fill=None, focus=(0.5, 0.5), beats=(), scrim=0.0, blur=0.0,
+                       overlay_frames=None):
     """One media file — or several beat sources — + layer PNGs + one WAV -> an mp4.
 
     The composite is three things stacked: the footage or still, put through the motion's
@@ -741,7 +946,23 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     the same WAV: the beat sources become inputs 0..n-1, the WAV input n, the layers n+1 on,
     and beat_steps() concatenates them into the `[m0]` a single source would have produced.
     Empty — which is every existing spec — and the graph is the one it has always been, from
-    the input order out.
+    the input order out. `media_inputs()` is where that numbering is counted.
+
+    `scrim` and `blur` grade the FOOTAGE — appended to the motion chain, so they land before
+    the layer PNGs rather than after. That placement is the licence answer as much as the
+    legibility one: the credit plate must stay full-brightness and sharp (media.py's first rule),
+    and a scrim that also dimmed our own attribution would be darkening the one thing that has
+    to stay readable. `footage_grade` owns both clauses.
+
+    `overlay_frames` is a directory of `illustrate.render_scene_frames(..., transparent=True)`
+    PNGs — an illustration layer for this scene, already at the delivered 1080x1920 — laid over
+    the finished picture in THIS call, so the part stays one encode. It goes in after the final
+    scale (the frames are delivered-size; scaling them with the footage would resample line art
+    that is already the right size) and before the fades, so a join still dips the whole
+    composite to black rather than fading the footage out from under the drawing. The sequence
+    is read at `-r FPS`, like every other image2 input here, and ffmpeg's `overlay` holds its
+    last frame at EOF — so a part whose `-t` runs a fraction of a frame past the sequence keeps
+    the drawing up instead of dropping it.
 
     The output flags are encode_scene's, byte for byte, because the parts are concatenated
     with `-c:v copy`: a media scene that encoded differently would break the concat.
@@ -764,21 +985,34 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
                                          src_w=size[0] if size else None,
                                          src_h=size[1] if size else None,
                                          fill=fill, focus=focus)
-    audio = len(beats) if beats else 1
+    layers = list(layers)
+    indexes = media_inputs(beats, layers, overlay=overlay_frames is not None)
     args += ["-i", str(wav)]
     for layer in layers:
         args += ["-i", str(layer)]
+    if indexes.overlay is not None:
+        args += ["-r", str(FPS),
+                 "-i", str(pathlib.Path(overlay_frames) / ILLUSTRATION_FRAME_GLOB)]
     stage = "m0"
-    for i, _layer in enumerate(layers):
+    grade = footage_grade(scrim, blur)
+    if grade:
+        steps.append(f"[m0]{grade}[g0]")
+        stage = "g0"
+    for i, index in enumerate(indexes.layers):
         # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
-        steps.append(f"[{stage}][{i + audio + 1}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
+        steps.append(f"[{stage}][{index}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
         stage = f"m{i + 1}"
     # out_range=tv because a JPEG still decodes full-range: without it that scene encodes
     # yuvj420p while every card and sheet scene encodes yuv420p, and `-c:v copy` concat
     # would put a brightness jump at the cut.
-    steps.append(f"[{stage}]scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv,"
-                 f"{fade_steps(dur, join)}format=yuv420p[v]")
-    steps.append(f"[{audio}:a]apad=pad_dur=2,afade=t=in:d=0.05,"
+    scale = f"scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv"
+    if indexes.overlay is None:
+        steps.append(f"[{stage}]{scale},{fade_steps(dur, join)}format=yuv420p[v]")
+    else:
+        steps.append(f"[{stage}]{scale}[s0]")
+        steps.append(f"[s0][{indexes.overlay}:v]overlay=x=0:y=0:format=auto[o0]")
+        steps.append(f"[o0]{fade_steps(dur, join)}format=yuv420p[v]")
+    steps.append(f"[{indexes.audio}:a]apad=pad_dur=2,afade=t=in:d=0.05,"
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
          "-map", "[v]", "-map", "[a]", "-t", f"{dur:.3f}", "-c:v", "libx264",
@@ -796,11 +1030,16 @@ def media_layers(scene, brand, work, k):
     ONE plate, however many pictures the scene shows: media.credit_text() is the scene's own
     credit and its beats' own credits, deduplicated. A scene without beats gets exactly the
     string it always got, so its plate does not move.
+
+    The CARD half of `overlay:` only — the half with a `template:`. The illustration half
+    (`overlay: {elements: ...}`) is not a layer PNG at all: it is a PNG per FRAME, drawn by
+    illustrate.py and composited after the final scale, so it never reaches here.
     """
     credit = media.credit_text(scene)
+    plate = (scene.get("overlay") or {}).get("template")
     layers = []
     for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, RW, RH)
-                       if scene.get("overlay") else None),
+                       if plate else None),
                       ("credit", media.credit_plate_html(credit, brand, RW, RH)
                        if credit else None)):
         if doc is None:
@@ -834,8 +1073,11 @@ def card_box_under_captions(width=RW, height=RH):
 def scene_card_top(scene, width=OUT_W, height=OUT_H):
     """The top edge of whatever this scene draws where a caption wants to go, or None.
 
-    A `media` scene is imagery: the top of the frame is free unless it carries a card overlay,
-    and then the constraint is media.overlay_box, the same rectangle every media scene uses.
+    A `media` scene is imagery: the top of the frame is free unless it carries a CARD overlay
+    (`overlay: {template: ...}`), and then the constraint is media.overlay_box, the same
+    rectangle every media scene uses. An ILLUSTRATION overlay (`overlay: {elements: ...}`)
+    constrains nothing, for the same reason an illustration scene does not: its elements are
+    placed by the spec, and keeping them out of the band is the author's job.
     A `kind: card` scene is moved below the band instead (card_box_under_captions), so it
     reports that box's top and constrains nothing. An `illustration` scene is like a media
     scene with no overlay: the elements are placed by the spec, which is the author's job to
@@ -846,7 +1088,9 @@ def scene_card_top(scene, width=OUT_W, height=OUT_H):
     """
     scene = scene or {}
     if media.is_media(scene):
-        return media.overlay_box(width, height)[1] if scene.get("overlay") else None
+        overlay = scene.get("overlay") or {}
+        plate = overlay.get("template") if isinstance(overlay, dict) else overlay
+        return media.overlay_box(width, height)[1] if plate else None
     if cards.is_card(scene):
         return card_box_under_captions(width, height)[1]
     if illustrate.is_illustration(scene):
@@ -1804,6 +2048,7 @@ def main():
     for _index, _scene in enumerate(spec.get("scenes") or []):
         if media.is_media(_scene or {}):
             scene_beats(_scene)
+            media_overlay_preflight(_scene, _index)
             if (_scene or {}).get("steps"):
                 raise SystemExit(
                     "a `media` scene carries `steps:`, which only a `card` scene renders — "
@@ -1816,6 +2061,14 @@ def main():
                     "a `card` scene carries `beats:`, which only a `media` scene renders — "
                     "a beat cuts to a picture, and a card scene's picture is the card. Use "
                     "`steps:` to draw the card a row at a time.")
+            over = sorted(k for k in ("overlay", "scrim", "blur") if (_scene or {}).get(k))
+            if over:
+                raise SystemExit(
+                    f"a `card` scene carries `{'`, `'.join(over)}:`, and none of those is read "
+                    f"for this kind — they go over FOOTAGE, and a card scene has none: a card "
+                    f"IS the frame. Nothing would have read it. Draw it on the card "
+                    f"(`kind: card` templates), or put the card over imagery with a "
+                    f"`kind: media` scene.")
         elif illustrate.is_illustration(_scene or {}):
             illustration_preflight(_scene, _index)
             if (_scene or {}).get("beats") or (_scene or {}).get("steps"):
@@ -1942,12 +2195,44 @@ def main():
             # would move the cut list off the cuts (and, on a stub or a mismeasure, trip the
             # backstop against a length nothing rendered).
             spans = beat_spans(beats, dur)
+            scrim, blur = media_grade(sc, idx)
+            # The illustration layer, if this scene carries one. Its `when:` times resolve
+            # against THIS scene's own words, on this scene's own WAV clock (frame 0 of the
+            # overlay is t=0 of the WAV), exactly as an illustration scene's do — nothing is
+            # offset here. The frames are NOT quantised to whole frames the way an illustration
+            # part's are: this part's length is the media chain's, and ffmpeg's `overlay` holds
+            # the sequence's last frame at EOF, so a `-t` that runs a fraction of a frame past
+            # the drawing keeps it up rather than dropping it.
+            ov_scene, overlay_frames = media_overlay(sc), None
+            if ov_scene is not None:
+                try:
+                    ov_scene = illustrate.resolve_times(ov_scene, captions.read_words(wav))
+                except ValueError as exc:
+                    raise SystemExit(f"scene {idx:02d} (kind: media) overlay: {exc}") from None
+                ov_scene["seconds"] = dur
+                overlay_frames = work / f"scene_{k}_overlay"
+                illustrate.render_scene_frames(ov_scene, overlay_frames, transparent=True)
+                # Both lists of picture changes, merged: the beats cut the footage, the
+                # elements' entries change what is drawn on top of it, and cuts.json is the
+                # only record either one leaves. `[dur]` stands in for a scene with no beats —
+                # one picture, no cut of its own — so the merge has a span list to work from.
+                spans = merge_spans(spans or [dur], illustration_spans(ov_scene, dur), dur)
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4", join=tr.join,
-                                     fill=fill, focus=scene_focus, beats=beats)
+                                     fill=fill, focus=scene_focus, beats=beats,
+                                     scrim=scrim, blur=blur, overlay_frames=overlay_frames)
             add_part(out, idx, spans)
+            if ov_scene is not None:
+                # Its elements' `sfx:` join the mix exactly as an illustration scene's do —
+                # same list, same thinning, same cuts.json rows.
+                illustrated.append((idx, ov_scene))
             shot = f"{len(beats)} beats" if beats else f"{kind}/{motion}"
-            print(f"scene {idx:02d}: media {shot} {dur:.1f}s -> {out.name}", flush=True)
+            over = (f" + overlay {len(ov_scene['elements'])} elements"
+                    if ov_scene is not None else "")
+            graded = ", ".join(filter(None, [f"scrim {scrim:g}" if scrim else "",
+                                             f"blur {blur:g}px" if blur else ""]))
+            print(f"scene {idx:02d}: media {shot}{over}"
+                  f"{f' ({graded})' if graded else ''} {dur:.1f}s -> {out.name}", flush=True)
             continue
         if cards.is_card(sc):
             # A card is already 9:16 — use it as the whole frame, no top/bottom banding.

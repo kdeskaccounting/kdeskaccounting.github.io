@@ -1111,8 +1111,16 @@ def render_element(el, idx, sticker=True):
     return _BUILDERS[el["type"]](el, idx, sticker)
 
 
-def scene_html(scene):
-    """The full, self-contained, frame-exact HTML page for one `kind: illustration` scene."""
+def scene_html(scene, transparent=False):
+    """The full, self-contained, frame-exact HTML page for one `kind: illustration` scene.
+
+    `transparent` draws the elements on NOTHING -- no ground at all, the scene's `bg` (and the
+    GRAPHITE default) ignored -- which is what an illustration laid OVER a `kind: media`
+    scene's footage needs: everywhere the page is transparent, the imagery shows through.
+    `render_sheets.screenshot(..., transparent=True)` is the other half of it (Chrome paints
+    the backdrop opaque white otherwise, and the layer becomes a card). Same elements, same
+    `seek()`, same frame count: only the ground differs.
+    """
     sticker = scene.get("sticker", True)
     html_parts, css_parts = [], []
     for idx, el in enumerate(scene["elements"]):
@@ -1123,7 +1131,7 @@ def scene_html(scene):
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 {SHARED_CSS}
 {''.join(css_parts)}
-html,body{{background:{scene.get("bg") or GRAPHITE}}}
+html,body{{background:{"transparent" if transparent else (scene.get("bg") or GRAPHITE)}}}
 </style></head><body>
 {''.join(html_parts)}
 <script>
@@ -1147,7 +1155,7 @@ window.seek(0);
 # with the standard library alone.
 # --------------------------------------------------------------------------------------------
 
-def render_scene_frames(scene, scene_dir, fps=FPS):
+def render_scene_frames(scene, scene_dir, fps=FPS, transparent=False):
     """One scene -> `scene_dir/scene.html`, `scene_dir/frame_NNNN.png` (one per frame, at
     `fps`), and `scene_dir/events.json`. Returns the list of frame PNG paths, in order.
 
@@ -1155,15 +1163,22 @@ def render_scene_frames(scene, scene_dir, fps=FPS):
     `render_sheets.screenshot(..., before_capture_js=...)`, which keeps that one page open
     across every call in this loop -- see render_sheets._pw_page -- so Chrome pays
     navigation cost once per scene, not once per frame.
+
+    `transparent` draws the same frames with no ground under them, for compositing over a
+    `kind: media` scene's footage (make_short.encode_media_scene). It is passed BOTH to
+    `scene_html` (which then paints no background) and to the screenshot (which then keeps the
+    page's alpha instead of flattening it onto white) -- either one alone produces an opaque
+    layer that hides the footage completely.
     """
     scene_dir = pathlib.Path(scene_dir)
     scene_dir.mkdir(parents=True, exist_ok=True)
     html_path = scene_dir / "scene.html"
-    html_path.write_text(scene_html(scene), encoding="utf-8")
+    html_path.write_text(scene_html(scene, transparent=transparent), encoding="utf-8")
     frames = []
     for i, t in enumerate(frame_times(scene["seconds"], fps)):
         out_png = scene_dir / f"frame_{i:04d}.png"
-        R.screenshot(str(html_path), str(out_png), W, H, before_capture_js=f"window.seek({t:.6f})")
+        R.screenshot(str(html_path), str(out_png), W, H, transparent=transparent,
+                     before_capture_js=f"window.seek({t:.6f})")
         frames.append(out_png)
     (scene_dir / "events.json").write_text(
         json.dumps(scene_events(scene), indent=2) + "\n", encoding="utf-8")
