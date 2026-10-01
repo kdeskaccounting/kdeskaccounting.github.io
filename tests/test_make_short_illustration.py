@@ -50,6 +50,11 @@ DURATIONS = {"0": 2.4, "1": 2.0}
 PART_SECONDS = 3.0
 
 
+def _dur(idx):
+    """What a scene is ENCODED at: its narration plus the pad, quantised to whole frames."""
+    return len(illustrate.frame_times(DURATIONS[str(idx)] + M.SCENE_PAD)) / M.FPS
+
+
 def _elements():
     return [
         {"type": "label", "text": "MAIN STREET", "at": [0.5, 0.33], "size": 0.05,
@@ -169,7 +174,7 @@ def test_the_part_is_encoded_the_way_every_other_part_is(stub):
     cmd = [str(arg) for arg in _scene_cmds(stub)[0]]
     for flag, value in (("-c:v", "libx264"), ("-preset", "medium"), ("-crf", "26"),
                         ("-r", str(M.FPS)), ("-color_range", "tv"), ("-bsf:v", M.RANGE_BSF),
-                        ("-c:a", "aac"), ("-b:a", "128k"), ("-t", "2.650")):
+                        ("-c:a", "aac"), ("-b:a", "128k"), ("-t", f"{_dur(0):.3f}")):
         at = [i for i, arg in enumerate(cmd) if arg == flag]
         assert at, f"{flag} is missing from the illustration encode"
         assert any(cmd[i + 1] == value for i in at), f"{flag} is not {value}"
@@ -193,7 +198,20 @@ def test_join_cut_drops_both_fades(stub):
 def test_the_scene_is_cut_to_its_narration_plus_the_pad(stub):
     stub.go()
     cmd = _scene_cmds(stub)[0]
-    assert cmd[cmd.index("-t") + 1] == f"{DURATIONS['0'] + M.SCENE_PAD:.3f}"
+    assert cmd[cmd.index("-t") + 1] == f"{_dur(0):.3f}"
+    assert DURATIONS["0"] + M.SCENE_PAD == pytest.approx(_dur(0), abs=0.5 / M.FPS)
+
+
+def test_the_part_ends_on_the_same_frame_the_pictures_do(stub):
+    """2.0 + 0.25 = 2.25 s is 67.5 frames, and illustrate draws round() of that = 68. An
+    unquantised `-t 2.250` would run the audio 8 ms past the last picture it has."""
+    stub.go()
+    cmd = _scene_cmds(stub)[1]
+    asked = float(cmd[cmd.index("-t") + 1])          # written to the millisecond
+    scene, _path = stub.rendered[1]
+    assert asked == pytest.approx(scene["seconds"], abs=1e-3)
+    assert len(illustrate.frame_times(scene["seconds"])) == 68
+    assert scene["seconds"] * M.FPS == pytest.approx(68)
 
 
 def test_the_frames_go_in_their_own_directory_per_scene(stub):
@@ -205,7 +223,7 @@ def test_the_frames_go_in_their_own_directory_per_scene(stub):
 def test_the_scene_handed_to_illustrate_carries_the_real_duration(stub):
     stub.go()
     scene, _path = stub.rendered[0]
-    assert scene["seconds"] == pytest.approx(DURATIONS["0"] + M.SCENE_PAD)
+    assert scene["seconds"] == pytest.approx(_dur(0))
 
 
 def test_the_when_times_are_resolved_against_the_scenes_own_words(stub):
@@ -277,14 +295,14 @@ def test_a_seconds_on_an_illustration_scene_is_announced_not_honoured(stub, caps
     stub.go()
     assert "ignored" in capsys.readouterr().out
     scene, _path = stub.rendered[0]
-    assert scene["seconds"] == pytest.approx(DURATIONS["0"] + M.SCENE_PAD)
+    assert scene["seconds"] == pytest.approx(_dur(0))
 
 
 def test_the_render_says_what_it_drew(stub, capsys):
     stub.go()
     out = capsys.readouterr().out
-    assert "scene 00: illustration 3 elements 2.6s -> scene_0.mp4" in out
-    assert "scene 01: illustration 1 elements 2.2s -> scene_1.mp4" in out
+    assert f"scene 00: illustration 3 elements {_dur(0):.1f}s -> scene_0.mp4" in out
+    assert f"scene 01: illustration 1 elements {_dur(1):.1f}s -> scene_1.mp4" in out
 
 
 # --- where the picture changes -------------------------------------------------------------
@@ -350,11 +368,12 @@ def test_the_cut_rows_carry_the_spans_the_elements_made(stub):
     stub.go()
     cuts = json.loads((stub.work / "cuts.json").read_text())
     rows = {row["scene"]: row for row in cuts["scenes"]}
-    # scene 0: entries at 0.00 (label), 0.90 (squiggle) and 1.44 (cookies), over the 2.65 s
-    # this part was ENCODED with (durations.json + the pad) -- the spans sum to that, exactly as
-    # `beat_spans` sums to the `dur` a media part was encoded with, not to what it probed to.
-    assert rows[0]["beats"] == [0.9, 0.533, 1.217]
-    assert sum(rows[0]["beats"]) == pytest.approx(DURATIONS["0"] + M.SCENE_PAD, abs=1e-9)
+    # scene 0: entries at 0.00 (label), 0.90 (squiggle) and 1.44 (cookies), over the length
+    # this part was ENCODED with (durations.json + the pad, quantised to frames) -- the spans
+    # sum to THAT, exactly as `beat_spans` sums to the `dur` a media part was encoded with,
+    # rather than to what the part probed to.
+    assert rows[0]["beats"][:2] == [0.9, 0.533]
+    assert sum(rows[0]["beats"]) == pytest.approx(_dur(0), abs=5e-4)  # spans are ms-rounded
     # every picture change after frame 0, on the finished timeline: two inside scene 0, the
     # part boundary at 3.0 (what the parts PROBED to), and the tag dropping inside scene 1
     assert cuts["cuts"] == [0.9, 1.433, 3.0, 4.167]

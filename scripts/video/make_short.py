@@ -1988,6 +1988,13 @@ def main():
             # the join, the mix.
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            # Quantised to the frames illustrate will actually draw (`frame_times` ROUNDS, and
+            # rounds DOWN more often than not), so the PNG sequence and this part's own `-t`
+            # end on the same frame. Unquantised, a part's audio can outrun its last picture by
+            # up to half a frame — which every other scene kind avoids by handing zoompan a
+            # ceil'd frame count, and which at a `-c:v copy` join is a frame of video missing
+            # under the next part's first frame. At most 17 ms of the pad, either way.
+            dur = len(illustrate.frame_times(dur)) / FPS
             # The words are what the elements' `when:` times are resolved against, and they are
             # already on this scene's own WAV clock — frame 0 of the scene is t=0 of the WAV —
             # so no offset arithmetic happens here. The captions read the same file again,
