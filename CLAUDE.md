@@ -282,8 +282,15 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     sequence is one more input, read at `-r 30`, overlaid AFTER the final scale to 1080x1920
 #     (the frames are already delivered-size; scaling them with the footage would resample line
 #     art) and BEFORE the fades (a join dips the whole composite to black rather than fading the
-#     picture out from under the drawing). ffmpeg's `overlay` holds the last frame at EOF, so a
-#     `-t` that runs a fraction of a frame past the sequence keeps the drawing up.
+#     picture out from under the drawing). `eof_action=repeat` is spelled out on that overlay:
+#     the drawing is round(dur * 30) frames against a part cut at `-t dur`, so it can run out
+#     up to half a frame early, and this is what holds the last frame instead of dropping it.
+#   - THE PLATES GO ON TOP OF THE DRAWING. The composite order is footage (graded) → drawing →
+#     card plate → credit plate, because a credit is an attribution and nothing may cover it, a
+#     sticker included. With no drawing the plates composite exactly where they always did, at
+#     the 1.2x render size under the final scale, byte for byte; with one they move after the
+#     scale and are therefore RENDERED at 1080x1920 by make_short.media_layers instead of at
+#     1296x2304. Every box in media.py is a fraction of the frame, so that is the same layout.
 #   - `scrim:` is `colorchannelmixer` at a gain of (1 - scrim) on all three channels — a
 #     literal multiply of R, G and B by one factor, so R:G:B is preserved and nothing clips.
 #     MEASURED, not argued: on a gradient at scrim 0.3 it lands within 0.0002 of the gain on
@@ -303,10 +310,18 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     unions them with the beat boundaries and dedupes BY FRAME — two cuts inside one frame are
 #     one picture change), and their `sfx:` join `audio.sfx.events` exactly as an illustration
 #     scene's do, thinning and all.
+#   - EARTH STUDIO IS THE OTHER HALF OF THE ATTRIBUTION PROBLEM, and ordering cannot fix it:
+#     Earth Studio BURNS its mark into the frames it exports, so it is the footage, not a layer.
+#     The drawing is kept out of that rectangle instead. make_short.media_overlay_preflight
+#     refuses — by element INDEX and type, before a frame is drawn — any overlay element whose
+#     painted box (illustrate.element_bbox, which errs wide and includes the sticker's bleed)
+#     intersects media.watermark_box, on a scene media.is_earth_studio() identifies. That is
+#     text-only and either signal is enough: a `credit:` naming Google Earth or Earth Studio, or
+#     a `src:` under an `earth/` directory — on the scene OR on any of its beats, since under
+#     `beats:` the beats are what reach the screen. A false positive costs one corner sticker
+#     and says how to proceed; a false negative is a licence breach no later frame check undoes.
 #   - An illustration overlay constrains the caption band NOWHERE (a card plate still does):
-#     its elements are placed by the spec, and keeping them out of the band — and out of
-#     media.WATERMARK_*, the Earth Studio attribution zone, which nothing checks for an
-#     overlay — is the author's job.
+#     its elements are placed by the spec, and keeping them out of the band is the author's job.
 # A spec may also carry top-level `credits: [str]` and `disclaimer: str`. NOT YET WIRED: the
 # renderer parses them and `cards.spec_credits(spec)` formats them (plus each media scene's own
 # `credit:`) into a Credits block for a description, but NOTHING calls it yet — there is no end

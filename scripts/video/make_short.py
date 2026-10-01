@@ -367,6 +367,28 @@ def illustration_preflight(scene, index: int) -> None:
         raise SystemExit(f"scene {index} (kind: illustration): {exc}") from None
 
 
+def watermark_offenders(overlay, width: int = OUT_W, height: int = OUT_H) -> list:
+    """[(element index, element, bbox)] for every overlay element reaching the watermark zone.
+
+    The zone is media.watermark_box — the rectangle Earth Studio burns its attribution into —
+    and the boxes are illustrate.element_bbox, which errs wide on purpose. Both in PIXELS of
+    the delivered frame, which is where the drawing is composited.
+
+    Pure, and a list rather than a bool, so the refusal can name every element at fault in one
+    pass instead of being fixed one render at a time.
+    """
+    zone = media.watermark_box(width, height)
+    out = []
+    for index, el in enumerate((overlay or {}).get("elements") or []):
+        if not isinstance(el, dict):
+            continue
+        left, top, right, bottom = illustrate.element_bbox(el, width, height)
+        box = (left * width, top * height, right * width, bottom * height)
+        if media.boxes_overlap(box, zone):
+            out.append((index, el, tuple(round(value) for value in box)))
+    return out
+
+
 def media_overlay_preflight(scene, index: int) -> None:
     """One media scene's `overlay:`, `scrim:` and `blur:`, checked before a frame is rendered.
 
@@ -408,6 +430,31 @@ def media_overlay_preflight(scene, index: int) -> None:
         illustrate.validate_spec({"scenes": [dict(overlay, seconds=1.0)]})
     except ValueError as exc:
         raise SystemExit(f"{where} overlay: {exc}") from None
+    # The LAST line of defence for the attribution, and the only one for an Earth Studio
+    # source. Our own plates are composited over the drawing (encode_media_scene), so nothing
+    # we draw can cover them — but Earth Studio burns its mark into the exported FRAMES, so
+    # there is no layer to reorder: the pixels are the footage. Keeping the drawing out of
+    # that rectangle is the whole mechanism, and it is checked here rather than looked at
+    # afterwards, because a Short that shipped with the attribution covered is a licence
+    # breach that no later frame check can undo.
+    if media.is_earth_studio(scene):
+        offenders = watermark_offenders(overlay)
+        if offenders:
+            zone = media.watermark_box(OUT_W, OUT_H)
+            raise SystemExit(
+                f"{where}: this scene's source is an Earth Studio export, which BURNS its "
+                f"attribution into the frames — the terms require it to stay visible, and "
+                f"nothing can be drawn over it because it is the footage, not a plate. These "
+                f"overlay element(s) reach into the watermark zone "
+                f"(x {zone[0]}-{zone[2]}, y {zone[1]}-{zone[3]} of {OUT_W}x{OUT_H}):\n"
+                + "\n".join(
+                    f"  element {ei} ({el.get('type')}): {box[0]},{box[1]} to {box[2]},{box[3]}"
+                    for ei, el, box in offenders)
+                + f"\nMove them up or left — media.WATERMARK_W_FRAC/H_FRAC "
+                  f"({media.WATERMARK_W_FRAC} x {media.WATERMARK_H_FRAC}) is the rectangle to "
+                  f"stay out of. If this source is NOT an Earth Studio export, take "
+                  f"'Google Earth' out of its `credit:` and move it out of an `earth/` "
+                  f"directory, which are the two things that identify one.")
 
 
 def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
@@ -975,9 +1022,25 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     scale (the frames are delivered-size; scaling them with the footage would resample line art
     that is already the right size) and before the fades, so a join still dips the whole
     composite to black rather than fading the footage out from under the drawing. The sequence
-    is read at `-r FPS`, like every other image2 input here, and ffmpeg's `overlay` holds its
-    last frame at EOF — so a part whose `-t` runs a fraction of a frame past the sequence keeps
-    the drawing up instead of dropping it.
+    is read at `-r FPS`, like every other image2 input here, and `eof_action=repeat` is spelled
+    out on that overlay rather than left to the default — the drawing is `round(dur * FPS)`
+    frames against a part cut at `-t dur`, so the last frame can be up to half a frame short of
+    the footage, and this is what holds it there instead of dropping the drawing on the last
+    frame of the scene.
+
+    THE PLATES GO ON TOP OF THE DRAWING. A credit plate is an attribution, so nothing may cover
+    it — not a card, and not a sticker. With no drawing the plates composite where they always
+    did, at the 1.2x render size under the final scale, byte for byte. With one, the order has
+    to become footage -> drawing -> plates, and the only place the drawing can sit without
+    being resampled is after the scale — so the plates move after the scale too, and the caller
+    renders them at OUT_WxOUT_H instead (`media_layers`). Every box in media.py is a FRACTION
+    of the frame, so that is the same layout, rasterised at the delivered size rather than
+    downscaled onto it.
+
+    Our own plates are the half of the attribution problem this can solve by ordering. The
+    other half is Earth Studio, which burns its mark into the exported frames: there is no
+    layer to reorder, so the drawing is kept out of that rectangle instead, by
+    `media_overlay_preflight` before anything renders.
 
     The output flags are encode_scene's, byte for byte, because the parts are concatenated
     with `-c:v copy`: a media scene that encoded differently would break the concat.
@@ -1013,20 +1076,33 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     if grade:
         steps.append(f"[m0]{grade}[g0]")
         stage = "g0"
-    for i, index in enumerate(indexes.layers):
-        # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
-        steps.append(f"[{stage}][{index}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
-        stage = f"m{i + 1}"
+
+    def plates(stage):
+        """The layer PNGs over `stage`, in media_layers() order. Credit is last, so it is on
+        top: the attribution must never end up behind anything."""
+        for i, index in enumerate(indexes.layers):
+            # eof_action=repeat (the default) holds the single PNG frame over the whole scene.
+            steps.append(f"[{stage}][{index}:v]overlay=x=0:y=0:format=auto[m{i + 1}]")
+            stage = f"m{i + 1}"
+        return stage
+
     # out_range=tv because a JPEG still decodes full-range: without it that scene encodes
     # yuvj420p while every card and sheet scene encodes yuv420p, and `-c:v copy` concat
     # would put a brightness jump at the cut.
     scale = f"scale={OUT_W}:{OUT_H}:flags=lanczos:out_range=tv"
     if indexes.overlay is None:
+        stage = plates(stage)
         steps.append(f"[{stage}]{scale},{fade_steps(dur, join)}format=yuv420p[v]")
     else:
+        # The drawing goes UNDER the plates (see the docstring): scale the footage to the
+        # delivered size first, lay the drawing on it, and only then the plates — which the
+        # caller rendered at OUT_WxOUT_H for exactly this case, since they are no longer
+        # composited at the 1.2x render size.
         steps.append(f"[{stage}]{scale}[s0]")
-        steps.append(f"[s0][{indexes.overlay}:v]overlay=x=0:y=0:format=auto[o0]")
-        steps.append(f"[o0]{fade_steps(dur, join)}format=yuv420p[v]")
+        steps.append(f"[s0][{indexes.overlay}:v]"
+                     f"overlay=x=0:y=0:format=auto:eof_action=repeat[o0]")
+        stage = plates("o0")
+        steps.append(f"[{stage}]{fade_steps(dur, join)}format=yuv420p[v]")
     steps.append(f"[{indexes.audio}:a]apad=pad_dur=2,afade=t=in:d=0.05,"
                  "aformat=sample_rates=48000:channel_layouts=stereo[a]")
     run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
@@ -1036,11 +1112,17 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     return out
 
 
-def media_layers(scene, brand, work, k):
+def media_layers(scene, brand, work, k, width=RW, height=RH):
     """Screenshot the scene's overlay and credit plate as full-frame transparent PNGs.
 
     Credit last, so it is drawn on top: the two boxes never overlap, but the attribution is
     the one thing that must never end up behind anything.
+
+    `width`/`height` are the canvas, and the default is the 1.2x render size every scene
+    without an illustration overlay still composites at. A scene WITH one renders them at the
+    delivered OUT_WxOUT_H instead, because its plates are composited after the final scale
+    (encode_media_scene) so that they land on top of the drawing. Every box in media.py is a
+    fraction of the frame, so the layout is identical either way.
 
     ONE plate, however many pictures the scene shows: media.credit_text() is the scene's own
     credit and its beats' own credits, deduplicated. A scene without beats gets exactly the
@@ -1053,14 +1135,15 @@ def media_layers(scene, brand, work, k):
     credit = media.credit_text(scene)
     plate = (scene.get("overlay") or {}).get("template")
     layers = []
-    for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, RW, RH)
+    for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, width, height)
                        if plate else None),
-                      ("credit", media.credit_plate_html(credit, brand, RW, RH)
+                      ("credit", media.credit_plate_html(credit, brand, width, height)
                        if credit else None)):
         if doc is None:
             continue
         hp = work / f"{name}_{k}.html"; hp.write_text(doc, encoding="utf-8")
-        png = work / f"{name}_{k}.png"; R.screenshot(hp, png, RW, RH, transparent=True)
+        png = work / f"{name}_{k}.png"
+        R.screenshot(hp, png, width, height, transparent=True)
         layers.append(png)
     return layers
 
@@ -2193,7 +2276,12 @@ def main():
             # Already validated by media.validate_spec() before any rendering began.
             src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
             motion = sc.get("motion") or media.default_motion(kind)
-            layers = media_layers(sc, btokens, work, k)
+            ov_scene = media_overlay(sc)
+            # A scene with a drawing composites its plates AFTER the final scale, so that they
+            # land on top of it — which means they are rendered at the delivered size rather
+            # than at the 1.2x one. Every other scene's plates are exactly the PNGs they were.
+            layers = media_layers(sc, btokens, work, k,
+                                  *((OUT_W, OUT_H) if ov_scene is not None else (RW, RH)))
             wav = build / "audio" / f"scene_{idx:02d}.wav"
             adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
             # `scene_focus`, not `focus`: the name at this scope is the sheet pipeline's
@@ -2218,7 +2306,7 @@ def main():
             # part's are: this part's length is the media chain's, and ffmpeg's `overlay` holds
             # the sequence's last frame at EOF, so a `-t` that runs a fraction of a frame past
             # the drawing keeps it up rather than dropping it.
-            ov_scene, overlay_frames = media_overlay(sc), None
+            overlay_frames = None
             if ov_scene is not None:
                 try:
                     ov_scene = illustrate.resolve_times(ov_scene, captions.read_words(wav))

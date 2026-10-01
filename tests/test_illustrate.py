@@ -645,6 +645,88 @@ class TestSticker:
                                "sticker": False}, sticker=True))
 
 
+# --------------------------------------------------------------------------------------------
+# What an element PAINTS, as a box. The only caller is make_short's Earth Studio watermark
+# guard, which refuses an element for being where it must not be -- so every box errs wide.
+# --------------------------------------------------------------------------------------------
+
+class TestElementBbox:
+    def test_an_emoji_is_centred_on_its_at(self):
+        box = I.element_bbox({"type": "emoji", "glyph": "x", "at": [0.5, 0.5], "size": 0.2})
+        assert (box[0] + box[2]) / 2 == pytest.approx(0.5)
+        assert (box[1] + box[3]) / 2 == pytest.approx(0.5)
+
+    def test_an_emojis_size_is_a_fraction_of_the_WIDTH_on_both_axes(self):
+        """`size` sets font-size, and the glyph box is square at line-height 1 -- so on a 9:16
+        frame it is a much smaller fraction of the height than of the width."""
+        box = I.element_bbox({"type": "emoji", "glyph": "x", "at": [0.5, 0.5], "size": 0.2})
+        width_frac = box[2] - box[0] - 2 * I.STICKER_BLEED_PX / I.W
+        height_frac = box[3] - box[1] - 2 * I.STICKER_BLEED_PX / I.H
+        # abs=, not rel=: element_bbox rounds its fractions to 6 dp, which is half a
+        # thousandth of a pixel once multiplied back up by the frame size.
+        assert width_frac == pytest.approx(0.2, abs=1e-6)
+        assert height_frac * I.H == pytest.approx(0.2 * I.W, abs=1e-3)
+
+    def test_every_box_carries_the_sticker_bleed(self):
+        """The white border and the drop shadow paint outside the element's own geometry."""
+        plain = I.element_bbox({"type": "box", "at": [0.5, 0.5], "w": 0.4, "h": 0.2})
+        assert plain[0] == pytest.approx(0.3 - I.STICKER_BLEED_PX / I.W)
+        assert plain[3] == pytest.approx(0.6 + I.STICKER_BLEED_PX / I.H)
+
+    def test_a_label_is_as_wide_as_its_fitted_type(self):
+        el = {"type": "label", "text": "ON PURPOSE", "at": [0.5, 0.4], "size": 0.062}
+        px = I.fit_label_px(el["text"], 0.062 * I.H)
+        box = I.element_bbox(el)
+        assert (box[2] - box[0]) * I.W == pytest.approx(
+            len(el["text"]) * I.LABEL_EM_PER_CHAR * px + 2 * I.STICKER_BLEED_PX, abs=1e-3)
+
+    def test_a_label_never_claims_more_than_the_safe_width(self):
+        box = I.element_bbox({"type": "label", "at": [0.5, 0.4], "size": 0.2,
+                              "text": "A VERY LONG LINE OF CAPITALS INDEED, QUITE LONG"})
+        assert (box[2] - box[0]) * I.W <= I.W * I.SAFE_W + 2 * I.STICKER_BLEED_PX + 1
+
+    def test_an_arrow_spans_its_two_endpoints(self):
+        box = I.element_bbox({"type": "arrow", "from": [0.2, 0.8], "to": [0.7, 0.3]})
+        assert box[0] < 0.2 and box[2] > 0.7
+        assert box[1] < 0.3 and box[3] > 0.8
+
+    def test_a_squiggle_is_widened_by_its_own_amplitude(self):
+        straight = I.element_bbox({"type": "squiggle", "from": [0.5, 0.8], "to": [0.5, 0.3],
+                                   "amplitude": 0.0})
+        wavy = I.element_bbox({"type": "squiggle", "from": [0.5, 0.8], "to": [0.5, 0.3],
+                               "amplitude": 0.08})
+        assert wavy[0] < straight[0] and wavy[2] > straight[2]
+
+    def test_a_walking_figure_spans_its_whole_walk(self):
+        box = I.element_bbox({"type": "figure", "pose": "walk", "from": [0.1, 0.8],
+                              "to": [0.7, 0.8], "t0": 0.0, "t1": 1.0})
+        assert box[0] < 0.1 and box[2] > 0.7
+
+    def test_a_standing_figure_is_only_as_wide_as_the_figure(self):
+        box = I.element_bbox({"type": "figure", "pose": "stand", "at": [0.5, 0.8]})
+        assert (box[2] - box[0]) * I.W == pytest.approx(I.FIG_W + 2 * I.STICKER_BLEED_PX,
+                                                        abs=1e-3)
+
+    def test_a_calendar_is_the_grid_its_builder_lays_out(self):
+        el = {"type": "calendar", "at": [0.5, 0.5], "cols": 7, "step": 0.2,
+              "cells": [{"label": "D", "value": "1", "tone": "low"}] * 7}
+        cell, gap = I.calendar_geometry(7)
+        box = I.element_bbox(el)
+        assert (box[2] - box[0]) * I.W == pytest.approx(
+            7 * cell + 6 * gap + 2 * I.STICKER_BLEED_PX, abs=1e-3)
+
+    def test_a_tag_is_wider_than_its_text_because_of_the_notch_and_padding(self):
+        box = I.element_bbox({"type": "tag", "text": "$39", "at": [0.5, 0.5]})
+        px = 0.045 * I.H
+        assert (box[2] - box[0]) * I.W == pytest.approx(
+            (3 * I.LABEL_EM_PER_CHAR + I.TAG_PAD_EM) * px + 2 * I.STICKER_BLEED_PX, abs=1e-3)
+
+    @pytest.mark.parametrize("el", [el for el, _root in STICKER_ROOTS])
+    def test_every_element_type_has_a_box(self, el):
+        left, top, right, bottom = I.element_bbox(el)
+        assert right > left and bottom > top
+
+
 # --- the first demo render clipped a label and crowded the calendar ---------------------
 
 

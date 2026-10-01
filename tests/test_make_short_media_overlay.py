@@ -31,7 +31,9 @@ import types
 import pytest
 
 import captions
+import illustrate
 import make_short as M
+import media
 
 
 BRAND = {"name": "Park Sheet", "url": "parksheet.com", "accent": "#FFD966"}
@@ -239,15 +241,44 @@ def test_the_graph_without_an_overlay_is_the_one_it_has_always_been(stub):
 
 def test_the_drawing_is_composited_after_the_scale_and_before_the_fades(stub):
     stub.go()
-    graph = _graph(_media_cmds(stub)[0])
-    steps = graph.split(";")
+    steps = _graph(_media_cmds(stub)[0]).split(";")
     scaled = [s for s in steps if s.endswith("[s0]")]
     drawn = [s for s in steps if s.startswith("[s0]")]
-    faded = [s for s in steps if s.startswith("[o0]")]
-    assert scaled == [f"[m1]scale={M.OUT_W}:{M.OUT_H}:flags=lanczos:out_range=tv[s0]"]
-    assert drawn == ["[s0][3:v]overlay=x=0:y=0:format=auto[o0]"]
-    assert faded and faded[0].startswith("[o0]fade=t=in:st=0:d=0.3")
+    faded = [s for s in steps if s.endswith("[v]")]
+    assert scaled == [f"[g0]scale={M.OUT_W}:{M.OUT_H}:flags=lanczos:out_range=tv[s0]"]
+    assert drawn == ["[s0][3:v]overlay=x=0:y=0:format=auto:eof_action=repeat[o0]"]
+    assert faded and faded[0].startswith("[m1]fade=t=in:st=0:d=0.3")
     assert faded[0].endswith("format=yuv420p[v]")
+
+
+def test_the_drawings_eof_action_is_spelled_out(stub):
+    """The sequence is round(dur * FPS) frames against a part cut at `-t dur`, so it can run
+    out up to half a frame early. Without this the drawing would drop on the last frame."""
+    stub.go()
+    drawn = [s for s in _graph(_media_cmds(stub)[0]).split(";") if s.startswith("[s0]")]
+    assert drawn and "eof_action=repeat" in drawn[0]
+
+
+def test_the_plates_are_composited_ON_TOP_OF_the_drawing(stub):
+    """A credit plate is an attribution: nothing may cover it, a sticker included. Our own
+    plates are the half of that this can fix by ordering — the other half is Earth Studio,
+    whose mark is in the footage, and that is what the preflight below is for."""
+    stub.go()
+    steps = _graph(_media_cmds(stub)[0]).split(";")
+    drawn = [i for i, s in enumerate(steps) if "eof_action=repeat" in s]
+    plated = [i for i, s in enumerate(steps) if "[2:v]overlay=" in s]
+    assert drawn and plated and drawn[0] < plated[0]
+    assert steps[plated[0]].startswith("[o0]"), "the plate has to read the DRAWN stage"
+
+
+def test_a_scene_with_a_drawing_renders_its_plates_at_the_delivered_size(stub):
+    """They are composited after the final scale now, so there is nothing left to scale them.
+    Every box in media.py is a fraction of the frame, so the layout does not move."""
+    stub.spec["scenes"][1]["credit"] = CREDIT      # so scene 1 has a plate to compare against
+    stub.go()
+    sizes = {pathlib.Path(a[1]).name: a[2:4] for a, _k in stub.shots}
+    assert sizes["credit_0.png"] == (M.OUT_W, M.OUT_H)      # scene 0 carries the drawing
+    assert sizes["credit_1.png"] == (M.RW, M.RH)            # scene 1 does not, and does not move
 
 
 def test_the_scrim_lands_on_the_footage_before_the_credit_plate(stub):
@@ -259,7 +290,6 @@ def test_the_scrim_lands_on_the_footage_before_the_credit_plate(stub):
     plated = [i for i, s in enumerate(steps) if "[2:v]overlay=" in s]
     assert graded and plated and graded[0] < plated[0]
     assert steps[graded[0]].startswith("[m0]") and steps[graded[0]].endswith("[g0]")
-    assert steps[plated[0]].startswith("[g0]")
 
 
 def test_the_overlay_sequence_is_the_last_input_and_is_read_at_thirty_fps(stub):
@@ -448,6 +478,109 @@ def test_the_card_plate_overlay_still_renders_and_is_still_a_card(stub):
     shot = [a[1] for a, _k in stub.shots]
     assert stub.work / "overlay_0.png" in shot
     assert len(stub.rendered) == 1
+
+
+# --- the Earth Studio attribution --------------------------------------------------------
+
+#: An element parked in the bottom-right corner, i.e. inside media.watermark_box.
+IN_THE_ZONE = {"type": "emoji", "glyph": "\U0001F36A", "at": [0.80, 0.94], "size": 0.2}
+EARTH_CREDIT = "Imagery: Google Earth, Maxar Technologies"
+
+
+def test_the_watermark_zone_is_where_media_says_it_is():
+    """One source of truth: the guard asks media.watermark_box, which is derived from
+    WATERMARK_W_FRAC/H_FRAC — the only numbers to edit if the mark ever moves."""
+    assert media.watermark_box(M.OUT_W, M.OUT_H) == (486, 1690, 1080, 1920)
+
+
+class TestWatermarkOffenders:
+    def test_an_element_clear_of_the_corner_is_not_one(self):
+        assert M.watermark_offenders({"elements": ELEMENTS}) == []
+
+    def test_an_element_in_the_corner_is_named_by_index(self):
+        found = M.watermark_offenders({"elements": [dict(ELEMENTS[0]), IN_THE_ZONE]})
+        assert [index for index, _el, _box in found] == [1]
+
+    def test_the_box_it_reports_is_the_elements_painted_extent(self):
+        (_i, _el, box), = M.watermark_offenders({"elements": [IN_THE_ZONE]})
+        left, top, right, bottom = illustrate.element_bbox(IN_THE_ZONE)
+        assert box == (round(left * M.OUT_W), round(top * M.OUT_H),
+                       round(right * M.OUT_W), round(bottom * M.OUT_H))
+
+    def test_an_arrow_that_merely_POINTS_into_the_zone_is_one(self):
+        """Its `to` is inside, so the line and its head are drawn there."""
+        found = M.watermark_offenders({"elements": [
+            {"type": "arrow", "from": [0.2, 0.3], "to": [0.9, 0.95]}]})
+        assert [index for index, _el, _box in found] == [0]
+
+    def test_a_walking_figure_is_bounded_by_its_whole_walk(self):
+        found = M.watermark_offenders({"elements": [
+            {"type": "figure", "pose": "walk", "from": [0.1, 0.94], "to": [0.9, 0.94],
+             "t0": 0.0, "t1": 1.0}]})
+        assert [index for index, _el, _box in found] == [0]
+
+
+class TestIsEarthStudio:
+    @pytest.mark.parametrize("scene", [
+        {"credit": EARTH_CREDIT},
+        {"credit": "imagery: google earth"},
+        {"src": "media/earth/magic-kingdom.mp4"},
+        {"beats": [{"src": "a.jpg"}, {"credit": "Google Earth, Maxar"}]},
+        {"beats": [{"src": "media/earth/b.mp4"}]},
+    ])
+    def test_either_signal_is_enough(self, scene):
+        assert media.is_earth_studio(scene) is True
+
+    @pytest.mark.parametrize("scene", [
+        {},
+        {"credit": "Photo: Pexels"},
+        {"src": "media/photos/earthenware-mug.jpg"},   # a substring, not a path segment
+        {"beats": [{"src": "media/photos/a.jpg", "credit": "Photo: Pexels"}]},
+    ])
+    def test_anything_else_is_not(self, scene):
+        assert media.is_earth_studio(scene) is False
+
+
+def test_an_element_over_the_earth_studio_watermark_refuses_the_render(stub):
+    """Earth Studio BURNS its attribution into the exported frames, so there is no layer to
+    reorder — keeping the drawing out of the rectangle is the whole mechanism."""
+    stub.spec["scenes"][0]["credit"] = EARTH_CREDIT
+    stub.spec["scenes"][0]["overlay"]["elements"].append(dict(IN_THE_ZONE))
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    message = str(excinfo.value)
+    assert "element 2 (emoji)" in message
+    assert "Earth Studio" in message and "watermark zone" in message
+    assert stub.rendered == [], "it has to refuse before a frame is drawn"
+
+
+def test_the_same_element_is_allowed_over_a_source_that_is_not_earth_studio(stub):
+    """The zone only means something where the mark is. A Pexels still has no burned-in
+    attribution, and refusing a corner sticker there would be a rule nobody asked for."""
+    stub.spec["scenes"][0]["overlay"]["elements"].append(dict(IN_THE_ZONE))
+    stub.go()
+    scene, _path, _t = stub.rendered[0]
+    assert len(scene["elements"]) == 3
+
+
+def test_an_earth_studio_scene_with_the_drawing_clear_of_the_corner_renders(stub):
+    stub.spec["scenes"][0]["credit"] = EARTH_CREDIT
+    stub.spec["scenes"][0]["src"] = "assets/still.png"
+    stub.go()
+    assert len(stub.rendered) == 1
+
+
+def test_an_earth_studio_BEAT_arms_the_guard_for_the_whole_scene(stub):
+    """Under `beats:` the scene's own src is never rendered — the beats are what reach the
+    screen, so one Earth Studio beat is an Earth Studio scene."""
+    stub.spec["scenes"][0]["beats"] = [
+        {"src": "assets/still.png", "seconds": 1.0, "credit": CREDIT},
+        {"src": "assets/still.png", "seconds": 1.0, "credit": EARTH_CREDIT},
+    ]
+    stub.spec["scenes"][0]["overlay"]["elements"].append(dict(IN_THE_ZONE))
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    assert "Earth Studio" in str(excinfo.value)
 
 
 def test_an_illustration_only_overlay_renders_no_card_plate(stub):

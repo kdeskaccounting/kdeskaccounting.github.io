@@ -421,6 +421,44 @@ def credit_text(scene: dict) -> str:
     return CREDIT_JOIN.join(scene_credits(scene))
 
 
+#: What marks a source as an Earth Studio export. Earth Studio BURNS its attribution into the
+#: exported frames -- it is not a plate this pipeline draws and could reorder, it is in the
+#: pixels of the file -- so the only way to keep it visible is to keep everything else off it.
+EARTH_STUDIO_CREDITS = ("google earth", "earth studio")
+#: A path segment that names the Earth Studio exports in this pipeline's layout
+#: (`media/earth/magic-kingdom.mp4`, as the module docstring's example writes it).
+EARTH_STUDIO_DIRS = ("earth", "earth-studio", "earth_studio", "earthstudio")
+
+
+def is_earth_studio(scene: dict) -> bool:
+    """Does this scene show footage with Earth Studio's attribution burned into it?
+
+    Two signals, EITHER of which is enough, because the cost of the two mistakes is not
+    symmetric: a false negative lets a sticker cover an attribution the terms require to stay
+    visible, and a false positive refuses one element placed in the bottom-right corner of the
+    frame -- a corner no scene should be drawing in anyway, and the refusal says how to proceed.
+
+      * any `credit:` on the scene or on one of its beats naming Google Earth or Earth Studio,
+        which is what `check_credit` already requires such a source to carry; or
+      * any `src:` on the scene or on one of its beats sitting under an `earth` directory,
+        which is this pipeline's layout for those exports.
+
+    Text only -- no filesystem, no ffprobe -- so the preflight can ask it of every scene before
+    anything is resolved or rendered.
+    """
+    scene = scene or {}
+    beats = [beat for beat in (scene.get("beats") or []) if isinstance(beat, dict)]
+    for credit in [scene.get("credit"), *[beat.get("credit") for beat in beats]]:
+        text = str(credit or "").lower()
+        if any(mark in text for mark in EARTH_STUDIO_CREDITS):
+            return True
+    for src in [scene.get("src"), *[beat.get("src") for beat in beats]]:
+        parts = {part.lower() for part in pathlib.PurePath(str(src or "")).parts}
+        if parts & set(EARTH_STUDIO_DIRS):
+            return True
+    return False
+
+
 def scene_fill(scene: dict) -> tuple:
     """(`fill` or None, (fx, fy)) off one media scene. Validates both.
 

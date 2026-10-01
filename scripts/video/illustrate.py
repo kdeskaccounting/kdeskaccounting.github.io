@@ -1060,6 +1060,81 @@ def calendar_geometry(cols, width=W, safe=SAFE_W):
     return cell, gap
 
 
+#: How much of an em a tag's clip-path notch and its `.3em .7em` padding add around its text,
+#: as (extra width in em, total height in em). Read off `.tag` in SHARED_CSS: .7em of padding
+#: either side plus the 14% notch, and .3em of padding above and below one line.
+TAG_PAD_EM, TAG_H_EM = 1.6, 1.6
+#: Half the sticker filter's reach, as a fraction of the frame width: the four white
+#: drop-shadows blur 2.5 px and the dark one is offset 10 px down with a 14 px blur, so an
+#: element's painted extent is a little larger than its box. Folded into every bbox below, so
+#: a guard that asks "does this element touch the watermark" is asking about PIXELS.
+STICKER_BLEED_PX = 24.0
+
+
+def element_bbox(el, width=W, height=H):
+    """(left, top, right, bottom) of one element, in FRACTIONS of the frame. Pure.
+
+    What the element actually PAINTS, erring wide: every box below is the geometry its builder
+    above lays out, plus STICKER_BLEED_PX for the drop-shadows, because the only caller is a
+    guard that refuses an element for being somewhere it must not be (make_short's Earth Studio
+    watermark preflight) and a guard that under-measures is not one.
+
+    Positions are centres: every element root carries `transform: translate(-50%, -50%)`, and
+    the two path types (`arrow`, `squiggle`) are bounded by their own endpoints instead. A
+    walking figure spans its whole walk, `from` to `to`, because it is on screen at both.
+    """
+    bleed_x = STICKER_BLEED_PX / float(width)
+    bleed_y = STICKER_BLEED_PX / float(height)
+
+    def centred(at, half_w, half_h):
+        return (at[0] - half_w, at[1] - half_h, at[0] + half_w, at[1] + half_h)
+
+    kind = el.get("type")
+    if kind == "emoji":
+        # font-size is a fraction of the WIDTH; the glyph box is square at line-height 1.
+        size = float(el.get("size", 0.16))
+        box = centred(el["at"], size / 2.0, size * float(width) / (2.0 * float(height)))
+    elif kind == "label":
+        px = fit_label_px(el["text"], float(el.get("size", 0.05)) * float(height), width)
+        text_w = min(len(el["text"]) * LABEL_EM_PER_CHAR * px, float(width) * SAFE_W)
+        box = centred(el["at"], text_w / (2.0 * float(width)), px / (2.0 * float(height)))
+    elif kind == "tag":
+        px = 0.045 * float(height)
+        text_w = (len(el["text"]) * LABEL_EM_PER_CHAR + TAG_PAD_EM) * px
+        box = centred(el["at"], text_w / (2.0 * float(width)),
+                      TAG_H_EM * px / (2.0 * float(height)))
+    elif kind == "box":
+        box = centred(el["at"], float(el["w"]) / 2.0, float(el["h"]) / 2.0)
+    elif kind in ("arrow", "squiggle"):
+        xs = [float(el["from"][0]), float(el["to"][0])]
+        ys = [float(el["from"][1]), float(el["to"][1])]
+        # The stroke is 10 px wide and the arrowhead is a 9x9 marker in stroke-width units, so
+        # the painted path reaches past its own endpoints by about half a head.
+        pad = float(el.get("amplitude", SQUIGGLE_AMPLITUDE if kind == "squiggle" else 0.0))
+        pad += 45.0 / float(width)
+        box = (min(xs) - pad, min(ys) - pad * float(width) / float(height),
+               max(xs) + pad, max(ys) + pad * float(width) / float(height))
+    elif kind == "figure":
+        half_w, half_h = FIG_W / (2.0 * float(width)), FIG_H / (2.0 * float(height))
+        if el.get("pose") == "walk":
+            xs = [float(el["from"][0]), float(el["to"][0])]
+            ys = [float(el["from"][1]), float(el["to"][1])]
+            box = (min(xs) - half_w, min(ys) - half_h, max(xs) + half_w, max(ys) + half_h)
+        else:
+            box = centred(el["at"], half_w, half_h)
+    elif kind == "calendar":
+        cols = int(el["cols"])
+        cell, gap = calendar_geometry(cols, width)
+        rows = math.ceil(len(el["cells"]) / cols)
+        grid_w = cols * cell + (cols - 1) * gap
+        grid_h = rows * cell + (rows - 1) * gap
+        box = centred(el["at"], grid_w / (2.0 * float(width)), grid_h / (2.0 * float(height)))
+    else:
+        raise KeyError(kind)
+    return (round(box[0] - bleed_x, 6), round(box[1] - bleed_y, 6),
+            round(box[2] + bleed_x, 6), round(box[3] + bleed_y, 6))
+
+
 def _calendar_html(el, idx, sticker=True):
     x, y = el["at"]
     cols = int(el["cols"])

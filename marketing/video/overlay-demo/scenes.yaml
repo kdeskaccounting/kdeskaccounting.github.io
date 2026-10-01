@@ -22,6 +22,12 @@
 # it is 16:9 on purpose -- `fill: crop` below is what makes a landscape source fill the 9:16
 # frame instead of letterboxing over a blurred copy of itself.
 #
+# The credit plate is composited ON TOP of the drawing, and the drawing on top of the footage:
+# a credit is an attribution, so no sticker may cover it. The other half of that is Earth
+# Studio, which burns its mark into the frames it exports -- ordering cannot help there, so
+# make_short refuses an overlay element that reaches into media.watermark_box on such a source.
+# This demo's still is not one, so nothing here is near that rectangle either way.
+#
 # What a frame check should show (the times are where the picture changes):
 #   t=1.0  footage, darkened, caption up, credit plate at FULL brightness -- the scrim is on the
 #          footage only, which is the licence answer as much as the legibility one
