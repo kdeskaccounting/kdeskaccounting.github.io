@@ -19,14 +19,70 @@ def headless_shell():
         "~/Library/Caches/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-mac-arm64/chrome-headless-shell")))
     return c[-1] if c else None
 
-def screenshot(html_path, out_png, w=W, h=H, transparent=False):
+#: Lazily-started (playwright, browser) pair, and the pages opened against it, keyed by the
+#: resolved (html_path, w, h, transparent) a caller screenshots repeatedly. Both are filled in
+#: only by `screenshot(..., before_capture_js=...)` -- the CLI path below never touches them,
+#: so every existing caller keeps paying nothing for this.
+_PW_STATE = {}
+_PW_PAGES = {}
+
+def _pw_page(html_path, w, h, transparent):
+    key = (str(pathlib.Path(html_path).resolve()), w, h, transparent)
+    page = _PW_PAGES.get(key)
+    if page is not None:
+        return page
+    if "browser" not in _PW_STATE:
+        from playwright.sync_api import sync_playwright  # lazy: absent outside the render venv
+        pw = sync_playwright().start()
+        hs = headless_shell()
+        browser = (pw.chromium.launch(executable_path=hs, headless=True) if hs
+                   else pw.chromium.launch(headless=True))
+        _PW_STATE["pw"], _PW_STATE["browser"] = pw, browser
+    page = _PW_STATE["browser"].new_page(viewport={"width": w, "height": h})
+    page.goto(f"file://{pathlib.Path(html_path).resolve()}", wait_until="load")
+    _PW_PAGES[key] = page
+    return page
+
+def close_driver():
+    """Release every page/browser/driver opened by `screenshot(..., before_capture_js=...)`.
+
+    A caller that drives one page through many `seek()`+screenshot calls (illustrate.py's
+    frame loop) should call this when it is done with a given spec, so a batch render does
+    not leave Chrome processes behind. Harmless, and a no-op, if nothing was ever opened.
+    """
+    for page in _PW_PAGES.values():
+        page.close()
+    _PW_PAGES.clear()
+    if "browser" in _PW_STATE:
+        _PW_STATE.pop("browser").close()
+        _PW_STATE.pop("pw").stop()
+
+def screenshot(html_path, out_png, w=W, h=H, transparent=False, before_capture_js=None):
     """HTML -> PNG. `transparent` keeps the page's alpha instead of painting it white.
 
     A `media` scene's credit plate and card overlay are screenshotted this way and then laid
     over the footage by ffmpeg, so everywhere the page is transparent the imagery shows
     through. Without the flag Chrome fills the backdrop opaque white and the overlay becomes
     a solid card.
+
+    `before_capture_js`, when given, is a JS statement evaluated in the page immediately
+    before the capture -- e.g. `"window.seek(1.2333)"` -- which the one-shot `--screenshot`
+    CLI flag below cannot do (it loads and shoots; there is nowhere to run a script in
+    between). illustrate.py needs exactly that: one page, screenshotted once per animation
+    frame after calling its own `seek(t)`. Rather than fork a second screenshot path, this
+    is the single minimal addition: when `before_capture_js` is passed, the page is driven
+    over Playwright instead of the CLI, and -- because a frame loop calls this many times
+    against the SAME html_path/w/h/transparent -- the page is opened once and reused across
+    calls (`_pw_page`), so a 180-frame scene pays Chrome's navigation cost once, not 180
+    times. Call `close_driver()` when a batch of renders is done. Every call that leaves
+    `before_capture_js` unset (every existing caller) is untouched: same subprocess, same
+    flags, same bytes out.
     """
+    if before_capture_js is not None:
+        page = _pw_page(html_path, w, h, transparent)
+        page.evaluate(before_capture_js)
+        page.screenshot(path=str(out_png), omit_background=transparent)
+        return
     hs = headless_shell()
     exe = hs or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     cmd = [exe, "--headless" if hs else "--headless=new", "--disable-gpu", "--hide-scrollbars",

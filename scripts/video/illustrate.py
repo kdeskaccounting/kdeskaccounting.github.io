@@ -1,0 +1,842 @@
+#!/usr/bin/env python3
+"""
+Illustrated, animated 9:16 scenes -- a prototype path OUTSIDE the normal make_short.py /
+build_video.py pipeline. Stephen ruled out licensed-photo stills for the Shorts in
+`marketing/video/illustration-demo/` territory; he wants paper-coloured illustration,
+stick figures, emoji that pop on the word being said, arrows that draw themselves, numbers
+that fly in -- the FirstParkVisit / Zack D. Films look. This module renders exactly that from
+a small YAML scene spec, deterministically, to a PNG sequence and an mp4. No narration, no
+captions, no audio mix: those stay in make_short.py's territory (see the module's own
+docstring for `audio_steps`/`cut_plan_json`). This writes `events.json` -- `[{t, sfx}]`, one
+entry per sound cue, absolute scene time -- and stops there; wiring it into an audio mix is
+future work.
+
+MECHANISM -- why a frame loop can be frame-exact
+--------------------------------------------------
+Every animation here is authored as a CSS `@keyframes` rule, applied `paused`, with
+`animation-fill-mode: both` (so the 0% keyframe holds before the delay elapses and the 100%
+keyframe holds once the animation is "done" -- there is never an undefined state). Each
+animated node's natural start time, in scene-local seconds, is baked into BOTH its initial
+`animation-delay` (so a freshly-loaded page already matches frame 0 with no JS run at all)
+and a `data-t0` attribute. The page defines one function:
+
+    window.seek(t) {
+      for every node with a data-t0 attribute:
+        node.style.animationDelay = (data-t0 - t) + "s"
+    }
+
+That is the entire seek mechanism (`seek_delay()` below is this arithmetic as a pure,
+tested function). Negative delay is a standard CSS trick: it is exactly as if the
+animation had been RUNNING since `t0` and were now paused at local time `t - t0`. Because
+`animation-play-state` is always `paused`, no real wall-clock time ever elapses on the
+document timeline -- confirmed empirically (a 1.5 s real sleep between `seek()` and reading
+`getComputedStyle` changes nothing) -- so a frame loop that calls `seek(t)` then screenshots,
+however long that takes in wall-clock Python/Chrome time, always captures exactly frame t.
+
+Rendering: one self-contained HTML page per SCENE (`scene_html()`), screenshotted once per
+frame via `render_sheets.screenshot(html_path, out_png, W, H, before_capture_js=f"window.seek({t})")`.
+`render_sheets.screenshot()` could not run JS between captures -- its only mechanism was a
+one-shot `chrome --headless --screenshot=` CLI call -- so it gained exactly one minimal
+extension, a `before_capture_js` parameter (see render_sheets.py), rather than being forked:
+when that parameter is given, the page is driven over Playwright instead of the CLI, and the
+SAME page is kept open and reused across every call this module makes against it, so a
+180-frame scene pays Chrome's page-navigation cost once. Call `render_sheets.close_driver()`
+(done automatically at the end of `render_spec()`) to release it.
+
+HARD RULE -- animate `transform`/`opacity`, never `left`/`top`: every position change in this
+module (including a walking figure's translate) is a `transform: translate()` keyframe, never
+a `left`/`top` keyframe, even though both compute correctly under `getComputedStyle`. Measured
+directly while building this (two screenshots at identical `seek()` states, compared
+pixel-for-pixel): a `left`/`top` animation driven purely by mutating `animation-delay` can
+recompute its LAYOUT correctly while the PAINTED frame a headless screenshot captures still
+shows the pre-seek position -- i.e. `getComputedStyle` agreeing with the math proves nothing
+about what the screenshot will show. `transform`/`opacity` (what every other animation here
+already used) do not have this problem. If a future element type needs to move, move it with
+`transform`.
+
+DETERMINISM: no randomness, no dates, no real-timer-driven motion anywhere in this module or
+the pages it writes -- `seek(t)` is a pure function of the `t` the frame loop passes it, and
+every pixel the page draws is a pure function of that same `t`. Rendering a spec twice
+produces byte-identical PNGs (verified with md5sum while building this; not re-asserted on
+every test run because a full render needs the render venv + a headless Chrome).
+
+SPEC SCHEMA
+-----------
+A spec is a YAML mapping with one key, `scenes`, a non-empty list. Every scene:
+
+    - kind: illustration        # required, literal
+      seconds: 4.0               # required, > 0 (seconds * 30 fps need not be exact; frame
+                                  #   count is round(seconds * fps))
+      bg: "#F7F3EA"               # required, a #rgb or #rrggbb hex colour
+      elements: [ ... ]           # required, non-empty list, see below
+
+Positions (`at`, `from`, `to`) are always `[x, y]` fractions of the 1080x1920 frame, where
+(0, 0) is the top-left corner; off-canvas staging is allowed up to [-0.2, 1.2]. An `enter`
+block, where a type accepts one, is `{t: <seconds, scene-local>, how: <style>}`; omitting
+`enter` renders the element always-on, unanimated. `sfx`, where a type accepts it, is one of
+pop | chime | hit | whoosh and becomes one row of `events.json`.
+
+  emoji   {glyph, at, size: 0-1 fraction of frame width (default 0.16),
+           enter?: {t, how: pop|fade}, sfx?}
+          `size` sets font-size; pop is scale 0 -> 1.15 -> 1 over 0.35 s (POP_DUR), per spec.
+
+  label   {text, at, size: 0-1 fraction of frame height (default 0.05),
+           enter?: {t, how: pop|fade|slide-left|slide-right}, sfx?}
+          slide-left enters FROM the right, sliding left into its resting place (and
+          slide-right is the mirror of that) -- i.e. the `how` names the DIRECTION of travel,
+          not which edge it starts from.
+
+  tag     {text, at, enter?: {t, how: pop|fade|drop}, sfx?}
+          A price-tag-shaped pill (notched + a punch-hole, via clip-path). drop is a fall
+          from above the frame with a small bounce-settle, over 0.6 s (DROP_DUR).
+
+  arrow   {from, to, enter?: {t, how: draw|fade}, sfx?}
+          An SVG path with an arrowhead marker. draw is a stroke-dash reveal from `from` to
+          `to` over 0.5 s (DRAW_DUR), using the SVG `pathLength="1"` normalisation so the
+          dash math never depends on the path's actual on-screen length.
+
+  figure  {pose: stand|point|walk, ...}
+          stand/point: {at, enter?: {t, how: pop|fade}, sfx?} -- a static stick figure (SVG
+            lines: head, torso, arms, legs; `point` angles one arm forward).
+          walk: {from, to, t0, t1, sfx?} -- the whole figure translates from -> to, linearly,
+            over [t0, t1]; independently, its two leg poses alternate every 0.25 s
+            (LEG_STEP) for that same window, via a second, per-instance stepped keyframes
+            animation (`steps(1)` per stop, so legs SNAP rather than tween). Both animations
+            share `t0` as their `data-t0`, so they can never drift out of sync with each
+            other, only ever with the frame clock, which `seek()` corrects every frame.
+
+  box     {at, w, h: 0-1.2 fractions of frame width/height, label?,
+           enter?: {t, how: pop|fade|box}, sfx?}
+          A rounded rect, optionally captioned; `box` is its own gentler scale-in (0.55 ->
+          1.05 -> 1, BOX_DUR) so a box behind a label does not fight the label's own pop.
+
+  calendar {at, cols, cells: [{label, value, tone: low|mid|high, sfx?}, ...], step, t0?}
+          A cols-wide grid (rows = ceil(len(cells)/cols)); cell i pops in at t0 + i*step
+          (`calendar_cell_times()`), coloured by tone (low/mid/high -> green/amber/red).
+          `sfx` on the calendar element is the default for every cell; a cell's own `sfx`
+          overrides it. (The spec's worked example elides the trailing cells with `…` --
+          this module requires a literal, fully-specified `cells` list.)
+
+Everything above also accepts any JSON/YAML-safe extra keys; they are ignored.
+
+STILL MISSING to carry a full ~28 s Short (see the report this module was built for):
+captions overlaid on top of a rendered scene, aligning cuts/beats to narration timing the
+way make_short.py's `beat_spans`/`step_frames` do, and turning `events.json` into an actual
+audio mix (`make_short.audio_steps` is the pattern to borrow, not reuse directly: this
+module's events are per-element cues, not sfx_placements rows).
+"""
+from __future__ import annotations
+
+import html as _html
+import json
+import math
+import pathlib
+import re
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import render_sheets as R  # stdlib-only to import; playwright stays inside R's lazy path
+
+FPS = 30
+W, H = 1080, 1920
+
+HEX_RE = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
+
+ELEMENT_TYPES = {"emoji", "label", "tag", "arrow", "figure", "box", "calendar"}
+SFX_KINDS = {"pop", "chime", "hit", "whoosh"}
+
+#: Animation durations, in seconds. Named so a number only ever has one spelling in this file.
+POP_DUR = 0.35
+FADE_DUR = 0.30
+SLIDE_DUR = 0.40
+DROP_DUR = 0.60
+BOX_DUR = 0.30
+DRAW_DUR = 0.50
+CELL_DUR = 0.20
+#: How often a walking figure's legs swap, per the spec.
+LEG_STEP = 0.25
+
+#: how -> (css @keyframes name, duration). Every simple (non-figure, non-calendar-cell)
+#: enter animation goes through this table.
+HOW_ANIM = {
+    "pop": ("kf-pop", POP_DUR),
+    "fade": ("kf-fade", FADE_DUR),
+    "slide-left": ("kf-slide-left", SLIDE_DUR),
+    "slide-right": ("kf-slide-right", SLIDE_DUR),
+    "drop": ("kf-drop", DROP_DUR),
+    "box": ("kf-box", BOX_DUR),
+    "draw": ("kf-draw", DRAW_DUR),
+}
+
+#: how -> seconds after enter.t that its SOUND fires (see `scene_events()`). A pop/fade/slide
+#: sound lands on the moment the element starts appearing; a drop's "hit" is its landing, and
+#: a draw's "hit" is the arrowhead reaching its target -- both are COMPLETION events, so they
+#: are offset by the animation's own duration.
+EVENT_OFFSET = {
+    "pop": 0.0, "fade": 0.0, "slide-left": 0.0, "slide-right": 0.0, "box": 0.0,
+    "drop": DROP_DUR, "draw": DRAW_DUR,
+}
+
+ENTER_HOW_BY_TYPE = {
+    "emoji": {"pop", "fade"},
+    "label": {"pop", "fade", "slide-left", "slide-right"},
+    "tag": {"pop", "fade", "drop"},
+    "arrow": {"draw", "fade"},
+    "box": {"pop", "fade", "box"},
+    "figure": {"pop", "fade"},  # stand/point only; walk does not use `enter`
+}
+
+TONE_COLORS = {"low": "#2E7D46", "mid": "#D98F1E", "high": "#C1443C"}
+
+FIG_W, FIG_H = 120, 170
+
+
+# --------------------------------------------------------------------------------------------
+# Spec validation -- pure, no I/O, runs in the bare `uv run --with pytest` environment.
+# --------------------------------------------------------------------------------------------
+
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _point(el, key, tag):
+    v = el.get(key)
+    if (not isinstance(v, (list, tuple)) or len(v) != 2 or not all(_num(c) for c in v)):
+        raise ValueError(f"{tag}: '{key}' must be an [x, y] pair of numbers")
+    x, y = v
+    if not (-0.2 <= x <= 1.2 and -0.2 <= y <= 1.2):
+        raise ValueError(f"{tag}: '{key}' {v!r} is outside the [-0.2, 1.2] fractional range")
+    return (float(x), float(y))
+
+
+def _enter(el, tag, allowed_how):
+    enter = el.get("enter")
+    if enter is None:
+        return None
+    if not isinstance(enter, dict):
+        raise ValueError(f"{tag}: 'enter' must be a mapping with 't' and 'how'")
+    t0, how = enter.get("t"), enter.get("how")
+    if not _num(t0) or t0 < 0:
+        raise ValueError(f"{tag}: enter.t must be a non-negative number")
+    if how not in allowed_how:
+        raise ValueError(f"{tag}: enter.how must be one of {sorted(allowed_how)}, got {how!r}")
+    return {"t": float(t0), "how": how}
+
+
+def _sfx(el, tag):
+    if "sfx" in el and el["sfx"] not in SFX_KINDS:
+        raise ValueError(f"{tag}: sfx must be one of {sorted(SFX_KINDS)}, got {el['sfx']!r}")
+
+
+def _validate_emoji(el, tag):
+    if not isinstance(el.get("glyph"), str) or not el["glyph"]:
+        raise ValueError(f"{tag}: emoji requires a non-empty 'glyph'")
+    _point(el, "at", tag)
+    size = el.get("size", 0.16)
+    if not _num(size) or not (0 < size <= 1):
+        raise ValueError(f"{tag}: emoji 'size' must be a number in (0, 1]")
+    _enter(el, tag, ENTER_HOW_BY_TYPE["emoji"])
+
+
+def _validate_label(el, tag):
+    if not isinstance(el.get("text"), str) or not el["text"]:
+        raise ValueError(f"{tag}: label requires non-empty 'text'")
+    _point(el, "at", tag)
+    size = el.get("size", 0.05)
+    if not _num(size) or not (0 < size <= 1):
+        raise ValueError(f"{tag}: label 'size' must be a number in (0, 1]")
+    _enter(el, tag, ENTER_HOW_BY_TYPE["label"])
+
+
+def _validate_tag(el, tag):
+    if not isinstance(el.get("text"), str) or not el["text"]:
+        raise ValueError(f"{tag}: tag requires non-empty 'text'")
+    _point(el, "at", tag)
+    _enter(el, tag, ENTER_HOW_BY_TYPE["tag"])
+
+
+def _validate_arrow(el, tag):
+    _point(el, "from", tag)
+    _point(el, "to", tag)
+    _enter(el, tag, ENTER_HOW_BY_TYPE["arrow"])
+
+
+def _validate_box(el, tag):
+    _point(el, "at", tag)
+    for k in ("w", "h"):
+        v = el.get(k)
+        if not _num(v) or not (0 < v <= 1.2):
+            raise ValueError(f"{tag}: box '{k}' must be a number in (0, 1.2]")
+    if "label" in el and not isinstance(el["label"], str):
+        raise ValueError(f"{tag}: box 'label' must be a string")
+    _enter(el, tag, ENTER_HOW_BY_TYPE["box"])
+
+
+def _validate_figure(el, tag):
+    pose = el.get("pose")
+    if pose not in ("stand", "point", "walk"):
+        raise ValueError(f"{tag}: figure 'pose' must be one of stand, point, walk, got {pose!r}")
+    if pose == "walk":
+        _point(el, "from", tag)
+        _point(el, "to", tag)
+        t0, t1 = el.get("t0"), el.get("t1")
+        if not _num(t0) or t0 < 0:
+            raise ValueError(f"{tag}: figure walk 't0' must be a non-negative number")
+        if not _num(t1) or t1 <= t0:
+            raise ValueError(f"{tag}: figure walk 't1' must be a number greater than t0")
+    else:
+        _point(el, "at", tag)
+        _enter(el, tag, ENTER_HOW_BY_TYPE["figure"])
+
+
+def _validate_calendar(el, tag):
+    _point(el, "at", tag)
+    cols = el.get("cols")
+    if not isinstance(cols, int) or isinstance(cols, bool) or cols < 1:
+        raise ValueError(f"{tag}: calendar 'cols' must be a positive integer")
+    cells = el.get("cells")
+    if not isinstance(cells, list) or not cells:
+        raise ValueError(f"{tag}: calendar 'cells' must be a non-empty list")
+    for ci, cell in enumerate(cells):
+        ctag = f"{tag} cell {ci}"
+        if not isinstance(cell, dict):
+            raise ValueError(f"{ctag}: must be a mapping")
+        if not isinstance(cell.get("label"), str) or not cell["label"]:
+            raise ValueError(f"{ctag}: requires a non-empty 'label'")
+        if "value" not in cell or cell.get("value") in (None, ""):
+            raise ValueError(f"{ctag}: requires a 'value'")
+        if cell.get("tone") not in ("low", "mid", "high"):
+            raise ValueError(f"{ctag}: 'tone' must be one of low, mid, high, got {cell.get('tone')!r}")
+        if "sfx" in cell and cell["sfx"] not in SFX_KINDS:
+            raise ValueError(f"{ctag}: sfx must be one of {sorted(SFX_KINDS)}")
+    step = el.get("step")
+    if not _num(step) or step <= 0:
+        raise ValueError(f"{tag}: calendar 'step' must be a positive number")
+    t0 = el.get("t0", 0.0)
+    if not _num(t0) or t0 < 0:
+        raise ValueError(f"{tag}: calendar 't0' must be a non-negative number")
+
+
+_VALIDATORS = {
+    "emoji": _validate_emoji, "label": _validate_label, "tag": _validate_tag,
+    "arrow": _validate_arrow, "box": _validate_box, "figure": _validate_figure,
+    "calendar": _validate_calendar,
+}
+
+
+def validate_spec(spec):
+    """Raise ValueError with a specific, scene/element-addressed message on any problem.
+
+    Pure: takes an already-parsed dict (from `yaml.safe_load` or a test literal), does no
+    I/O, so it -- and everything that calls only this -- runs in the bare pytest environment
+    with no render venv.
+    """
+    if not isinstance(spec, dict):
+        raise ValueError("spec must be a mapping with a top-level 'scenes' list")
+    scenes = spec.get("scenes")
+    if not isinstance(scenes, list) or not scenes:
+        raise ValueError("spec.scenes must be a non-empty list")
+    for si, scene in enumerate(scenes):
+        tag = f"scene {si}"
+        if not isinstance(scene, dict):
+            raise ValueError(f"{tag}: must be a mapping")
+        if scene.get("kind") != "illustration":
+            raise ValueError(f"{tag}: kind must be 'illustration', got {scene.get('kind')!r}")
+        seconds = scene.get("seconds")
+        if not _num(seconds) or seconds <= 0:
+            raise ValueError(f"{tag}: seconds must be a positive number")
+        bg = scene.get("bg")
+        if not isinstance(bg, str) or not HEX_RE.match(bg):
+            raise ValueError(f"{tag}: bg must be a hex colour like '#F7F3EA'")
+        elements = scene.get("elements")
+        if not isinstance(elements, list) or not elements:
+            raise ValueError(f"{tag}: elements must be a non-empty list")
+        for ei, el in enumerate(elements):
+            etag = f"{tag} element {ei}"
+            if not isinstance(el, dict):
+                raise ValueError(f"{etag}: must be a mapping")
+            t = el.get("type")
+            if t not in ELEMENT_TYPES:
+                raise ValueError(f"{etag}: type must be one of {sorted(ELEMENT_TYPES)}, got {t!r}")
+            _sfx(el, etag)
+            _VALIDATORS[t](el, etag)
+
+
+# --------------------------------------------------------------------------------------------
+# Frame-time <-> animation-delay math, and the per-scene event list. Pure.
+# --------------------------------------------------------------------------------------------
+
+def frame_times(seconds, fps=FPS):
+    """Scene-local seconds for each of `round(seconds * fps)` frames, at i / fps.
+
+    round(), not ceil() or int(): a spec's `seconds` is meant to land on an exact frame
+    count (4.0 s at 30 fps is 120 frames), and round() is the one of the three that survives
+    `seconds` arriving as a float with the ordinary binary-fraction wobble (4.0 * 30 can come
+    out 119.99999999999999 depending on how `seconds` was computed upstream).
+    """
+    n = round(float(seconds) * fps)
+    if n < 1:
+        raise ValueError("seconds too short to produce any frames at this fps")
+    return [i / fps for i in range(n)]
+
+
+def seek_delay(t_event, frame_t):
+    """The `animation-delay` (seconds) that shows, at global clock `frame_t`, the state of
+    an animation whose natural start is `t_event`.
+
+    This is the whole mechanism: `paused` plus this one subtraction. Before the element's
+    start (frame_t < t_event) the result is positive -- the animation is still in its
+    "before" phase, showing the 0% keyframe because every animation here is `both`-filled --
+    and from t_event on, the result is negative, i.e. the local clock reads exactly
+    `frame_t - t_event` seconds into the timeline, which is the frame this exists to produce.
+    """
+    return round(float(t_event) - float(frame_t), 6)
+
+
+def calendar_cell_times(t0, step, n):
+    """Absolute scene time each of `n` calendar cells starts popping in: one every `step`
+    seconds from `t0`. Pure arithmetic; both the CSS delay and events.json read this."""
+    return [round(float(t0) + i * float(step), 6) for i in range(int(n))]
+
+
+def scene_events(scene):
+    """[{t, sfx}] for one scene, absolute (scene-local) time, sorted by t.
+
+    One row per element that carries an `sfx` (or, for `calendar`, one row per CELL that
+    resolves an `sfx` -- its own, or the calendar element's as a default). See
+    `EVENT_OFFSET` for why a drop/draw's sound lands at completion, not at `enter.t`. Ties
+    are broken by element order: `list.sort` is stable and this never reorders before
+    sorting, so two events at the same `t` keep the order they were authored in.
+    """
+    events = []
+    for el in scene["elements"]:
+        kind = el["type"]
+        if kind == "figure" and el.get("pose") == "walk":
+            if "sfx" in el:
+                events.append({"t": round(float(el["t0"]), 4), "sfx": el["sfx"]})
+            continue
+        if kind == "calendar":
+            t0, step = float(el.get("t0", 0.0)), float(el["step"])
+            default_sfx = el.get("sfx")
+            for i, cell in enumerate(el["cells"]):
+                sfx = cell.get("sfx", default_sfx)
+                if sfx:
+                    events.append({"t": round(t0 + i * step, 4), "sfx": sfx})
+            continue
+        sfx = el.get("sfx")
+        if not sfx:
+            continue
+        enter = el.get("enter")
+        t_start = float(enter["t"]) if enter else 0.0
+        how = enter["how"] if enter else "fade"
+        events.append({"t": round(t_start + EVENT_OFFSET.get(how, 0.0), 4), "sfx": sfx})
+    events.sort(key=lambda e: e["t"])
+    return events
+
+
+# --------------------------------------------------------------------------------------------
+# Pure HTML/CSS generation, one function per element type. Each returns (html, css) strings;
+# `css` is "" for every type except `figure` (walk poses need per-instance @keyframes, since
+# the from/to/t0/t1 differ per instance).
+# --------------------------------------------------------------------------------------------
+
+SHARED_CSS = f"""
+*{{box-sizing:border-box}}
+html,body{{margin:0;padding:0;width:{W}px;height:{H}px;overflow:hidden;
+  font-family:-apple-system,'Helvetica Neue',Arial,sans-serif}}
+.el{{position:absolute;transform:translate(-50%,-50%)}}
+.anim{{animation-play-state:paused}}
+.emoji-glyph{{font-family:'Apple Color Emoji','Segoe UI Emoji',sans-serif;line-height:1;display:block}}
+.label-text{{font-weight:800;letter-spacing:.01em;white-space:nowrap;color:#1A1A1A;display:block}}
+.tag{{position:relative;display:inline-flex;align-items:center;justify-content:center;
+  background:#E2574C;color:#fff;font-weight:800;border-radius:10px;padding:.3em .7em;
+  clip-path:polygon(14% 0,100% 0,100% 100%,14% 100%,0 50%)}}
+.tag:after{{content:"";position:absolute;left:20%;top:50%;width:.16em;height:.16em;
+  margin-top:-.08em;background:#fff;border-radius:50%}}
+.box-rect{{border-radius:28px;background:#1F3864}}
+.figure line{{stroke:#1A1A1A;stroke-width:9;stroke-linecap:round}}
+.figure circle{{fill:#1A1A1A}}
+.cal-grid{{position:absolute;display:grid}}
+.cal-cell{{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border-radius:16px;color:#fff;font-weight:700}}
+.cal-cell .cal-label{{font-size:.34em;opacity:.85;text-transform:uppercase;letter-spacing:.05em}}
+.cal-cell .cal-value{{font-size:.6em}}
+.arrow-svg{{position:absolute;left:0;top:0}}
+@keyframes kf-pop{{0%{{opacity:0;transform:scale(0)}}60%{{opacity:1;transform:scale(1.15)}}100%{{opacity:1;transform:scale(1)}}}}
+@keyframes kf-fade{{0%{{opacity:0}}100%{{opacity:1}}}}
+@keyframes kf-slide-left{{0%{{opacity:0;transform:translateX(160px)}}100%{{opacity:1;transform:translateX(0)}}}}
+@keyframes kf-slide-right{{0%{{opacity:0;transform:translateX(-160px)}}100%{{opacity:1;transform:translateX(0)}}}}
+@keyframes kf-drop{{0%{{opacity:0;transform:translateY(-560px)}}55%{{opacity:1;transform:translateY(26px)}}75%{{transform:translateY(-12px)}}90%{{transform:translateY(6px)}}100%{{opacity:1;transform:translateY(0)}}}}
+@keyframes kf-box{{0%{{opacity:0;transform:scale(.55)}}70%{{opacity:1;transform:scale(1.05)}}100%{{opacity:1;transform:scale(1)}}}}
+@keyframes kf-draw{{0%{{stroke-dashoffset:1}}100%{{stroke-dashoffset:0}}}}
+"""
+
+
+def _el_id(idx):
+    return f"el{idx}"
+
+
+def _enter_parts(enter):
+    """-> (style_fragment, data_attr_fragment, class_fragment) for a simple enter-animated
+    element; all three are "" when `enter` is None, i.e. the element is always on-screen,
+    unanimated, with nothing for `seek()` to touch."""
+    if not enter:
+        return "", "", ""
+    t0, how = float(enter["t"]), enter["how"]
+    name, dur = HOW_ANIM[how]
+    style = f"animation:{name} {dur}s linear both paused;animation-delay:{t0:.4f}s;"
+    return style, f' data-t0="{t0:.4f}"', " anim"
+
+
+def _emoji_html(el, idx):
+    x, y = el["at"]
+    size_px = el.get("size", 0.16) * W
+    glyph = _html.escape(el["glyph"])
+    style, data, cls = _enter_parts(el.get("enter"))
+    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+            f'<span class="emoji-glyph{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
+            f'{glyph}</span></div>')
+    return frag, ""
+
+
+def _label_html(el, idx):
+    x, y = el["at"]
+    size_px = el.get("size", 0.05) * H
+    text = _html.escape(el["text"])
+    style, data, cls = _enter_parts(el.get("enter"))
+    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+            f'<span class="label-text{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
+            f'{text}</span></div>')
+    return frag, ""
+
+
+def _tag_html(el, idx):
+    x, y = el["at"]
+    text = _html.escape(el["text"])
+    style, data, cls = _enter_parts(el.get("enter"))
+    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+            f'<div class="tag{cls}" style="font-size:{0.045*H:.1f}px;{style}"{data}>{text}</div>'
+            f'</div>')
+    return frag, ""
+
+
+def _box_html(el, idx):
+    x, y = el["at"]
+    w_px, h_px = el["w"] * W, el["h"] * H
+    label = el.get("label")
+    style, data, cls = _enter_parts(el.get("enter"))
+    inner = (f'<span class="label-text" style="font-size:{0.045*H:.1f}px;color:#fff;">'
+             f'{_html.escape(label)}</span>') if label else ""
+    frag = (f'<div class="el" id="{_el_id(idx)}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+            f'<div class="box-rect{cls}" style="width:{w_px:.1f}px;height:{h_px:.1f}px;'
+            f'display:flex;align-items:center;justify-content:center;{style}"'
+            f'{data}>{inner}</div></div>')
+    return frag, ""
+
+
+#: How long before a `draw` arrow's own completion the arrowhead pops in. SVG markers do
+#: NOT respect their path's `stroke-dasharray`/`stroke-dashoffset` -- they are drawn in full
+#: at the path's endpoint regardless of how much of the stroke is "drawn on" -- so an
+#: undecorated marker is fully visible from frame 0, long before the line reaches it (caught
+#: by looking at the actual frames, exactly the QA step this module's spec called for). The
+#: fix is to animate the marker's own content on its own short pop, timed to land exactly
+#: when the line finishes.
+ARROWHEAD_POP_DUR = 0.15
+
+
+def _arrow_html(el, idx):
+    x1, y1 = el["from"]
+    x2, y2 = el["to"]
+    px1, py1, px2, py2 = x1 * W, y1 * H, x2 * W, y2 * H
+    enter = el.get("enter")
+    style, data, cls = _enter_parts(enter)
+    marker_id = f"arrowhead{idx}"
+    if enter:
+        t0, how = float(enter["t"]), enter["how"]
+        _, line_dur = HOW_ANIM[how]
+        if how == "draw":
+            head_t0, head_dur, head_name = t0 + line_dur - ARROWHEAD_POP_DUR, ARROWHEAD_POP_DUR, "kf-pop"
+        else:
+            head_t0, head_dur, head_name = t0, line_dur, "kf-fade"
+        head_style = (f"opacity:0;transform-origin:5px 4.5px;"
+                      f"animation:{head_name} {head_dur}s linear both paused;"
+                      f"animation-delay:{head_t0:.4f}s;")
+        head_data = f' data-t0="{head_t0:.4f}"'
+    else:
+        head_style, head_data = "", ""
+    frag = (
+        f'<svg class="arrow-svg" id="{_el_id(idx)}" width="{W}" height="{H}" '
+        f'viewBox="0 0 {W} {H}">'
+        f'<defs><marker id="{marker_id}" markerWidth="9" markerHeight="9" refX="5" refY="4.5" '
+        f'orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#1A1A1A" class="anim" '
+        f'style="{head_style}"{head_data}/></marker></defs>'
+        f'<path class="{cls.strip()}" pathLength="1" d="M{px1:.1f},{py1:.1f} L{px2:.1f},{py2:.1f}" '
+        f'stroke="#1A1A1A" stroke-width="10" fill="none" stroke-linecap="round" '
+        f'marker-end="url(#{marker_id})" style="stroke-dasharray:1;{style}"{data}/></svg>')
+    return frag, ""
+
+
+def _figure_pose_svg(pose):
+    head = '<circle cx="60" cy="22" r="20"/>'
+    torso = '<line x1="60" y1="42" x2="60" y2="115"/>'
+    if pose == "point":
+        arms = '<line x1="60" y1="55" x2="20" y2="68"/><line x1="60" y1="55" x2="92" y2="96"/>'
+    else:
+        arms = '<line x1="60" y1="55" x2="30" y2="96"/><line x1="60" y1="55" x2="90" y2="96"/>'
+    return head, torso, arms
+
+
+LEGS_IDLE = '<line x1="60" y1="115" x2="40" y2="165"/><line x1="60" y1="115" x2="80" y2="165"/>'
+LEGS_A = '<line x1="60" y1="115" x2="32" y2="165"/><line x1="60" y1="115" x2="92" y2="158"/>'
+LEGS_B = '<line x1="60" y1="115" x2="92" y2="165"/><line x1="60" y1="115" x2="32" y2="158"/>'
+
+
+def _walk_leg_keyframes(idx, duration):
+    """Per-instance `@keyframes` for a walking figure's two leg poses, alternating every
+    LEG_STEP seconds across the whole walk. Two mirror-image rules, one per leg group
+    (`legsA{idx}` / `legsB{idx}`); each step's `animation-timing-function: steps(1)` makes the
+    opacity SNAP rather than cross-fade, so exactly one leg pose is visible at a time."""
+    n = max(2, round(duration / LEG_STEP))
+    stops_a, stops_b = [], []
+    for i in range(n + 1):
+        pct = i * 100.0 / n
+        a_visible = (i % 2 == 0)
+        stops_a.append(
+            f"{pct:.4f}%{{opacity:{1 if a_visible else 0};animation-timing-function:steps(1)}}")
+        stops_b.append(
+            f"{pct:.4f}%{{opacity:{0 if a_visible else 1};animation-timing-function:steps(1)}}")
+    css = (f"@keyframes legsA{idx}{{{''.join(stops_a)}}}"
+           f"@keyframes legsB{idx}{{{''.join(stops_b)}}}")
+    return css
+
+
+def _figure_html(el, idx):
+    pose = el["pose"]
+    eid = _el_id(idx)
+    head, torso, arms = _figure_pose_svg(pose)
+    if pose == "walk":
+        x0, y0 = el["from"]
+        x1, y1 = el["to"]
+        t0, t1 = float(el["t0"]), float(el["t1"])
+        dur = t1 - t0
+        # Position is driven by an animated `transform: translate()` on an INNER element, not
+        # by animating `left`/`top` on the (statically-positioned) outer `.el` wrapper. This
+        # is not a style preference: measured directly (screenshots at identical `seek()`
+        # states, compared pixel-for-pixel), a `left`/`top` keyframe driven purely by mutating
+        # `animation-delay` recomputes correctly under `getComputedStyle` but does NOT
+        # reliably reach a headless screenshot -- the painted frame can still show the
+        # pre-seek position. `transform` (a compositor property, like every other animation
+        # in this module -- pop/fade/slide/drop/box all animate transform/opacity) does not
+        # have that problem. Every position animation in this file must stay on `transform`.
+        dx, dy = (x1 - x0) * W, (y1 - y0) * H
+        pos_name = f"walkpos{idx}"
+        pos_kf = (f"@keyframes {pos_name}{{0%{{transform:translate(0px,0px)}}"
+                  f"100%{{transform:translate({dx:.2f}px,{dy:.2f}px)}}}}")
+        legs_kf = _walk_leg_keyframes(idx, dur)
+        move_style = (f"animation:{pos_name} {dur:.4f}s linear both paused;"
+                     f"animation-delay:{t0:.4f}s;")
+        legs_a_style = (f"animation:legsA{idx} {dur:.4f}s steps(1) both paused;"
+                        f"animation-delay:{t0:.4f}s;")
+        legs_b_style = (f"animation:legsB{idx} {dur:.4f}s steps(1) both paused;"
+                        f"animation-delay:{t0:.4f}s;")
+        legs_svg = (f'<g class="anim" style="{legs_a_style}" data-t0="{t0:.4f}">{LEGS_A}</g>'
+                    f'<g class="anim" style="{legs_b_style}" data-t0="{t0:.4f}">{LEGS_B}</g>')
+        frag = (f'<div class="el" id="{eid}" style="left:{x0*100:.4f}%;top:{y0*100:.4f}%;">'
+                f'<div class="anim" style="{move_style}" data-t0="{t0:.4f}">'
+                f'<svg width="{FIG_W}" height="{FIG_H}" viewBox="0 0 {FIG_W} {FIG_H}" '
+                f'class="figure">{head}{torso}{arms}{legs_svg}</svg></div></div>')
+        return frag, pos_kf + legs_kf
+    x, y = el["at"]
+    style, data, cls = _enter_parts(el.get("enter"))
+    frag = (f'<div class="el{cls}" id="{eid}" style="left:{x*100:.4f}%;top:{y*100:.4f}%;{style}"'
+            f'{data}><svg width="{FIG_W}" height="{FIG_H}" viewBox="0 0 {FIG_W} {FIG_H}" '
+            f'class="figure">{head}{torso}{arms}{LEGS_IDLE}</svg></div>')
+    return frag, ""
+
+
+#: Cell geometry as fractions of the frame width -- fixed, since the spec gives no per-element
+#: size knob for a calendar (only `cols`, which drives the grid's own width).
+CAL_CELL_W = 0.12
+CAL_GAP = 0.016
+
+
+def _calendar_html(el, idx):
+    x, y = el["at"]
+    cols = int(el["cols"])
+    cells = el["cells"]
+    step, t0 = float(el["step"]), float(el.get("t0", 0.0))
+    n = len(cells)
+    rows = math.ceil(n / cols)
+    cell_w = cell_h = CAL_CELL_W * W
+    gap = CAL_GAP * W
+    grid_w = cols * cell_w + (cols - 1) * gap
+    grid_h = rows * cell_h + (rows - 1) * gap
+    times = calendar_cell_times(t0, step, n)
+    cell_html = []
+    for i, (cell, t_i) in enumerate(zip(cells, times)):
+        color = TONE_COLORS[cell["tone"]]
+        label = _html.escape(str(cell["label"]))
+        value = _html.escape(str(cell["value"]))
+        style = (f"animation:kf-pop {CELL_DUR}s linear both paused;"
+                 f"animation-delay:{t_i:.4f}s;background:{color};")
+        cell_html.append(
+            f'<div class="cal-cell anim" id="{_el_id(idx)}c{i}" data-t0="{t_i:.4f}" '
+            f'style="{style}"><span class="cal-label">{label}</span>'
+            f'<span class="cal-value">{value}</span></div>')
+    grid_style = (f"left:{x*100:.4f}%;top:{y*100:.4f}%;transform:translate(-50%,-50%);"
+                  f"width:{grid_w:.1f}px;height:{grid_h:.1f}px;"
+                  f"grid-template-columns:repeat({cols},{cell_w:.1f}px);"
+                  f"grid-auto-rows:{cell_h:.1f}px;gap:{gap:.1f}px;font-size:{cell_w*0.42:.1f}px;")
+    frag = f'<div class="cal-grid" id="{_el_id(idx)}" style="{grid_style}">{"".join(cell_html)}</div>'
+    return frag, ""
+
+
+_BUILDERS = {
+    "emoji": _emoji_html, "label": _label_html, "tag": _tag_html, "arrow": _arrow_html,
+    "figure": _figure_html, "box": _box_html, "calendar": _calendar_html,
+}
+
+
+def render_element(el, idx):
+    """-> (html, css) for one element dict. The thin, testable entry point `scene_html()`
+    uses for every element; kept separate so "pure HTML generation per element type" can be
+    asserted type by type without building a whole scene."""
+    return _BUILDERS[el["type"]](el, idx)
+
+
+def scene_html(scene):
+    """The full, self-contained, frame-exact HTML page for one `kind: illustration` scene."""
+    html_parts, css_parts = [], []
+    for idx, el in enumerate(scene["elements"]):
+        h, c = render_element(el, idx)
+        html_parts.append(h)
+        if c:
+            css_parts.append(c)
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+{SHARED_CSS}
+{''.join(css_parts)}
+html,body{{background:{scene["bg"]}}}
+</style></head><body>
+{''.join(html_parts)}
+<script>
+window.seek = function(t) {{
+  document.body.setAttribute('data-t', t.toFixed(4));
+  document.body.setAttribute('data-frame', String(Math.round(t * {FPS})));
+  var nodes = document.querySelectorAll('[data-t0]');
+  for (var i = 0; i < nodes.length; i++) {{
+    var node = nodes[i];
+    var t0 = parseFloat(node.getAttribute('data-t0'));
+    node.style.animationDelay = (t0 - t) + 's';
+  }}
+}};
+window.seek(0);
+</script>
+</body></html>"""
+
+
+# --------------------------------------------------------------------------------------------
+# Rendering: needs the render venv (playwright) and ffmpeg. Everything above this line runs
+# with the standard library alone.
+# --------------------------------------------------------------------------------------------
+
+def render_scene_frames(scene, scene_dir, fps=FPS):
+    """One scene -> `scene_dir/scene.html`, `scene_dir/frame_NNNN.png` (one per frame, at
+    `fps`), and `scene_dir/events.json`. Returns the list of frame PNG paths, in order.
+
+    The page is written once and screenshotted once per frame through
+    `render_sheets.screenshot(..., before_capture_js=...)`, which keeps that one page open
+    across every call in this loop -- see render_sheets._pw_page -- so Chrome pays
+    navigation cost once per scene, not once per frame.
+    """
+    scene_dir = pathlib.Path(scene_dir)
+    scene_dir.mkdir(parents=True, exist_ok=True)
+    html_path = scene_dir / "scene.html"
+    html_path.write_text(scene_html(scene), encoding="utf-8")
+    frames = []
+    for i, t in enumerate(frame_times(scene["seconds"], fps)):
+        out_png = scene_dir / f"frame_{i:04d}.png"
+        R.screenshot(str(html_path), str(out_png), W, H, before_capture_js=f"window.seek({t:.6f})")
+        frames.append(out_png)
+    (scene_dir / "events.json").write_text(
+        json.dumps(scene_events(scene), indent=2) + "\n", encoding="utf-8")
+    return frames
+
+
+def load_spec(spec_path):
+    import yaml  # lazy: absent in the stdlib-only test environment, present in .venv-tts
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec = yaml.safe_load(f)
+    validate_spec(spec)
+    return spec
+
+
+def _relink(concat_dir, frames):
+    concat_dir = pathlib.Path(concat_dir)
+    concat_dir.mkdir(parents=True, exist_ok=True)
+    for old in concat_dir.glob("*.png"):
+        old.unlink()
+    for i, frame in enumerate(frames):
+        (concat_dir / f"{i:06d}.png").symlink_to(pathlib.Path(frame).resolve())
+
+
+def encode_mp4(frames_dir, out_mp4, fps=FPS):
+    """A directory of sequentially-numbered `NNNNNN.png` frames -> a silent H.264 mp4."""
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-r", str(fps),
+           "-i", str(pathlib.Path(frames_dir) / "%06d.png"),
+           "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", str(fps), str(out_mp4)]
+    subprocess.run(cmd, check=True, capture_output=True, timeout=600)
+    return pathlib.Path(out_mp4)
+
+
+def render_spec(spec_path, out_dir, demo_name="demo.mp4", fps=FPS):
+    """Render every scene of a YAML spec into `out_dir/scene_NN/` (its own PNG sequence +
+    events.json each), then concatenate every scene's frames, in SCENE ORDER, into one
+    silent mp4 at `out_dir/demo_name`. Returns that mp4's path.
+    """
+    spec = load_spec(spec_path)
+    out_dir = pathlib.Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    all_frames = []
+    for si, scene in enumerate(spec["scenes"]):
+        all_frames.extend(render_scene_frames(scene, out_dir / f"scene_{si:02d}", fps))
+    R.close_driver()
+    _relink(out_dir / "_concat", all_frames)
+    return encode_mp4(out_dir / "_concat", out_dir / demo_name, fps)
+
+
+def extract_qa_frames(mp4_path, out_dir, seconds):
+    """ffmpeg `-ss <t> -frames:v 1` for each mark in `seconds`, written beside the mp4 as
+    `frame_<t>s.png`. Returns the list of PNG paths, in the order `seconds` was given."""
+    out_dir = pathlib.Path(out_dir)
+    paths = []
+    for t in seconds:
+        out_png = out_dir / f"frame_{t}s.png"
+        cmd = ["ffmpeg", "-y", "-loglevel", "error", "-ss", str(t), "-i", str(mp4_path),
+               "-frames:v", "1", str(out_png)]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        paths.append(out_png)
+    return paths
+
+
+def main(argv=None):
+    import argparse
+    p = argparse.ArgumentParser(description="Render a kind: illustration YAML spec.")
+    p.add_argument("--spec", required=True, help="path to a scenes.yaml")
+    p.add_argument("--out", required=True, help="output directory")
+    p.add_argument("--demo-name", default="demo.mp4")
+    p.add_argument("--qa-frames", default="",
+                   help="comma-separated second marks to extract after rendering, e.g. 0,1,2,3,4,5")
+    a = p.parse_args(argv)
+    out_mp4 = render_spec(a.spec, a.out, a.demo_name)
+    print(f"wrote {out_mp4}")
+    if a.qa_frames:
+        seconds = [s.strip() for s in a.qa_frames.split(",") if s.strip() != ""]
+        seconds_num = [float(s) if "." in s else int(s) for s in seconds]
+        for pth in extract_qa_frames(out_mp4, a.out, seconds_num):
+            print(f"wrote {pth}")
+
+
+if __name__ == "__main__":
+    main()

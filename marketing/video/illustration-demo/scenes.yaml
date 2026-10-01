@@ -1,0 +1,67 @@
+# Illustration-prototype smoke spec: proves scripts/video/illustrate.py end to end.
+#
+# Two scenes, 6 s total (180 frames at 30 fps) -- the two beats the real target scripts need
+# most (see /Users/stephenmichels/parksheet/docs/content/2026-09-30-target-scripts-draft1.md):
+# scene 0 is script A's hook ("a stick figure strolls in ... arrow draws ..."), scene 1 is
+# script B's "7-wide calendar fills in one square per beat, cheap days green, dear days red".
+#
+# Render:
+#   scripts/video/.venv-tts/bin/python scripts/video/illustrate.py \
+#     --spec marketing/video/illustration-demo/scenes.yaml \
+#     --out scripts/video/build/illustration-demo \
+#     --qa-frames 0,1,2,3,4,5
+#
+# No audio: each scene's own events.json ([{t, sfx}], scene-local time) is written beside its
+# frames (scripts/video/build/illustration-demo/scene_0{0,1}/events.json) but nothing here
+# mixes sound -- that is explicitly out of scope for this prototype.
+scenes:
+  - kind: illustration
+    seconds: 3.0
+    bg: "#F7F3EA"
+    elements:
+      - type: label
+        text: "MAIN STREET"
+        at: [0.5, 0.1]
+        size: 0.052
+        enter: {t: 0.0, how: slide-left}
+      - type: emoji
+        glyph: "🏰"
+        at: [0.5, 0.3]
+        size: 0.22
+        enter: {t: 0.2, how: pop}
+        sfx: pop
+      - type: figure
+        pose: walk
+        from: [0.08, 0.78]
+        to: [0.55, 0.78]
+        t0: 0.4
+        t1: 2.0
+      - type: arrow
+        from: [0.55, 0.7]
+        to: [0.5, 0.4]
+        enter: {t: 2.1, how: draw}
+        sfx: hit
+
+  - kind: illustration
+    seconds: 3.0
+    bg: "#F7F3EA"
+    elements:
+      - type: label
+        text: "ONE WEEK, SEVEN PRICES"
+        at: [0.5, 0.14]
+        size: 0.042
+        enter: {t: 0.0, how: slide-left}
+      - type: calendar
+        at: [0.5, 0.56]
+        cols: 7
+        t0: 0.3
+        step: 0.3
+        sfx: pop
+        cells:
+          - {label: "Mon", value: "$19", tone: low}
+          - {label: "Tue", value: "$19", tone: low}
+          - {label: "Wed", value: "$23", tone: mid}
+          - {label: "Thu", value: "$23", tone: mid}
+          - {label: "Fri", value: "$31", tone: mid}
+          - {label: "Sat", value: "$39", tone: high}
+          - {label: "Sun", value: "$35", tone: high}
