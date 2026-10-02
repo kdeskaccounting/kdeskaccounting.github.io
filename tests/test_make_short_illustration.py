@@ -21,8 +21,10 @@ What matters here and nowhere else:
 """
 import json
 import pathlib
+import struct
 import sys
 import types
+import zlib
 
 import pytest
 
@@ -492,3 +494,80 @@ def test_an_illustrated_short_with_no_audio_block_mixes_no_events_at_all(stub, c
     cuts = json.loads((stub.work / "cuts.json").read_text())
     assert cuts["sfx"] == []
     assert "no music bed" in capsys.readouterr().out
+
+
+# --- `image` elements: the PNG is resolved HERE, where the spec path is known ---------------
+
+def write_png(path, width=8, height=8):
+    """A real RGBA PNG at `path`, written with the standard library.
+
+    PIL is not installed in the bare `uv run --with pytest` environment this suite runs in, and
+    a PNG is a signature plus three CRC'd chunks. The preflight only asks whether the file
+    EXISTS, but a real header keeps `illustrate.png_size` -- which the watermark guard reads --
+    answering about this file rather than falling back to a square.
+    """
+    def chunk(kind, payload):
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF))
+
+    rows = b"".join(b"\x00" + b"\xe6\x5a\x3c\xff" * width for _ in range(height))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    return path
+
+
+def test_an_image_elements_src_reaches_the_renderer_absolute(stub, tmp_path):
+    """illustrate.py embeds the file as a data: URI and never resolves a path -- it is handed
+    the absolute one, by this preflight, through media.resolve_src."""
+    png = write_png(tmp_path / "media" / "photos" / "ai-machine.png")
+    stub.spec["scenes"][0]["elements"].append(
+        {"type": "image", "src": "media/photos/ai-machine.png", "at": [0.5, 0.62],
+         "size": 0.32, "enter": {"when": {"word": "cookies"}, "how": "pop"}, "sfx": "pop"})
+    stub.go()
+    scene, _path = stub.rendered[0]
+    el, = [e for e in scene["elements"] if e["type"] == "image"]
+    assert pathlib.Path(el["src"]).is_absolute()
+    assert pathlib.Path(el["src"]) == png.resolve()
+
+
+def test_a_missing_image_file_refuses_the_render_naming_the_scene_and_the_element(stub):
+    stub.spec["scenes"][1]["elements"].append(
+        {"type": "image", "src": "media/photos/absent.png", "at": [0.5, 0.5]})
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    message = str(excinfo.value)
+    assert "scene 1 (kind: illustration) element 1 (type: image)" in message
+    assert "absent.png" in message
+    assert stub.rendered == [], "the preflight has to run before the first frame"
+
+
+def test_a_src_that_climbs_out_of_the_specs_repo_is_refused(stub, tmp_path):
+    write_png(tmp_path.parent / "elsewhere.png")
+    stub.spec["scenes"][0]["elements"].append(
+        {"type": "image", "src": "../elsewhere.png", "at": [0.5, 0.5]})
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    assert "outside the spec's repository root" in str(excinfo.value)
+    assert stub.rendered == []
+
+
+def test_a_malformed_image_element_is_refused_by_the_schemas_owner_first(stub):
+    """A bad `size` is illustrate.validate_spec's question, not this module's, so it is
+    refused before anything is looked for on disk."""
+    stub.spec["scenes"][0]["elements"].append(
+        {"type": "image", "src": "media/photos/absent.png", "at": [0.5, 0.5], "size": 4})
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    assert "size" in str(excinfo.value)
+    assert "absent.png" not in str(excinfo.value)
+
+
+def test_an_image_elements_entry_is_a_picture_change_like_any_other():
+    """It goes through the same `enter.t` branch every simple element does, so it ends a span
+    in cuts.json without illustration_spans knowing the type exists."""
+    spans = M.illustration_spans({"elements": [
+        {"type": "image", "src": "/abs/sticker.png", "at": [0.5, 0.4],
+         "enter": {"t": 1.25, "how": "drop"}}]}, 4.0)
+    assert spans == [1.267, 2.733]       # quantised to the frame, like every other cut

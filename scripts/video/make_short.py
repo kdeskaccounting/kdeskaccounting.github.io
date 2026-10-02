@@ -342,7 +342,41 @@ def beat_spans(beats, dur: float) -> list:
     return spans
 
 
-def illustration_preflight(scene, index: int) -> None:
+def resolve_illustration_images(elements, spec_path, where: str) -> None:
+    """Resolve every `image` element's `src:` to an absolute path, writing it back IN PLACE.
+
+    An `image` element is a PNG staged by another repository — normally an AI-generated
+    sticker on a transparent background — and it names its file exactly as a `kind: media`
+    scene's `src:` does: absolute, or relative to the root of the repo that ships the spec. So
+    the resolution goes through the one function that already owns that rule,
+    `media.resolve_src`, rather than a second spelling of it.
+
+    illustrate.py embeds the file in the scene page as a base64 `data:` URI and must stay
+    importable with the standard library alone (media.py reaches for PIL), so it resolves
+    nothing itself: it is HANDED the absolute path. That is what the write-back is for — the
+    element the frame loop eventually sees (through `illustrate.resolve_times`, which deep
+    copies it) carries the resolved path.
+
+    A missing file — or one that climbs out of the spec's repo — refuses the render here,
+    beside every other preflight and named by element index, rather than at the frame loop
+    with the scene already narrated and encoded.
+
+    Elements whose `src:` is missing or blank are left alone: `illustrate.validate_spec` is
+    what refuses those, by name, and it runs before this does.
+    """
+    for index, el in enumerate(elements or []):
+        if not isinstance(el, dict) or el.get("type") != "image":
+            continue
+        src = el.get("src")
+        if not isinstance(src, str) or not src.strip():
+            continue
+        try:
+            el["src"] = str(media.resolve_src(spec_path, src))
+        except (FileNotFoundError, ValueError) as exc:
+            raise SystemExit(f"{where} element {index} (type: image): {exc}") from None
+
+
+def illustration_preflight(scene, index: int, spec_path) -> None:
     """One `kind: illustration` scene, checked before a frame is rendered. Raises SystemExit.
 
     `illustrate.validate_spec` wants a whole spec and a `seconds` on every scene, and an
@@ -354,6 +388,11 @@ def illustration_preflight(scene, index: int) -> None:
     A `seconds:` an author did write is ANNOUNCED rather than refused or silently honoured: the
     narration decides, and a spec that says otherwise should hear so from the renderer rather
     than discover it by counting frames.
+
+    `image` elements are resolved here too (`resolve_illustration_images`): the shape of the
+    element is illustrate.py's question, and where its PNG actually is on this disk is this
+    module's, because this is the side that knows the spec path. The scene dict is copied for
+    the validation but its ELEMENTS are not, which is how the resolved path reaches the render.
     """
     scene = dict(scene or {})
     if scene.get("seconds") is not None:
@@ -361,10 +400,12 @@ def illustration_preflight(scene, index: int) -> None:
               f"illustration scene is as long as its narration (plus the scene pad), the way "
               f"every other scene kind is.", flush=True)
     scene["seconds"] = 1.0
+    where = f"scene {index} (kind: illustration)"
     try:
         illustrate.validate_spec({"scenes": [scene]})
     except ValueError as exc:
-        raise SystemExit(f"scene {index} (kind: illustration): {exc}") from None
+        raise SystemExit(f"{where}: {exc}") from None
+    resolve_illustration_images(scene.get("elements"), spec_path, where)
 
 
 def watermark_offenders(overlay, width: int = OUT_W, height: int = OUT_H) -> list:
@@ -389,7 +430,7 @@ def watermark_offenders(overlay, width: int = OUT_W, height: int = OUT_H) -> lis
     return out
 
 
-def media_overlay_preflight(scene, index: int) -> None:
+def media_overlay_preflight(scene, index: int, spec_path) -> None:
     """One media scene's `overlay:`, `scrim:` and `blur:`, checked before a frame is rendered.
 
     The illustration layer is asked of `illustrate.validate_spec`, the same function the
@@ -403,6 +444,10 @@ def media_overlay_preflight(scene, index: int) -> None:
     An `overlay:` that is neither a card plate (`template:`) nor an illustration layer
     (`elements:`) is refused here. It used to be a KeyError inside `cards.card_html` four
     scenes into a render.
+
+    Its `image` elements are resolved here exactly as an illustration scene's are
+    (`resolve_illustration_images`), and before the watermark guard runs, because that guard
+    measures a PNG sticker by the file's own aspect ratio.
     """
     block = (scene or {}).get("overlay")
     media_grade(scene, index)
@@ -430,6 +475,11 @@ def media_overlay_preflight(scene, index: int) -> None:
         illustrate.validate_spec({"scenes": [dict(overlay, seconds=1.0)]})
     except ValueError as exc:
         raise SystemExit(f"{where} overlay: {exc}") from None
+    # BEFORE the watermark guard below, not after: an `image` element's painted height is its
+    # PNG's own aspect ratio, and illustrate.png_size can only read that out of a path it can
+    # open. An unresolved relative src would measure as a square and the guard would be asking
+    # about the wrong rectangle.
+    resolve_illustration_images(overlay.get("elements"), spec_path, f"{where} overlay")
     # The LAST line of defence for the attribution, and the only one for an Earth Studio
     # source. Our own plates are composited over the drawing (encode_media_scene), so nothing
     # we draw can cover them — but Earth Studio burns its mark into the exported FRAMES, so
@@ -2146,7 +2196,7 @@ def main():
     for _index, _scene in enumerate(spec.get("scenes") or []):
         if media.is_media(_scene or {}):
             scene_beats(_scene)
-            media_overlay_preflight(_scene, _index)
+            media_overlay_preflight(_scene, _index, spec_path)
             if (_scene or {}).get("steps"):
                 raise SystemExit(
                     "a `media` scene carries `steps:`, which only a `card` scene renders — "
@@ -2168,7 +2218,7 @@ def main():
                     f"(`kind: card` templates), or put the card over imagery with a "
                     f"`kind: media` scene.")
         elif illustrate.is_illustration(_scene or {}):
-            illustration_preflight(_scene, _index)
+            illustration_preflight(_scene, _index, spec_path)
             if (_scene or {}).get("beats") or (_scene or {}).get("steps"):
                 raise SystemExit(
                     "an `illustration` scene carries `beats:` or `steps:`, and neither is read "

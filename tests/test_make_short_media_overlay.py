@@ -25,8 +25,10 @@ What matters here and nowhere else:
 """
 import json
 import pathlib
+import struct
 import sys
 import types
+import zlib
 
 import pytest
 
@@ -623,3 +625,70 @@ def test_the_render_says_what_it_drew_and_how_it_graded(stub, capsys):
     out = capsys.readouterr().out
     assert "overlay 2 elements" in out
     assert "scrim 0.3" in out
+
+
+# --- `image` elements in an overlay: resolved before the watermark guard measures them ------
+
+def write_png(path, width=8, height=8):
+    """A real RGBA PNG at `path`, written with the standard library.
+
+    PIL is not installed in the bare `uv run --with pytest` environment this suite runs in, and
+    a PNG is a signature plus three CRC'd chunks. A REAL header matters here and not only for
+    the file's existence: `illustrate.element_bbox` measures a PNG sticker by this header's
+    aspect ratio, and the watermark guard is the caller.
+    """
+    def chunk(kind, payload):
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF))
+
+    rows = b"".join(b"\x00" + b"\xe6\x5a\x3c\xff" * width for _ in range(height))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n"
+                     + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+                     + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+    return path
+
+
+def test_an_overlay_images_src_reaches_the_renderer_absolute(stub, tmp_path):
+    png = write_png(tmp_path / "assets" / "ai-machine.png")
+    stub.spec["scenes"][0]["overlay"]["elements"].append(
+        {"type": "image", "src": "assets/ai-machine.png", "at": [0.5, 0.45], "size": 0.3,
+         "enter": {"when": {"word": "cookies"}, "how": "pop"}, "sfx": "pop"})
+    stub.go()
+    scene, _dir, _transparent = stub.rendered[0]
+    el, = [e for e in scene["elements"] if e["type"] == "image"]
+    assert pathlib.Path(el["src"]).is_absolute()
+    assert pathlib.Path(el["src"]) == png.resolve()
+
+
+def test_a_missing_overlay_image_refuses_the_render_naming_the_scene_and_element(stub):
+    stub.spec["scenes"][0]["overlay"]["elements"].append(
+        {"type": "image", "src": "assets/absent.png", "at": [0.5, 0.45]})
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    message = str(excinfo.value)
+    assert "scene 0 (kind: media) overlay element 2 (type: image)" in message
+    assert "absent.png" in message
+    assert stub.rendered == [], "the preflight has to run before the first frame"
+
+
+def test_a_tall_sticker_over_the_earth_studio_mark_is_caught_by_its_real_aspect(stub,
+                                                                                tmp_path):
+    """The guard measures a PNG by the FILE's aspect ratio, which is why the resolution has to
+    happen before it runs: this sticker is twice as tall as it is wide, and only its real
+    height reaches the watermark rectangle. Measured as a square it would have passed.
+    """
+    write_png(tmp_path / "assets" / "tall.png", width=40, height=80)
+    tall = {"type": "image", "src": "assets/tall.png", "at": [0.80, 0.80], "size": 0.2}
+    assert M.watermark_offenders({"elements": [dict(tall, src=str(
+        (tmp_path / "assets" / "tall.png")))]}), "the resolved, tall box reaches the zone"
+    assert M.watermark_offenders({"elements": [tall]}) == [], (
+        "unresolved, the same element measures as a square and misses it")
+    stub.spec["scenes"][0]["credit"] = EARTH_CREDIT
+    stub.spec["scenes"][0]["overlay"]["elements"].append(tall)
+    with pytest.raises(SystemExit) as excinfo:
+        stub.go()
+    message = str(excinfo.value)
+    assert "element 2 (image)" in message
+    assert "Earth Studio" in message and "watermark zone" in message
+    assert stub.rendered == []
