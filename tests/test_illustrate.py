@@ -9,8 +9,11 @@ no render venv required. The actual rendering path (scene -> PNG sequence -> mp4
 hand against marketing/video/illustration-demo/scenes.yaml, not by a test here, because it
 needs the render venv and a real headless Chrome.
 """
+import base64
 import copy
 import pathlib
+import struct
+import zlib
 
 import pytest
 
@@ -1036,3 +1039,234 @@ class TestSquiggle:
             {"type": "squiggle", "from": [0.5, 0.6], "to": [0.5, 0.3]},
             {"type": "squiggle", "from": [0.3, 0.6], "to": [0.3, 0.3], "waves": 4}]))
         assert doc.count('pathLength="1"') == 2
+
+
+# --------------------------------------------------------------------------------------------
+# image: a PNG sticker (normally AI-generated, transparent, staged by the sibling repo) that
+# behaves exactly as an emoji does -- pops on a word, wears the border, carries an sfx.
+# --------------------------------------------------------------------------------------------
+
+def _png_bytes(width, height, rgba=(230, 90, 60, 255)):
+    """A real, decodable RGBA PNG of exactly `width` x `height`, from the standard library.
+
+    PIL is fine in a test in principle -- it is illustrate.py, not this file, that may not
+    import it -- but it is NOT installed in the bare `uv run --with pytest --with playwright
+    --with pyyaml` environment this suite is run in, and importing it would take the whole
+    file down. A PNG is a signature plus three CRC'd chunks, so it is written by hand here:
+    signature, IHDR (8-bit RGBA, no interlace), one zlib IDAT of filter-0 scanlines, IEND.
+    """
+    def chunk(kind, payload):
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF))
+
+    scanlines = b"".join(b"\x00" + bytes(rgba) * width for _ in range(height))
+    return (I.PNG_MAGIC
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(scanlines))
+            + chunk(b"IEND", b""))
+
+
+def _png(tmp_path, name="sticker.png", width=64, height=64):
+    path = tmp_path / name
+    path.write_bytes(_png_bytes(width, height))
+    return path
+
+
+class TestImageValidation:
+    def test_it_is_an_element_type(self):
+        assert "image" in I.ELEMENT_TYPES
+
+    def test_a_minimal_image_validates(self):
+        I.validate_spec(_spec({"type": "image", "src": "media/photos/x.png",
+                               "at": [0.5, 0.6]}))
+
+    def test_every_knob_validates(self):
+        I.validate_spec(_spec(
+            {"type": "image", "src": "media/photos/ai-smellitzer-machine.png",
+             "at": [0.5, 0.6], "size": 0.32,
+             "enter": {"when": {"word": "machine"}, "how": "pop"}, "sfx": "pop"}))
+
+    @pytest.mark.parametrize("el", [
+        {"type": "image", "at": [0.5, 0.5]},                        # no src at all
+        {"type": "image", "src": "", "at": [0.5, 0.5]},             # empty
+        {"type": "image", "src": "   ", "at": [0.5, 0.5]},          # whitespace
+        {"type": "image", "src": 7, "at": [0.5, 0.5]},              # not a string
+    ])
+    def test_a_missing_src_is_refused(self, el):
+        with pytest.raises(ValueError, match="src"):
+            I.validate_spec(_spec(el))
+
+    @pytest.mark.parametrize("size", [0, -0.2, 1.4, "big", True])
+    def test_a_size_outside_zero_to_one_is_refused(self, size):
+        with pytest.raises(ValueError, match="size"):
+            I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 0.5],
+                                   "size": size}))
+
+    @pytest.mark.parametrize("how", ["pop", "fade", "drop"])
+    def test_pop_fade_and_drop_are_all_allowed(self, how):
+        I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 0.5],
+                               "enter": {"t": 0.4, "how": how}}))
+
+    def test_a_slide_is_refused_like_an_emojis_is(self):
+        with pytest.raises(ValueError, match="how"):
+            I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 0.5],
+                                   "enter": {"t": 0.4, "how": "slide-left"}}))
+
+    def test_an_sfx_is_held_to_the_same_four_as_an_emojis(self):
+        I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 0.5],
+                               "sfx": "chime"}))
+        with pytest.raises(ValueError, match="sfx"):
+            I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 0.5],
+                                   "sfx": "boing"}))
+
+    def test_an_at_outside_the_frame_is_refused(self):
+        with pytest.raises(ValueError, match="'at'"):
+            I.validate_spec(_spec({"type": "image", "src": "x.png", "at": [0.5, 1.9]}))
+
+    def test_validation_never_touches_the_file(self, tmp_path):
+        """The path is spec-relative until the caller resolves it, so whether it EXISTS is
+        make_short's preflight to answer -- `validate_spec` stays pure."""
+        I.validate_spec(_spec({"type": "image", "src": str(tmp_path / "nope.png"),
+                               "at": [0.5, 0.5]}))
+
+
+class TestImageHtml:
+    def test_the_png_is_embedded_as_a_base64_data_uri(self, tmp_path):
+        png = _png(tmp_path)
+        frag, css = I.render_element({"type": "image", "src": str(png), "at": [0.5, 0.6]}, 0)
+        assert "<img" in frag
+        assert "data:image/png;base64," in frag
+        assert css == ""
+
+    def test_the_bytes_in_the_page_are_the_bytes_on_disk(self, tmp_path):
+        """Self-contained AND deterministic: same file, same page, nothing to go missing
+        between `scene_html()` and the frame loop."""
+        png = _png(tmp_path, width=12, height=20)
+        frag, _ = I.render_element({"type": "image", "src": str(png), "at": [0.5, 0.5]}, 0)
+        embedded = frag.split("data:image/png;base64,", 1)[1].split('"', 1)[0]
+        assert base64.b64decode(embedded) == png.read_bytes()
+
+    def test_the_sticker_border_is_on_the_root_and_the_animation_on_the_img(self, tmp_path):
+        png = _png(tmp_path)
+        frag, _ = I.render_element(
+            {"type": "image", "src": str(png), "at": [0.5, 0.6],
+             "enter": {"t": 0.4, "how": "pop"}}, 3)
+        assert '<div class="el sticker"' in frag
+        assert 'class="image-png anim"' in frag
+        assert "animation:kf-pop" in frag
+        assert 'data-t0="0.4000"' in frag
+
+    def test_a_drop_uses_the_tags_own_keyframes(self, tmp_path):
+        png = _png(tmp_path)
+        frag, _ = I.render_element(
+            {"type": "image", "src": str(png), "at": [0.5, 0.6],
+             "enter": {"t": 1.0, "how": "drop"}}, 0)
+        assert f"animation:kf-drop {I.DROP_DUR}s" in frag
+
+    def test_it_can_opt_out_of_the_sticker_border(self, tmp_path):
+        png = _png(tmp_path)
+        frag, _ = I.render_element(
+            {"type": "image", "src": str(png), "at": [0.5, 0.6], "sticker": False}, 0)
+        assert "sticker" not in frag
+
+    def test_only_the_width_is_set_so_the_files_aspect_is_the_rendered_one(self, tmp_path):
+        png = _png(tmp_path)
+        frag, _ = I.render_element(
+            {"type": "image", "src": str(png), "at": [0.5, 0.6], "size": 0.25}, 0)
+        assert f"width:{0.25 * I.W:.1f}px" in frag
+        assert "height:" not in frag
+        assert ".image-png{display:block;height:auto}" in I.SHARED_CSS
+
+    def test_the_default_size_is_the_modules_own_constant(self, tmp_path):
+        png = _png(tmp_path)
+        frag, _ = I.render_element({"type": "image", "src": str(png), "at": [0.5, 0.6]}, 0)
+        assert f"width:{I.IMAGE_SIZE * I.W:.1f}px" in frag
+
+    def test_a_relative_src_is_refused_rather_than_read_from_the_cwd(self, tmp_path):
+        with pytest.raises(ValueError, match="not absolute"):
+            I.render_element({"type": "image", "src": "media/photos/x.png",
+                              "at": [0.5, 0.6]}, 0)
+
+    def test_a_file_that_is_not_a_png_is_refused_by_name(self, tmp_path):
+        jpg = tmp_path / "not-really.png"
+        jpg.write_bytes(b"\xff\xd8\xff\xe0 JFIF, actually")
+        with pytest.raises(ValueError, match="not a PNG"):
+            I.render_element({"type": "image", "src": str(jpg), "at": [0.5, 0.5]}, 0)
+
+    def test_a_scene_of_images_renders_a_whole_page(self, tmp_path):
+        png = _png(tmp_path)
+        doc = I.scene_html(_scene(elements=[
+            {"type": "image", "src": str(png), "at": [0.3, 0.4]},
+            {"type": "image", "src": str(png), "at": [0.7, 0.6], "size": 0.2}]))
+        assert doc.count("<img") == 2
+        assert doc.count("data:image/png;base64,") == 2
+
+    def test_two_renders_of_the_same_element_are_the_same_page(self, tmp_path):
+        png = _png(tmp_path)
+        el = {"type": "image", "src": str(png), "at": [0.5, 0.5],
+              "enter": {"t": 0.7, "how": "pop"}}
+        assert I.render_element(el, 0) == I.render_element(el, 0)
+
+    def test_its_sfx_fires_on_the_pop_and_on_a_drops_landing(self, tmp_path):
+        png = _png(tmp_path)
+        popped = _scene(elements=[{"type": "image", "src": str(png), "at": [0.5, 0.5],
+                                   "enter": {"t": 1.0, "how": "pop"}, "sfx": "pop"}])
+        dropped = _scene(elements=[{"type": "image", "src": str(png), "at": [0.5, 0.5],
+                                    "enter": {"t": 1.0, "how": "drop"}, "sfx": "hit"}])
+        assert I.scene_events(popped) == [{"t": 1.0, "sfx": "pop"}]
+        assert I.scene_events(dropped) == [{"t": round(1.0 + I.DROP_DUR, 4), "sfx": "hit"}]
+
+
+class TestPngSize:
+    def test_it_reads_the_ihdr_header(self, tmp_path):
+        assert I.png_size(_png(tmp_path, width=40, height=80)) == (40, 80)
+
+    @pytest.mark.parametrize("blob", [b"", b"\x89PNG\r\n\x1a\n", b"not a png at all, truly"])
+    def test_anything_it_cannot_read_is_None_not_a_raise(self, tmp_path, blob):
+        path = tmp_path / "broken.png"
+        path.write_bytes(blob)
+        assert I.png_size(path) is None
+
+    def test_a_missing_file_is_None(self, tmp_path):
+        assert I.png_size(tmp_path / "absent.png") is None
+
+
+class TestImageBbox:
+    def test_it_is_centred_on_its_at(self, tmp_path):
+        box = I.element_bbox({"type": "image", "src": str(_png(tmp_path)), "at": [0.4, 0.7],
+                              "size": 0.3})
+        assert (box[0] + box[2]) / 2 == pytest.approx(0.4)
+        assert (box[1] + box[3]) / 2 == pytest.approx(0.7)
+
+    def test_the_width_is_the_size_as_a_fraction_of_the_frame_width(self, tmp_path):
+        box = I.element_bbox({"type": "image", "src": str(_png(tmp_path)), "at": [0.5, 0.5],
+                              "size": 0.3})
+        assert box[2] - box[0] - 2 * I.STICKER_BLEED_PX / I.W == pytest.approx(0.3, abs=1e-6)
+
+    def test_the_height_comes_from_the_files_own_aspect_ratio(self, tmp_path):
+        """A 40x80 PNG is twice as tall as it is wide, so at size 0.25 it paints 0.25 W across
+        and 0.5 W down -- which is what the watermark guard has to see."""
+        tall = _png(tmp_path, name="tall.png", width=40, height=80)
+        box = I.element_bbox({"type": "image", "src": str(tall), "at": [0.5, 0.5],
+                              "size": 0.25})
+        height_px = (box[3] - box[1]) * I.H - 2 * I.STICKER_BLEED_PX
+        assert height_px == pytest.approx(0.25 * I.W * 2, abs=1e-3)
+
+    def test_a_wide_sticker_measures_wide(self, tmp_path):
+        wide = _png(tmp_path, name="wide.png", width=200, height=50)
+        box = I.element_bbox({"type": "image", "src": str(wide), "at": [0.5, 0.5],
+                              "size": 0.4})
+        height_px = (box[3] - box[1]) * I.H - 2 * I.STICKER_BLEED_PX
+        assert height_px == pytest.approx(0.4 * I.W * 0.25, abs=1e-3)
+
+    def test_an_unreadable_file_measures_as_a_square(self, tmp_path):
+        """The caller is a guard; the renderer is what refuses the bad file."""
+        box = I.element_bbox({"type": "image", "src": str(tmp_path / "gone.png"),
+                              "at": [0.5, 0.5], "size": 0.3})
+        height_px = (box[3] - box[1]) * I.H - 2 * I.STICKER_BLEED_PX
+        assert height_px == pytest.approx(0.3 * I.W, abs=1e-3)
+
+    def test_it_carries_the_sticker_bleed_like_every_other_box(self, tmp_path):
+        box = I.element_bbox({"type": "image", "src": str(_png(tmp_path)), "at": [0.5, 0.5],
+                              "size": 0.2})
+        assert box[0] == pytest.approx(0.4 - I.STICKER_BLEED_PX / I.W)

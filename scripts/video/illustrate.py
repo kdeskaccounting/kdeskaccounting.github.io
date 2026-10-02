@@ -89,6 +89,24 @@ a WORD -- see TIMES AS WORDS below.
            enter?: {t, how: pop|fade}, sfx?}
           `size` sets font-size; pop is scale 0 -> 1.15 -> 1 over 0.35 s (POP_DUR), per spec.
 
+  image   {src, at, size: 0-1 fraction of frame WIDTH (default 0.32),
+           enter?: {t, how: pop|fade|drop}, sfx?}
+          A PNG sticker -- normally an AI-generated one on a transparent background, staged by
+          the sibling repo -- that behaves exactly as `emoji` does: it pops or fades (or drops,
+          as a `tag` does) on a word, wears the same white border and drop shadow, and may
+          carry an `sfx`. `size` is the rendered WIDTH; the height follows the file's own
+          aspect ratio, read out of the PNG's IHDR header (`png_size`, stdlib `struct`), so
+          `element_bbox` measures what is really painted.
+          `src` MUST REACH THIS MODULE ABSOLUTE. The file is embedded in the page as a base64
+          `data:` URI (`image_data_uri`), which is what keeps a scene page self-contained and
+          the render deterministic -- same bytes, same page -- but resolving a spec-relative
+          path is `media.resolve_src`'s job and `media` is not importable from here with the
+          standard library alone. So the CALLER resolves: make_short.py walks every `image`
+          element of every illustration scene and overlay block at preflight, refuses a
+          missing file by scene and element index, and writes the absolute path back onto the
+          element before anything is rendered. A relative `src` that reaches the builder is a
+          hard error rather than a cwd-relative read, which would not be deterministic.
+
   label   {text, at, size: 0-1 fraction of frame height (default 0.05),
            enter?: {t, how: pop|fade|slide-left|slide-right}, sfx?}
           slide-left enters FROM the right, sliding left into its resting place (and
@@ -142,8 +160,8 @@ Every drawn element wears a bubbly white border and one soft dark shadow, so it 
 illustration is b-roll laid over video and imagery, and a drawn element has to survive landing
 on a photograph as well as on the graphite ground). That is the `.sticker` rule in SHARED_CSS:
 four stacked white `drop-shadow`s, which is how a CSS filter spells an outline that follows an
-arbitrary shape -- an emoji's silhouette, a stroked path, a run of bold type -- plus one
-`drop-shadow(0 10px 14px rgba(0,0,0,.45))` for the lift.
+arbitrary shape -- an emoji's silhouette, a PNG sticker's alpha, a stroked path, a run of bold
+type -- plus one `drop-shadow(0 10px 14px rgba(0,0,0,.45))` for the lift.
 
 Default ON for every scene and every element. A scene turns it off for all of its elements
 with `sticker: false`, and any single element overrides the scene either way with its own
@@ -177,12 +195,14 @@ is no longer missing: that is what `resolve_times()` above is.
 """
 from __future__ import annotations
 
+import base64
 import copy
 import html as _html
 import json
 import math
 import pathlib
 import re
+import struct
 import subprocess
 import sys
 
@@ -205,8 +225,18 @@ HEX_RE = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$")
 GRAPHITE = "#343A46"
 PAPER = "#F7F3EA"
 
-ELEMENT_TYPES = {"emoji", "label", "tag", "arrow", "squiggle", "figure", "box", "calendar"}
+ELEMENT_TYPES = {"emoji", "image", "label", "tag", "arrow", "squiggle", "figure", "box",
+                 "calendar"}
 SFX_KINDS = {"pop", "chime", "hit", "whoosh"}
+
+#: The PNG signature, the first eight bytes of every PNG file. Both `png_size` (is this a file
+#: whose header I can trust?) and `image_data_uri` (am I about to label a non-PNG as one?)
+#: check it, so the one spelling lives here.
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+#: An `image` sticker's rendered width, as a fraction of the frame WIDTH, when it names no
+#: `size`. Twice an emoji's default: an AI-generated sticker is a whole object (a machine, a
+#: figure, a sign) rather than one glyph, and at 0.16 W it reads as a smudge.
+IMAGE_SIZE = 0.32
 
 #: A word reference -- the mapping form of a time (see TIMES AS WORDS in the module docstring).
 WORDREF_KEYS = ("word", "nth", "offset", "edge")
@@ -250,6 +280,10 @@ EVENT_OFFSET = {
 
 ENTER_HOW_BY_TYPE = {
     "emoji": {"pop", "fade"},
+    # `drop` as well as the emoji's two: a PNG sticker is an OBJECT with weight (a machine, a
+    # sign), and the tag's drop -- a fall from above the frame with a bounce-settle -- is the
+    # one entrance that reads as weight. Same keyframes, same DROP_DUR, same `hit` on landing.
+    "image": {"pop", "fade", "drop"},
     "label": {"pop", "fade", "slide-left", "slide-right"},
     "tag": {"pop", "fade", "drop"},
     "arrow": {"draw", "fade"},
@@ -397,6 +431,26 @@ def _validate_emoji(el, tag):
     _enter(el, tag, ENTER_HOW_BY_TYPE["emoji"])
 
 
+def _validate_image(el, tag):
+    """A PNG sticker element. Checks the SHAPE of `src`, never the file.
+
+    Pure, like every other validator here: whether the path exists is a question about a
+    repository this module cannot see (`src` is spec-relative until the caller resolves it --
+    see the `image` entry in the module docstring), so existence is make_short's preflight to
+    refuse, with the spec path in hand.
+    """
+    if not isinstance(el.get("src"), str) or not el["src"].strip():
+        raise ValueError(f"{tag}: image requires a non-empty 'src' -- the path to a PNG, "
+                         f"resolved the way a media scene's src is (absolute, or relative to "
+                         f"the root of the repository that ships the spec)")
+    _point(el, "at", tag)
+    size = el.get("size", IMAGE_SIZE)
+    if not _num(size) or not (0 < size <= 1):
+        raise ValueError(f"{tag}: image 'size' must be a number in (0, 1] -- the fraction of "
+                         f"the frame WIDTH the sticker is rendered at, got {size!r}")
+    _enter(el, tag, ENTER_HOW_BY_TYPE["image"])
+
+
 def _validate_label(el, tag):
     if not isinstance(el.get("text"), str) or not el["text"]:
         raise ValueError(f"{tag}: label requires non-empty 'text'")
@@ -493,7 +547,8 @@ def _validate_calendar(el, tag):
 
 
 _VALIDATORS = {
-    "emoji": _validate_emoji, "label": _validate_label, "tag": _validate_tag,
+    "emoji": _validate_emoji, "image": _validate_image,
+    "label": _validate_label, "tag": _validate_tag,
     "arrow": _validate_arrow, "squiggle": _validate_squiggle, "box": _validate_box,
     "figure": _validate_figure, "calendar": _validate_calendar,
 }
@@ -727,6 +782,54 @@ def scene_events(scene):
 
 
 # --------------------------------------------------------------------------------------------
+# PNG stickers: the file's own size, and the file itself as a data: URI. The only two
+# functions in this module that touch the disk above the rendering line -- and they stay here,
+# rather than in media.py where the rest of this pipeline's file handling lives, because
+# illustrate.py must stay importable with the STANDARD LIBRARY ALONE (media.py is not: it
+# reaches for PIL). Hence `struct` over the PNG header rather than `PIL.Image.open`.
+# --------------------------------------------------------------------------------------------
+
+def png_size(path):
+    """(width, height) in pixels from a PNG's IHDR header, or None if it cannot be read as one.
+
+    A PNG's first 24 bytes are the 8-byte signature, then the IHDR chunk's 4-byte length and
+    4-byte type, then width and height as big-endian uint32 -- so one 24-byte read answers the
+    only question `element_bbox` has about the file. None (rather than a raise) for a missing,
+    truncated or non-PNG file, so the bbox can fall back to a square: the caller is a guard,
+    and a guard that crashes on a path it was handed is less useful than one that measures the
+    element conservatively and lets the renderer be the thing that refuses the bad file.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(24)
+    except OSError:
+        return None
+    if len(head) < 24 or head[:8] != PNG_MAGIC or head[12:16] != b"IHDR":
+        return None
+    width, height = struct.unpack(">II", head[16:24])
+    if width <= 0 or height <= 0:
+        return None
+    return (int(width), int(height))
+
+
+def image_data_uri(path):
+    """A PNG file -> `data:image/png;base64,<the whole file>`.
+
+    Inlined rather than referenced, for two reasons that are both about the page being a
+    self-contained artefact: a scene page is written to a build directory and opened over
+    `file://`, so a relative `src=` would resolve against THAT directory rather than the
+    spec's repo; and the frame loop reopens nothing between `seek()` calls, so a file that
+    moved mid-render could change the picture. Same bytes -> same page -> same frames.
+    """
+    data = pathlib.Path(path).read_bytes()
+    if data[:8] != PNG_MAGIC:
+        raise ValueError(f"{path} is not a PNG: its first bytes are not the PNG signature. An "
+                         f"`image` element embeds the file as a data: URI and labels it "
+                         f"image/png, so the file has to be one.")
+    return "data:image/png;base64," + base64.b64encode(data).decode("ascii")
+
+
+# --------------------------------------------------------------------------------------------
 # Pure HTML/CSS generation, one function per element type. Each returns (html, css) strings;
 # `css` is "" for every type except `figure` (walk poses need per-instance @keyframes, since
 # the from/to/t0/t1 differ per instance).
@@ -742,6 +845,7 @@ html,body{{margin:0;padding:0;width:{W}px;height:{H}px;overflow:hidden;
   drop-shadow(0 0 2.5px #fff) drop-shadow(0 0 2.5px #fff) drop-shadow(0 0 2.5px #fff)
   drop-shadow(0 0 2px #fff) drop-shadow(0 10px 14px rgba(0,0,0,.45));}}
 .emoji-glyph{{font-family:'Apple Color Emoji','Segoe UI Emoji',sans-serif;line-height:1;display:block}}
+.image-png{{display:block;height:auto}}  /* only the width is set; the file's aspect does the rest */
 .label-text{{font-weight:800;letter-spacing:.01em;white-space:nowrap;color:#1A1A1A;display:block}}
 .tag{{position:relative;display:inline-flex;align-items:center;justify-content:center;
   background:#E2574C;color:#fff;font-weight:800;border-radius:10px;padding:.3em .7em .3em 1.15em;
@@ -814,6 +918,33 @@ def _emoji_html(el, idx, sticker=True):
             f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
             f'<span class="emoji-glyph{cls}" style="font-size:{size_px:.1f}px;{style}"{data}>'
             f'{glyph}</span></div>')
+    return frag, ""
+
+
+def _image_html(el, idx, sticker=True):
+    """An `image` element: the PNG inlined, laid out exactly as an emoji is.
+
+    Same two-node shape as `_emoji_html` -- the sticker filter on the `.el` root, the enter
+    animation on the inner node -- so a PNG sticker and an emoji pop identically and the white
+    border stays 2.5 px of FRAME through the scale (see `_sticker_cls`). Only the WIDTH is set:
+    `height:auto` in SHARED_CSS is what makes the file's own aspect ratio the rendered one, and
+    it is the same ratio `element_bbox` measures out of the header.
+    """
+    x, y = el["at"]
+    src = pathlib.Path(str(el["src"]))
+    if not src.is_absolute():
+        raise ValueError(
+            f"image src {el['src']!r} is not absolute. This module embeds the file and never "
+            f"resolves a path (a cwd-relative read would not be deterministic): the caller "
+            f"resolves it -- make_short.py does, through media.resolve_src, at preflight -- "
+            f"and writes the absolute path back onto the element.")
+    w_px = float(el.get("size", IMAGE_SIZE)) * W
+    style, data, cls = _enter_parts(el.get("enter"))
+    frag = (f'<div class="el{_sticker_cls(el, sticker)}" id="{_el_id(idx)}" '
+            f'style="left:{x*100:.4f}%;top:{y*100:.4f}%;">'
+            f'<img class="image-png{cls}" alt="" '
+            f'style="width:{w_px:.1f}px;{style}"{data} src="{image_data_uri(src)}">'
+            f'</div>')
     return frag, ""
 
 
@@ -1074,7 +1205,12 @@ STICKER_BLEED_PX = 24.0
 
 
 def element_bbox(el, width=W, height=H):
-    """(left, top, right, bottom) of one element, in FRACTIONS of the frame. Pure.
+    """(left, top, right, bottom) of one element, in FRACTIONS of the frame.
+
+    Pure with ONE exception: an `image` element's height is its PNG's own aspect ratio, which
+    means reading that file's header (`png_size`). An unreadable or missing file measures as a
+    SQUARE rather than raising -- the caller is a guard, and the renderer is what refuses a bad
+    file, by name.
 
     What the element actually PAINTS, erring wide: every box below is the geometry its builder
     above lays out, plus STICKER_BLEED_PX for the drop-shadows, because the only caller is a
@@ -1096,6 +1232,14 @@ def element_bbox(el, width=W, height=H):
         # font-size is a fraction of the WIDTH; the glyph box is square at line-height 1.
         size = float(el.get("size", 0.16))
         box = centred(el["at"], size / 2.0, size * float(width) / (2.0 * float(height)))
+    elif kind == "image":
+        # `size` is the rendered WIDTH; the height is the file's own aspect (height:auto in
+        # SHARED_CSS), so a tall sticker measures tall. Square when the header is unreadable.
+        size = float(el.get("size", IMAGE_SIZE))
+        dims = png_size(el.get("src") or "")
+        aspect = (dims[1] / dims[0]) if dims else 1.0
+        box = centred(el["at"], size / 2.0,
+                      size * aspect * float(width) / (2.0 * float(height)))
     elif kind == "label":
         px = fit_label_px(el["text"], float(el.get("size", 0.05)) * float(height), width)
         text_w = min(len(el["text"]) * LABEL_EM_PER_CHAR * px, float(width) * SAFE_W)
@@ -1170,7 +1314,8 @@ def _calendar_html(el, idx, sticker=True):
 
 
 _BUILDERS = {
-    "emoji": _emoji_html, "label": _label_html, "tag": _tag_html, "arrow": _arrow_html,
+    "emoji": _emoji_html, "image": _image_html,
+    "label": _label_html, "tag": _tag_html, "arrow": _arrow_html,
     "squiggle": _squiggle_html, "figure": _figure_html, "box": _box_html,
     "calendar": _calendar_html,
 }
