@@ -372,6 +372,12 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #         at: [0.5, 0.68]
 #         enter: {when: {word: "cookies", offset: -0.05}, how: pop}
 #         sfx: pop
+#       - type: image       # a PNG sticker -- behaves EXACTLY as `emoji` does, see below
+#         src: media/photos/ai-smellitzer-machine.png
+#         at: [0.5, 0.6]
+#         size: 0.32        # fraction of frame WIDTH; the height follows the PNG's aspect
+#         enter: {when: {word: "machine"}, how: pop}   # pop | fade | drop
+#         sfx: pop
 #       - type: figure
 #         pose: walk        # stand | point | walk
 #         from: [0.12, 0.88]
@@ -403,6 +409,31 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # is b-roll over video and imagery, and the flat ground is sprinkled in on the beats with no
 # footage. Default ON; `sticker: false` on a scene or on one element opts out. Labels keep their
 # #1A1A1A ink — black type inside a white border is what survives landing on a photograph.
+# AN `image` ELEMENT IS A PNG STICKER (2026-10-02) — normally an AI-generated one on a
+# transparent background, staged by the sibling repo — and it behaves EXACTLY as `emoji` does:
+# it pops or fades in on the word being said, wears the same white border and drop shadow (the
+# CSS filter follows the file's ALPHA, which is why the background has to be transparent: a
+# rectangular JPEG comes out as a white-bordered rectangle), and may carry an `sfx:`. `drop`,
+# the price tag's fall-and-settle, is allowed as a third `how:` because a PNG sticker is an
+# object with weight. It is the same element in a `kind: illustration` scene and in a media
+# scene's `overlay:`.
+#   - `src:` is resolved the way a media scene's is — absolute, or relative to the root of the
+#     repository that ships the spec (`media.resolve_src`) — by `make_short`'s preflight
+#     (`resolve_illustration_images`), which REFUSES a missing file by scene and element index
+#     before a frame is drawn, and writes the absolute path back onto the element.
+#     illustrate.py embeds the file in the scene page as a base64 `data:` URI (so the page
+#     stays self-contained when it is opened over `file://` from a build directory, and the
+#     render stays deterministic: same bytes, same page) and resolves NOTHING itself — it must
+#     stay importable with the standard library alone, and media.py reaches for PIL. A relative
+#     `src` that reaches the builder is a hard error, never a cwd-relative read. Only PNG: the
+#     data URI is labelled image/png and a file that is not one is refused by name.
+#   - `size:` is the rendered WIDTH as a fraction of the frame (default 0.32,
+#     `illustrate.IMAGE_SIZE` — twice an emoji's, because a sticker is a whole object). The
+#     HEIGHT follows the file's own aspect ratio, read out of the PNG's IHDR header with stdlib
+#     `struct` (`illustrate.png_size`, no PIL), so `element_bbox` — and therefore the Earth
+#     Studio watermark guard above, which is its only caller — measures what is really painted.
+#     An unreadable header measures as a SQUARE rather than raising: the guard stays a guard,
+#     and the renderer is the thing that refuses a bad file.
 # The elements' `sfx:` are wired to the mix through `audio.sfx.events:` — see SOUND, below.
 
 # How two parts MEET, and how much silence sits in the join (2026-09-18). All three keys are
