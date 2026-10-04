@@ -36,6 +36,9 @@ and TikTok drivers use):
     am I ParkSheet? ─► no ─► refuse, touch nothing
                     └► yes ─► read the content list ─► this title already there? ─► skip, ok
                                                     └► no ─► upload, fill, Public, Publish
+                                                             ─► "Publish anyway" if asked
+                                                             ─► edit page: description and
+                                                                audience saved (repair once)
                                                              ─► re-read ─► assert Public
 
 **The channel guard is not decoration.** The debug Chrome profile also holds Stephen's
@@ -164,6 +167,17 @@ class VerificationFailed(RuntimeError):
 
     Deliberately its own type: this is the one failure that must NOT be retried. The video may
     be live already, and a second pass would upload it again.
+    """
+
+
+class PublishNotConfirmed(VerificationFailed):
+    """Publish was clicked but the uploader never closed: the video is still an unpublished draft.
+
+    The 2026-10-02 / 2026-10-04 failure, named. YouTube put up a modal the driver did not
+    answer, the uploader stayed open, and the run later navigated away — which saves the
+    upload as a private draft and then reads as "row says Draft" on the content list. It is a
+    VerificationFailed (never retried: the click happened) but its card says plainly that the
+    video is NOT live, so nobody waits for a Draft→Public flip that cannot come.
     """
 
 
@@ -322,6 +336,90 @@ def is_draft(row: dict) -> bool:
     what left a video on the channel that the run had promised to remove.
     """
     return _norm(row.get("visibility")) in {_norm(t) for t in S.DRAFT_VISIBILITY_TEXTS}
+
+
+def is_settling(row: dict) -> bool:
+    """After a CONFIRMED publish, is this row still on its way to Public?
+
+    Draft/Pending (how a Short reads while YouTube processes it) or Processing. Only ever asked
+    after the uploader has been seen to close on a Publish, so a Draft here is processing, not
+    an abandoned upload — that case is PublishNotConfirmed and never reaches the poll.
+    Deliberately NOT folded into `is_draft`: the dry-run clean-up uses that to decide what it
+    may delete, and "Processing" is a published video.
+    """
+    return is_draft(row) or _norm(row.get("visibility")) == _norm(S.PROCESSING_VISIBILITY_TEXT)
+
+
+#: What `publish_state_js` reports.
+PUBLISH_PRECHECKS, PUBLISH_OPEN, PUBLISH_DONE = "prechecks", "open", "published"
+
+
+def _shown_js() -> str:
+    """JS helper: is any element matching `s` (or the paper-dialog inside it) on screen?
+
+    Studio's dialog hosts are custom elements whose own box can be empty, and a closed paper
+    dialog (S.PAPER_DIALOG) stays in the DOM with display:none — so presence is never the test.
+    """
+    return ("const shown = s => { let hs = []; try { hs = [...document.querySelectorAll(s)]; }"
+            " catch (e) { hs = []; }"
+            " return hs.some(h => { const d = h.querySelector(" + repr(S.PAPER_DIALOG) + ") || h;"
+            " const cs = getComputedStyle(d);"
+            " return d.getClientRects().length > 0 && cs.display !== 'none'"
+            " && cs.visibility !== 'hidden'; }); };")
+
+
+def publish_state_js() -> str:
+    """JS: where a Publish click has got to — 'prechecks', 'open' or 'published'.
+
+    'prechecks' — YouTube's "We're still checking your content" modal is up and wants an
+      answer (the 2026-10-02/04 root cause).
+    'open'      — the uploader is still on screen with nothing else over it: not yet.
+    'published' — the uploader has closed, or a post-publish dialog (still processing / share)
+      is showing.
+    The `/*publish-state*/` marker lets the test fake tell this read from a list read.
+    """
+    return ("() => { /*publish-state*/ " + _shown_js() +
+            " if (shown(" + repr(S.PRECHECKS_DIALOG) + ")) return " + repr(PUBLISH_PRECHECKS) + ";"
+            " if (shown(" + repr(S.STILL_PROCESSING_DIALOG) + ") || shown("
+            + repr(S.SHARE_DIALOG) + ")) return " + repr(PUBLISH_DONE) + ";"
+            " if (shown(" + repr(S.UPLOAD_DIALOG) + ")) return " + repr(PUBLISH_OPEN) + ";"
+            " return " + repr(PUBLISH_DONE) + "; }")
+
+
+def publish_settled_js() -> str:
+    """JS predicate: the Publish click has reached a state the driver must act on."""
+    return "() => ((" + publish_state_js() + ")()) !== " + repr(PUBLISH_OPEN)
+
+
+def saved_js() -> str:
+    """JS predicate: the uploader's draft badge is not reading "Saving…" (or is not there)."""
+    return ("() => { const b = document.querySelector(" + repr(S.DRAFT_BADGE) + ");"
+            " return !b || !((b.innerText || '').toLowerCase().includes("
+            + repr(S.SAVING_BADGE_TEXT) + ")); }")
+
+
+def disabled_js(selector: str) -> str:
+    """JS predicate: `selector` is absent or disabled — the negation of `enabled_js`."""
+    return "() => !((" + enabled_js(selector) + ")())"
+
+
+def details_problems(description_read, description_want, kids_no_checked) -> list[str]:
+    """What the video's edit page says was NOT saved, as short phrases. [] means all saved.
+
+    Pure, so the judgement is tested without a browser. The description is compared exactly
+    (`_lines`), for the same licence reason `fill_box` is exact: a credit line that did not
+    survive is not a cosmetic difference.
+    """
+    problems = []
+    if _lines(description_read) != _lines(description_want):
+        got = _lines(description_read)
+        problems.append(
+            f"description reads {len(got)} characters on {len(got.splitlines()) if got else 0} "
+            f"line(s), expected {len(_lines(description_want))}"
+            + (" (EMPTY)" if not got else ""))
+    if not kids_no_checked:
+        problems.append(f"audience is not {S.KIDS_NO_NAME!r}")
+    return problems
 
 
 def video_id_from(text) -> str | None:
@@ -508,7 +606,9 @@ def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
         "ThemeParks.wiki and photo-credit lines that the licences require): "
         f"{pathlib.Path(meta.get('_meta_path') or '(the day-N.json next to the mp4)')}",
         f"Audience: '{S.KIDS_NO_NAME}'",
-        f"Next through {', '.join(S.STEP_NAMES[1:])}, set Visibility to Public, then Publish",
+        f"Next through {', '.join(S.STEP_NAMES[1:])} (do not wait for the checks to finish), "
+        f"set Visibility to Public, then Publish; if YouTube says it is still checking your "
+        f"content, click '{S.PUBLISH_ANYWAY_NAME}'",
         f"If a row with this title is there but reads {S.DRAFT_VISIBILITY_TEXT!r} or "
         f"{S.DRAFT_PENDING_TEXT!r}, that is a half-finished upload from a failed run: either "
         f"finish it or delete it (row menu -> {S.DELETE_MENU_ITEM_TEXT}) before uploading again",
@@ -554,6 +654,7 @@ def check_probes() -> tuple[tuple[str, str, str, str, str], ...]:
         (S.UPLOAD_DIALOG_URL, "publish button", "css", S.DONE_BUTTON, POST_FILE),
         (S.UPLOAD_DIALOG_URL, "public radio", "css", S.PUBLIC_RADIO, POST_FILE),
         (S.UPLOAD_DIALOG_URL, "anyone-can-see", "role", S.GOT_IT_BUTTON_TEXT, POST_PUBLISH),
+        (S.UPLOAD_DIALOG_URL, "publish anyway", "role", S.PUBLISH_ANYWAY_NAME, POST_PUBLISH),
     )
 
 
@@ -620,6 +721,9 @@ class YouTubeWebPublisher(Publisher):
         # moment a draft EXISTS, so "I cannot see one" is a failure to look hard enough, not
         # evidence that nothing was created.
         self._uploaded = False
+        # Set by confirm_publish / verify_details for the result detail and the card.
+        self._published_through_prechecks = False
+        self._edit_visibility = ""
 
     # -- contract ---------------------------------------------------------------------
 
@@ -726,6 +830,8 @@ class YouTubeWebPublisher(Publisher):
         self._submitted = False
         self._video_id = None
         self._uploaded = False
+        self._published_through_prechecks = False
+        self._edit_visibility = ""
         with session.open_page(self.platform, repo=self.repo) as page:
             self._page = page
             try:
@@ -789,6 +895,7 @@ class YouTubeWebPublisher(Publisher):
         self.upload(page, asset, meta)
         self.set_public(page)
         self.submit(page)
+        saved = self.verify_details(page, meta)
 
         # Give the row time to appear before reading the list, exactly as the draft clean-up
         # does. Without it the verification races YouTube's own list refresh: the read lands
@@ -802,7 +909,7 @@ class YouTubeWebPublisher(Publisher):
         # on 2026-09-29, and both runs filed a card over videos that were live an hour later.
         # So a draft row after Publish is "not settled yet", waited for as a CONDITION (row_public_js) on the Shorts tab,
         # re-navigating between waits, until it flips or the settle budget is gone. Only a row that is STILL a draft after that is reported.
-        if hit is not None and is_draft(hit):
+        if hit is not None and is_settling(hit):
             self.wait_for_settle(page, title)
             hit = find_video(self.read_content(page), title)
         if not hit:
@@ -817,12 +924,19 @@ class YouTubeWebPublisher(Publisher):
             raise VerificationFailed(
                 f"published {pathlib.Path(asset).name} and the row is on {S.CONTENT_URL}, but "
                 f"its visibility reads {hit.get('visibility')!r} rather than "
-                f"{S.PUBLIC_VISIBILITY_TEXT!r}. NOT retrying: the video IS on the channel. "
-                f"Set it public by hand at {self.row_url(hit)}.")
+                f"{S.PUBLIC_VISIBILITY_TEXT!r} after {PUBLISH_SETTLE_MS // 60_000} min"
+                + (f" (its edit page read {self._edit_visibility!r}, and the Publish was "
+                   f"confirmed — so this is most likely YouTube still processing: re-read "
+                   f"the list in 10 min before touching it)" if self._edit_visibility else "")
+                + f". NOT retrying: the video IS on the channel. If it stays "
+                  f"{hit.get('visibility')!r}, set it public by hand at {self.row_url(hit)}.")
         return PublishResult(
             platform=self.platform, ok=True, url=self.row_url(hit), queued_path=None,
             detail=(f"published {pathlib.Path(asset).name} to {S.CHANNEL_NAME} as "
-                    f"{S.PUBLIC_VISIBILITY_TEXT}: {title}"))
+                    f"{S.PUBLIC_VISIBILITY_TEXT}: {title}"
+                    + (f" (answered {S.PUBLISH_ANYWAY_NAME!r} while checks ran)"
+                       if self._published_through_prechecks else "")
+                    + f"; {saved}"))
 
     # -- dry run ----------------------------------------------------------------------
 
@@ -1099,6 +1213,13 @@ class YouTubeWebPublisher(Publisher):
         page.keyboard.press("Meta+A")
         page.keyboard.press("Backspace")
         page.keyboard.insert_text(text)
+        # Blur, so Studio commits the edit to its autosave now rather than whenever focus next
+        # moves. 2026-10-02: a description that read back correctly here was not on the saved
+        # draft afterwards; leaving the field is what a person does before Next.
+        try:
+            box.evaluate("el => el.blur()")
+        except Exception:  # noqa: BLE001 — a blur that cannot run changes nothing
+            pass
         got, want = _lines(box.inner_text()), _lines(text)
         if got != want:
             anchor = "TITLE_BOX" if what == "title" else "DESCRIPTION_BOX"
@@ -1134,6 +1255,14 @@ class YouTubeWebPublisher(Publisher):
                 f"question has changed — fix selectors_youtube.KIDS_NO_NAME.")
         if not radio.first.is_checked():
             radio.first.click()
+        if not radio.first.is_checked():
+            # Read back, not assumed: an overlay can swallow the click. One forced click, then
+            # stop — publishing with the audience unanswered is what Next refuses anyway.
+            radio.first.click(force=True)
+            if not radio.first.is_checked():
+                raise FormFieldError(
+                    f"clicked {S.KIDS_NO_NAME!r} but the radio does not read checked; fix "
+                    f"selectors_youtube.KIDS_NO_NAME.")
         page.locator(f"text={S.KIDS_UNANSWERED_TEXT}").first.wait_for(
             state="hidden", timeout=S.ANCHOR_TIMEOUT_MS)
 
@@ -1185,6 +1314,15 @@ class YouTubeWebPublisher(Publisher):
                 raise
             radio.click(force=True)
         self.dismiss_notice(page)
+        if not radio.is_checked():
+            # aria-checked is what Studio sets; read it rather than trust either click. With
+            # nothing selected the submit button reads "Save" and saves a PRIVATE draft.
+            radio.click(force=True)
+            if not radio.is_checked():
+                raise FormFieldError(
+                    f"clicked the {S.PUBLIC_VISIBILITY_TEXT} radio but it does not read "
+                    f"checked; refusing to click Publish, which would save a private draft. "
+                    f"Fix selectors_youtube.PUBLIC_RADIO.")
         # Capture the id now, not after Publish: the uploader carries "Video link
         # https://youtube.com/shorts/<id>" from the moment the upload lands, and a failure
         # AFTER the click still has to be able to say which video to go and look at.
@@ -1213,23 +1351,162 @@ class YouTubeWebPublisher(Publisher):
         raise once the request is already on the wire, and a retry from there would upload the
         video a second time.
 
-        The wait afterwards is deliberately forgiving. Studio replaces the uploader with a share
-        dialog on success, but that dialog is the one part of this flow that has never been seen
-        (a dry run stops before the click), so a timeout here is not treated as failure — the
-        content-list re-read in drive() is the confirmation that counts, and it is the one that
-        can tell "published" from "published as the wrong visibility".
+        What follows the click is `confirm_publish`: until 2026-10-04 this method waited ten
+        minutes for the uploader to detach and treated a timeout as fine, which is exactly how
+        an unanswered "still checking" modal turned into four private drafts.
         """
         button = page.locator(S.DONE_BUTTON).first
         button.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
+        self.wait_for_saved(page)
         page.wait_for_function(enabled_js(S.DONE_BUTTON), timeout=S.ANCHOR_TIMEOUT_MS)
         self._submitted = True          # point of no return — never re-upload past here
         button.click()
+        self.confirm_publish(page)
+
+    def wait_for_saved(self, page) -> None:
+        """Let an in-flight autosave ("Saving…" in the uploader's badge) land. Tolerated.
+
+        Both failing traces clicked Publish while the badge still read "Saving…". This only
+        removes that race; the edit-page read after Publish is what proves the save.
+        """
         try:
-            page.locator(S.UPLOAD_DIALOG).first.wait_for(state="detached",
-                                                         timeout=S.UPLOAD_TIMEOUT_MS)
-        except Exception as exc:  # playwright's TimeoutError is not the builtin one
+            page.wait_for_function(saved_js(), timeout=S.ANCHOR_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001
             if not timed_out(exc):
                 raise
+
+    def confirm_publish(self, page) -> None:
+        """After the Publish click: answer "Publish anyway", then see the uploader close.
+
+        **The root cause of the 2026-10-02 and 2026-10-04 Draft cards.** YouTube lets a video be
+        published while its checks are still running ("Checks … taking longer than usual"), but
+        the click then raises a modal — "We're still checking your content" with "Publish
+        anyway" / "Go back". Nothing answered it: the old code waited ten minutes for the
+        uploader to detach, gave up silently, and navigated away, which saves the upload as a
+        PRIVATE DRAFT. Every one of those cards was a video that had never been published.
+
+        So the click is now followed by a condition wait on three outcomes (publish_state_js):
+        the modal (answered with Publish anyway — ParkSheet's own footage and licensed stills,
+        and Stephen has published through it by hand every time), the uploader closing or a
+        post-publish dialog (done), or neither within PUBLISH_CONFIRM_TIMEOUT_MS
+        (PublishNotConfirmed — a card that says the video is NOT live, never a navigation that
+        quietly turns it into a draft and a 25-minute wait for a flip that cannot come).
+        """
+        answered = 0
+        for _ in range(3):
+            try:
+                page.wait_for_function(publish_settled_js(),
+                                       timeout=S.PUBLISH_CONFIRM_TIMEOUT_MS)
+            except Exception as exc:  # noqa: BLE001
+                if not timed_out(exc):
+                    raise
+            state = page.evaluate(publish_state_js())
+            if state == PUBLISH_PRECHECKS:
+                self.publish_anyway(page)
+                answered += 1
+                continue
+            if state == PUBLISH_DONE:
+                self._published_through_prechecks = bool(answered)
+                return
+            break
+        raise PublishNotConfirmed(
+            f"clicked Publish but the uploader is still open (state {state!r}"
+            + (f", after answering {S.PUBLISH_ANYWAY_NAME!r} {answered}x" if answered else "")
+            + f"). The video is NOT published: Studio keeps it as a private draft"
+            + (f" ({watch_url(self._video_id)})" if self._video_id else "")
+            + f". Open it from {S.CONTENT_URL} (Edit draft), check description and "
+              f"audience, choose {S.PUBLIC_VISIBILITY_TEXT}, Publish (answer "
+              f"{S.PUBLISH_ANYWAY_NAME!r} if asked). NOT retrying: a re-run would upload a "
+              f"second copy.")
+
+    def publish_anyway(self, page) -> None:
+        """Click "Publish anyway" on the still-checking modal. Never "Go back"."""
+        button = page.locator(S.PRECHECKS_DIALOG).get_by_role(
+            "button", name=S.PUBLISH_ANYWAY_NAME, exact=True)
+        if not button.count():
+            # The modal's inner <button> carries the aria-label; fall back to the page-wide
+            # role lookup for the day the host element is renamed.
+            button = page.get_by_role("button", name=S.PUBLISH_ANYWAY_NAME, exact=True)
+        if not button.count():
+            raise PublishNotConfirmed(
+                f"YouTube's still-checking modal is up but no {S.PUBLISH_ANYWAY_NAME!r} button "
+                f"could be found in it. The video is NOT published. Fix "
+                f"selectors_youtube.PUBLISH_ANYWAY_NAME; finish this one by hand.")
+        button.first.click()
+
+    def verify_details(self, page, meta: dict) -> str:
+        """Open the video's edit page and prove the description and audience were SAVED.
+
+        The uploader's read-back (fill_box) proves the box took the text; it cannot prove
+        Studio kept it — on 2026-10-02 it read back right and the published video had no
+        description. So the saved state is read from the edit page after Publish, and repaired
+        there once (fill + Save) if it differs. Returns a short note for the result detail.
+
+        Raises VerificationFailed when the repair does not stick — the video is live by then,
+        so the card says exactly which field to fix by hand, and nothing is retried.
+        """
+        if not self._video_id:
+            return "edit page not checked (no video id was read from the uploader)"
+        url = S.EDIT_URL.format(video_id=self._video_id)
+        want = description_of(meta)
+        self.goto(page, url)
+        # The edit URL carries no channel id, so the channel is re-proved before anything is
+        # typed on this page: a repair must never be written to someone else's channel. Not
+        # by #entity-name — on this page it holds the VIDEO title (read live 2026-10-04) —
+        # but by the side nav's own links, which carry the active channel's id.
+        try:
+            page.locator(S.EDIT_CHANNEL_LINK).first.wait_for(state="attached",
+                                                             timeout=S.ANCHOR_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001
+            if not timed_out(exc):
+                raise
+            raise WrongChannel(
+                f"the edit page for {self._video_id} carries no link to the {S.CHANNEL_NAME} "
+                f"channel ({S.CHANNEL_ID}); Studio may have moved to another channel. Not "
+                f"reading or repairing anything there.") from exc
+        box = page.locator(S.EDIT_DESCRIPTION_BOX).first
+        box.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
+        kids = page.locator(S.KIDS_NO_RADIO).first
+        problems = details_problems(box.inner_text(), want, kids.is_checked())
+        repaired = ""
+        if problems:
+            if details_problems(box.inner_text(), want, True):
+                try:
+                    self.fill_box(page, S.EDIT_DESCRIPTION_BOX, want, "description")
+                except FormFieldError as exc:
+                    # Past the Publish click every failure is a VerificationFailed: the video
+                    # is live, and the card has to say so rather than read like a form bug.
+                    raise VerificationFailed(
+                        f"the video IS published ({watch_url(self._video_id)}) but its saved "
+                        f"description was wrong ({'; '.join(problems)}) and the edit page "
+                        f"would not take the repair: {exc} Paste it by hand at {url}. NOT "
+                        f"retrying.") from exc
+            if not kids.is_checked():
+                kids.click(force=True)
+            page.wait_for_function(enabled_js(S.EDIT_SAVE_BUTTON), timeout=S.ANCHOR_TIMEOUT_MS)
+            page.locator(S.EDIT_SAVE_BUTTON).first.click()
+            # Save greys itself out again once the change is stored.
+            page.wait_for_function(disabled_js(S.EDIT_SAVE_BUTTON),
+                                   timeout=S.ANCHOR_TIMEOUT_MS)
+            self.goto(page, url)
+            box = page.locator(S.EDIT_DESCRIPTION_BOX).first
+            box.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
+            kids = page.locator(S.KIDS_NO_RADIO).first
+            still = details_problems(box.inner_text(), want, kids.is_checked())
+            if still:
+                raise VerificationFailed(
+                    f"the video IS published ({watch_url(self._video_id)}) but its edit page "
+                    f"still shows: {'; '.join(still)} — after one repair and Save. Fix it by "
+                    f"hand at {url}. NOT retrying.")
+            repaired = f" (repaired on the edit page: {'; '.join(problems)})"
+        vis = ""
+        try:
+            vis = (page.locator(S.EDIT_VISIBILITY_TEXT).first.inner_text() or "").strip()
+        except Exception:  # noqa: BLE001 — informational only
+            pass
+        self._edit_visibility = vis
+        return (f"edit page: description and audience saved{repaired}"
+                + (f"; visibility reads {vis!r}" if vis else ""))
 
     # -- the dry run's clean-up -------------------------------------------------------
 

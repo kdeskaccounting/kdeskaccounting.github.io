@@ -104,6 +104,9 @@ class _Loc:
             self.page.calls.append(f"click-timeout:{self.key}")
             raise _FakeTimeout(f"Timeout {kw.get('timeout')}ms exceeded")
         self.page.calls.append(f"click:{self.key}" + (":force" if kw.get("force") else ""))
+        # A click checks a radio, unless the test says this one swallows clicks.
+        if self.key not in self.page.unclickable:
+            self.page.checked[self.key] = True
         for hook in self.page.on_click.get(self.key, ()):
             hook()
 
@@ -153,6 +156,14 @@ class _Page:
         self.on_click = {}
         self.sticky = set()
         self.click_timeouts = set()
+        # Radios whose click never registers (an overlay swallowed it).
+        self.unclickable = set()
+        # What successive reads of publish_state_js return after the Publish click. Empty means
+        # "the uploader closed" — the happy path every pre-2026-10-04 test assumed.
+        self.publish_states = []
+        # The edit page's audience radio reads "No, it's not made for kids" unless a test
+        # says the save lost it.
+        self.checked[S.KIDS_NO_RADIO] = True
         self.lossy_boxes = set()
         self.inserted = []
         self.focus_box = None
@@ -208,6 +219,9 @@ class _Page:
         self.calls.append(f"wait_for_function:{js}")
 
     def evaluate(self, js, *a):
+        if "/*publish-state*/" in js:
+            self.calls.append("evaluate:publish-state")
+            return self.publish_states.pop(0) if self.publish_states else yw.PUBLISH_DONE
         self.calls.append("evaluate")
         value = self.rows_reads.pop(0) if self.rows_reads else []
         return value if isinstance(value, dict) else {"count": len(value), "rows": value}
@@ -1581,3 +1595,265 @@ def test_a_foreign_google_account_is_still_refused(monkeypatch):
     monkeypatch.setattr(pub, "goto", lambda pg, url: None)
     with pytest.raises(yw.WrongChannel):
         pub.assert_channel(page)
+
+
+# ----------------------------------------- 2026-10-04: publishing while YouTube's checks run
+#
+# Every "row reads Draft" card on 2026-10-02 and 2026-10-04 was the same thing: Publish was
+# clicked while the checks were still running, YouTube answered with "We're still checking
+# your content — Publish anyway / Go back", nothing answered it, and ten minutes later the run
+# navigated away, which saved the upload as a PRIVATE DRAFT. The traces
+# (runs/2026-10-02/youtube_web-113516, runs/2026-10-04/youtube_web-105749) show the modal
+# sitting there for the whole wait.
+
+def _published_page(states=()):
+    page = _Page(rows_reads=[[], [], [_row(TITLE)], []])
+    page.publish_states = list(states)
+    return page
+
+
+def test_the_still_checking_modal_is_answered_with_publish_anyway(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS, yw.PUBLISH_DONE])
+    result = _driven(pub, page, asset)
+    assert result.ok
+    anyway = f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"
+    assert anyway in page.calls
+    assert not [c for c in page.calls if S.PRECHECKS_GO_BACK_NAME in c]
+    assert page.calls.index(f"click:{S.DONE_BUTTON}") < page.calls.index(anyway)
+    assert S.PUBLISH_ANYWAY_NAME in result.detail
+
+
+def test_publish_anyway_comes_before_any_navigation_away_from_the_uploader(pub, asset):
+    """Navigating away with the modal up is what turned each upload into a private draft."""
+    page = _published_page([yw.PUBLISH_PRECHECKS, yw.PUBLISH_DONE])
+    _driven(pub, page, asset)
+    calls = page.calls
+    anyway = calls.index(f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}")
+    done = calls.index(f"click:{S.DONE_BUTTON}")
+    assert not [c for c in calls[done:anyway] if c.startswith("goto:")]
+
+
+def test_the_publish_outcome_is_waited_for_as_a_condition_not_a_detach(pub, asset):
+    page = _published_page()
+    _driven(pub, page, asset)
+    assert f"wait_for_function:{yw.publish_settled_js()}" in page.calls
+    # The old ten-minute detach wait is gone: it is what let the modal sit unanswered.
+    assert f"wait_for:{S.UPLOAD_DIALOG}:detached" not in page.calls
+
+
+def test_an_uploader_that_never_closes_is_a_card_saying_the_video_is_not_live(pub, asset):
+    page = _published_page([yw.PUBLISH_OPEN])
+    with pytest.raises(yw.PublishNotConfirmed) as exc:
+        _driven(pub, page, asset)
+    msg = str(exc.value)
+    assert "NOT published" in msg and "NOT retrying" in msg
+    assert S.PUBLISH_ANYWAY_NAME in msg
+    # And it never went to the content list to wait 25 minutes for a flip that cannot come.
+    done = page.calls.index(f"click:{S.DONE_BUTTON}")
+    assert not [c for c in page.calls[done:] if c.startswith("goto:")]
+
+
+def test_publish_not_confirmed_is_a_verification_failure_so_it_is_never_retried(
+        pub, asset, monkeypatch):
+    assert issubclass(yw.PublishNotConfirmed, yw.VerificationFailed)
+    page = _published_page([yw.PUBLISH_OPEN])
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    assert not result.ok and result.queued_path
+    assert [c for c in page.calls if c.startswith("set_input_files")] == [
+        "set_input_files:day-6.mp4"]
+
+
+def test_a_modal_that_keeps_coming_back_is_answered_a_bounded_number_of_times(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS] * 10)
+    with pytest.raises(yw.PublishNotConfirmed):
+        _driven(pub, page, asset)
+    anyway = f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"
+    assert page.calls.count(anyway) == 3
+
+
+def test_a_modal_without_a_publish_anyway_button_stops_rather_than_guessing(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS])
+    page.counts[f"{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    page.counts[f"role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    with pytest.raises(yw.PublishNotConfirmed) as exc:
+        _driven(pub, page, asset)
+    assert "NOT published" in str(exc.value)
+
+
+def test_publish_waits_for_the_autosave_badge_first(pub, asset):
+    page = _published_page()
+    _driven(pub, page, asset)
+    saved = page.calls.index(f"wait_for_function:{yw.saved_js()}")
+    assert saved < page.calls.index(f"click:{S.DONE_BUTTON}")
+
+
+def test_the_publish_state_reader_checks_the_modal_first_and_carries_its_marker():
+    js = yw.publish_state_js()
+    assert "/*publish-state*/" in js
+    assert js.index(S.PRECHECKS_DIALOG) < js.index(S.UPLOAD_DIALOG)
+    for sel in (S.STILL_PROCESSING_DIALOG, S.SHARE_DIALOG, S.PAPER_DIALOG):
+        assert sel in js
+    assert js.count("(") == js.count(")") and js.count("{") == js.count("}")
+    settled = yw.publish_settled_js()
+    assert settled.startswith("() => ((") and repr(yw.PUBLISH_OPEN) in settled
+
+
+def test_the_saved_predicate_reads_the_badge_for_saving():
+    js = yw.saved_js()
+    assert S.DRAFT_BADGE in js and S.SAVING_BADGE_TEXT in js
+
+
+# ---------------------------------------------------- the radios are read back, not assumed
+
+def test_a_public_radio_that_will_not_check_stops_before_publish(pub, asset):
+    page = _published_page()
+    page.unclickable.add(S.PUBLIC_RADIO)
+    with pytest.raises(yw.FormFieldError) as exc:
+        _driven(pub, page, asset)
+    assert "private draft" in str(exc.value)
+    assert f"click:{S.DONE_BUTTON}" not in page.calls
+
+
+def test_a_kids_radio_that_will_not_check_stops_before_next(pub, asset):
+    page = _published_page()
+    page.unclickable.add(f"role:radio:{S.KIDS_NO_NAME}")
+    with pytest.raises(yw.FormFieldError):
+        _driven(pub, page, asset)
+    assert f"click:{S.NEXT_BUTTON}" not in page.calls
+
+
+def test_a_kids_click_that_misses_once_gets_one_forced_retry(pub, asset):
+    page = _published_page()
+    key = f"role:radio:{S.KIDS_NO_NAME}"
+    page.unclickable.add(key)
+
+    def unswallow():
+        page.unclickable.discard(key)
+    page.on_click[key] = [unswallow]
+    assert _driven(pub, page, asset).ok
+    assert f"click:{key}:force" in page.calls
+
+
+# ------------------------------------------------- the edit page proves what was SAVED
+
+def test_details_problems_is_empty_when_everything_was_saved():
+    assert yw.details_problems(DESC, DESC, True) == []
+    assert yw.details_problems(DESC.replace("\n", "\r\n") + "\n", DESC, True) == []
+
+
+def test_details_problems_names_an_empty_description_and_a_wrong_audience():
+    problems = yw.details_problems("", DESC, False)
+    assert len(problems) == 2
+    assert "EMPTY" in problems[0]
+    assert S.KIDS_NO_NAME in problems[1]
+
+
+def test_details_problems_will_not_wave_through_lost_line_breaks():
+    assert yw.details_problems(" ".join(DESC.split()), DESC, True)
+
+
+def test_after_publish_the_edit_page_is_read(pub, asset):
+    page = _published_page()
+    result = _driven(pub, page, asset)
+    edit = f"goto:{S.EDIT_URL.format(video_id='Oxo41KgeVoA')}"
+    assert edit in page.calls
+    assert page.calls.index(f"click:{S.DONE_BUTTON}") < page.calls.index(edit)
+    assert "description and audience saved" in result.detail
+    assert f"click:{S.EDIT_SAVE_BUTTON}" not in page.calls       # nothing to repair
+
+
+def _edit_page(description="", kids=True):
+    page = _Page()
+    page.texts[S.EDIT_DESCRIPTION_BOX] = description
+    page.checked[S.KIDS_NO_RADIO] = kids
+    return page
+
+
+def test_a_description_that_did_not_save_is_repaired_on_the_edit_page(pub):
+    page = _edit_page(description="")
+    pub._video_id = "Oxo41KgeVoA"
+    note = pub.verify_details(page, META)
+    assert DESC.rstrip() in page.inserted
+    assert f"click:{S.EDIT_SAVE_BUTTON}" in page.calls
+    assert f"wait_for_function:{yw.disabled_js(S.EDIT_SAVE_BUTTON)}" in page.calls
+    assert "repaired" in note and "EMPTY" in note
+    # Re-read after the save: the page is opened twice.
+    assert page.calls.count(f"goto:{S.EDIT_URL.format(video_id='Oxo41KgeVoA')}") == 2
+
+
+def test_a_lost_audience_answer_is_repaired_without_retyping_the_description(pub):
+    page = _edit_page(description=DESC)
+    page.checked[S.KIDS_NO_RADIO] = False
+    pub._video_id = "Oxo41KgeVoA"
+    note = pub.verify_details(page, META)
+    assert f"click:{S.KIDS_NO_RADIO}:force" in page.calls
+    assert not page.inserted
+    assert "repaired" in note
+
+
+def test_a_repair_that_does_not_stick_is_a_verification_failure_naming_the_live_video(pub):
+    page = _edit_page(description="")
+    page.lossy_boxes.add(S.DESCRIPTION_BOX)
+    pub._video_id = "Oxo41KgeVoA"
+    with pytest.raises(yw.VerificationFailed) as exc:
+        pub.verify_details(page, META)
+    assert "IS published" in str(exc.value) and "Oxo41KgeVoA" in str(exc.value)
+    assert f"click:{S.EDIT_SAVE_BUTTON}" not in page.calls
+
+
+def test_the_edit_page_on_another_channel_is_never_written_to(pub):
+    page = _edit_page(description="")
+    page.counts[S.EDIT_CHANNEL_LINK] = 0          # the nav links name some other channel
+    pub._video_id = "Oxo41KgeVoA"
+    with pytest.raises(yw.WrongChannel):
+        pub.verify_details(page, META)
+    assert not page.inserted and f"click:{S.EDIT_SAVE_BUTTON}" not in page.calls
+
+
+def test_no_video_id_means_the_edit_page_is_skipped_and_said_so(pub):
+    page = _edit_page()
+    pub._video_id = None
+    assert "not checked" in pub.verify_details(page, META)
+    assert not [c for c in page.calls if c.startswith("goto:")]
+
+
+# ------------------------------------------------- the settle poll: Draft or Processing
+
+def test_processing_is_settling_but_is_not_a_draft():
+    row = _row(TITLE, S.PROCESSING_VISIBILITY_TEXT, href=None)
+    assert yw.is_settling(row) and not yw.is_draft(row)
+    assert yw.is_settling(_row(TITLE, S.DRAFT_VISIBILITY_TEXT, href=None))
+    assert not yw.is_settling(_row(TITLE))
+
+
+def test_a_processing_row_after_a_confirmed_publish_is_polled_until_public(pub, asset,
+                                                                         monkeypatch):
+    page = _Page(rows_reads=[[], [], [_row(TITLE, S.PROCESSING_VISIBILITY_TEXT, href=None)],
+                             [], [_row(TITLE)], []])
+    settled = []
+    monkeypatch.setattr(pub, "wait_for_settle", lambda pg, title: settled.append(title))
+    assert _driven(pub, page, asset).ok
+    assert settled == [TITLE]
+
+
+def test_a_row_still_draft_after_the_budget_says_what_the_edit_page_read(pub, asset,
+                                                                       monkeypatch):
+    draft = _row(TITLE, S.DRAFT_VISIBILITY_TEXT, href=None)
+    page = _Page(rows_reads=[[], [], [draft], [], [draft], []])
+    page.texts[S.EDIT_VISIBILITY_TEXT] = "Public"
+    monkeypatch.setattr(pub, "wait_for_settle", lambda pg, title: None)
+    with pytest.raises(yw.VerificationFailed) as exc:
+        _driven(pub, page, asset)
+    assert "edit page read 'Public'" in str(exc.value)
+
+
+def test_the_manual_steps_tell_a_human_about_publish_anyway(asset):
+    steps = " ".join(yw.manual_steps(asset, META))
+    assert S.PUBLISH_ANYWAY_NAME in steps and "do not wait for the checks" in steps
+
+
+def test_the_edit_page_channel_proof_is_not_the_header_which_holds_the_video_title():
+    """Read live 2026-10-04: on /video/<id>/edit, #entity-name is the video's title."""
+    assert S.CHANNEL_ID in S.EDIT_CHANNEL_LINK
+    assert S.EDIT_CHANNEL_LINK != S.CHANNEL_NAME_TEXT
