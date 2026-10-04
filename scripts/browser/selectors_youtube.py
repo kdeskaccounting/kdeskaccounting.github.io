@@ -200,6 +200,52 @@ VIDEO_LINK_RE = (r"https?://(?:www\.)?youtu(?:be\.com/(?:shorts/|watch\?v=)|\.be
 #: Where a published Short lives. Built from the id the regex above yields.
 WATCH_URL = "https://www.youtube.com/shorts/{video_id}"
 
+# --- Publishing while YouTube's checks are still running (2026-10-04).
+# Root cause of every "row reads Draft" card from 2026-10-02 and 2026-10-04: Publish was
+# clicked while the copyright/ad-suitability checks were still running ("taking longer than
+# usual" in the footer), and YouTube answered with a modal — "We're still checking your
+# content … Publish anyway / Go back". The driver never answered it, waited ten minutes for
+# the uploader to close, then navigated away, which saves the upload as a private draft.
+# Read off the DOM snapshots in runs/2026-10-02/youtube_web-113516 and
+# runs/2026-10-04/youtube_web-105749 (both traces show the modal sitting there for 10 min).
+#: The Polymer dialog inside every Studio dialog host; display:none once it is closed.
+PAPER_DIALOG = "tp-yt-paper-dialog"                  # seen in both traces (uploader + modal)
+PRECHECKS_DIALOG = "ytcp-prechecks-warning-dialog"   # seen in both traces; never clicked yet
+#: aria-label of the inner <button> inside `#secondary-action-button`.
+PUBLISH_ANYWAY_NAME = "Publish anyway"               # seen in both traces; never clicked yet
+PRECHECKS_GO_BACK_NAME = "Go back"                   # seen in both traces; never clicked
+#: The uploader's top-right badge: "Saving..." while an edit is in flight, then "Saved as
+#: private". Waited on before Publish, so the last edit is not still on the wire.
+DRAFT_BADGE = "ytcp-uploads-dialog .draft-badge"     # seen in both traces
+SAVING_BADGE_TEXT = "saving"                          # lowercased substring, seen in both
+#: Dialogs Studio may show once a publish has gone through. Tag names read from Studio's own
+#: stylesheet in the traces; neither has been seen open, so they only ever count as "the
+#: publish went through" — never as the only evidence the driver relies on.
+STILL_PROCESSING_DIALOG = "ytcp-uploads-still-processing-dialog"   # UNVERIFIED (CSS only)
+SHARE_DIALOG = "ytcp-video-share-dialog"                           # UNVERIFIED (CSS only)
+#: How long the driver gives the uploader, after the Publish click, to either close or show
+#: the prechecks modal. The modal took ~5 s to appear in both traces.
+PUBLISH_CONFIRM_TIMEOUT_MS = 180_000
+
+# --- The video's own edit page, read after Publish to prove what was SAVED (2026-10-04).
+# Verified read-only on 2026-10-04 against kUuA0z0Gv0E and bpkU2VpPSak (ParkSheet, Public).
+EDIT_URL = STUDIO_URL + "/video/{video_id}/edit"     # verified 2026-10-04
+#: The edit page uses the same description editor as the uploader.
+EDIT_DESCRIPTION_BOX = DESCRIPTION_BOX               # verified 2026-10-04: full text, newlines kept
+#: The audience radios by their own `name`, read through aria-checked. Same name in the
+#: uploader (trace snapshot, 2026-10-04) and on the edit page (live, 2026-10-04).
+KIDS_NO_RADIO = "tp-yt-paper-radio-button[name='VIDEO_MADE_FOR_KIDS_NOT_MFK']"  # verified 2026-10-04
+#: The edit page's channel proof. NOT CHANNEL_NAME_TEXT: on this page #entity-name holds the
+#: video's title. The side nav's Dashboard/Content links carry the active channel id.
+EDIT_CHANNEL_LINK = f"a[href*='/channel/{CHANNEL_ID}']"   # verified 2026-10-04: matched 2
+EDIT_VISIBILITY_TEXT = "#visibility-text"            # verified 2026-10-04: reads "Public"
+#: Save on the edit page: a ytcp-button host carrying disabled + aria-disabled="true" until
+#: something changes. Only clicked when a saved field has to be repaired.
+EDIT_SAVE_BUTTON = "ytcp-button#save"                # verified 2026-10-04 (disabled, not clicked)
+#: A row that is published but still processing may read this instead of Public. Treated like
+#: Draft by the settle poll (wait for Public), never as success. UNVERIFIED wording.
+PROCESSING_VISIBILITY_TEXT = "Processing"
+
 # --- Deleting a draft (the whole of --dry-run's clean-up, and nothing else ever calls it).
 # Closing the uploader saves a draft with no prompt, so the draft is removed from the content
 # list: hover the row, open its Options menu, Delete forever, tick the acknowledgement, confirm.
@@ -256,6 +302,10 @@ POST_FILE_ONLY = (
 POST_PUBLISH_ONLY = (
     "GOT_IT_BUTTON_TEXT",
     "WATCH_URL",
+    "PRECHECKS_DIALOG",
+    "PUBLISH_ANYWAY_NAME",
+    "STILL_PROCESSING_DIALOG",
+    "SHARE_DIALOG",
 )
 
 # Every anchor above that has never been confirmed live. `--check` and a dry run are what
@@ -270,4 +320,9 @@ UNVERIFIED = (
     "GOT_IT_BUTTON_TEXT",   # the visibility notice was never triggered (no Publish click)
     "WATCH_URL",            # nothing has been published through this driver yet
     "DESCRIPTION_MAX",      # YouTube's documented limit, not one we have hit
+    "PUBLISH_ANYWAY_NAME",  # read off two trace snapshots; the next live post clicks it
+    "STILL_PROCESSING_DIALOG",  # tag name from Studio's CSS only
+    "SHARE_DIALOG",             # tag name from Studio's CSS only
+    "PROCESSING_VISIBILITY_TEXT",
+    "EDIT_SAVE_BUTTON",     # read live (disabled); only clicked when a repair is needed
 )

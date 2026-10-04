@@ -434,6 +434,20 @@ click is deliberately **not** retried: the video may already be live, and the ca
 to go and look at. It verifies after publishing that the row exists *and* reads `Public`; a video
 that lands as Private is a failure, not a success.
 
+**Publishing while YouTube's checks run (fixed 2026-10-04).** The driver never waits for the
+copyright/ad-suitability checks: it walks straight to Visibility, selects Public (read back via
+`aria-checked`), waits for the "Saving…" badge to clear, and clicks Publish. When the checks are
+still running ("taking longer than usual"), YouTube answers with a modal — *We're still checking
+your content* — and the driver clicks **Publish anyway** (never *Go back*). Until 2026-10-04
+nothing answered that modal: the run waited ten minutes, navigated away, and Studio saved the
+upload as a **private draft** — every "row reads Draft" card from 2026-10-02 and 2026-10-04
+(traces `runs/2026-10-02/youtube_web-113516`, `runs/2026-10-04/youtube_web-105749`). Now, if the
+uploader has not closed within 3 minutes of the click, the run files a `PublishNotConfirmed`
+card that says the video is **not** live, instead of polling 25 minutes for a flip that cannot
+come. After a confirmed publish it opens `/video/<id>/edit`, checks the **saved** description
+(exact) and "No, it's not made for kids", repairs either once (fill + Save) if Studio lost it,
+and only then polls the Shorts tab for Draft/Processing → Public.
+
 The title and description reach YouTube **verbatim**, read back out of the boxes and compared.
 Nothing is truncated: a title over YouTube's 100 characters is refused with a message telling you
 to fix the meta file, because the description carries the Queue-Times, ThemeParks.wiki and
