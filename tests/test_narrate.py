@@ -1100,3 +1100,44 @@ def test_a_changed_lead_in_re_renders_the_wav_even_though_the_cache_key_did_not_
     assert drive.run() == 0
     assert len(drive.calls) == 2 * narrated, "a shortened lead-in must re-render every scene"
     assert drive.meta(0)["lead_in_s"] == pytest.approx(0.05)
+
+
+# --- tts.say: respell a word for the voice, never for the captions -------------------------
+
+def test_say_respells_whole_words_only_keeping_case_and_punctuation():
+    aliases = N.say_map({"tts": {"say": {"Coop": "koop", "coops": "koops"}}})
+    assert N.spoken_text("A coop never moves. Coop, coops, scoop.", aliases) == \
+        "A koop never moves. Koop, koops, scoop."
+    assert N.spoken_text("A coop.", {}) == "A coop."
+
+
+@pytest.mark.parametrize("bad", [{"coop": "ko op"}, {"two words": "x"}, {"coop": ""}, ["coop"]])
+def test_say_refuses_an_alias_that_cannot_round_trip(bad):
+    with pytest.raises(SystemExit):
+        N.say_map({"tts": {"say": bad}})
+
+
+def test_the_voice_gets_the_alias_and_the_captions_keep_the_narration(drive):
+    import captions as C
+    drive.spec["scenes"] = [{"narration": "Because a coop never moves."}]
+    drive.spec["tts"] = dict(EL, say={"coop": "koop"})
+    drive.key = FAKE_KEY
+    drive.words = [{"text": t, "start": i * 0.3, "end": i * 0.3 + 0.2}
+                   for i, t in enumerate("Because a koop never moves.".split())]
+    assert drive.run() == 0
+    assert [c.text for c in drive.calls] == ["Because a koop never moves."]
+    assert [w["text"] for w in C.read_words(drive.out / "scene_00.wav")] == \
+        ["Because", "a", "coop", "never", "moves."]
+    assert drive.meta(0)["shown"] == "Because a coop never moves."
+    assert drive.meta(0)["hash"] == N.cache_hash(N.tts_config(drive.spec),
+                                                 "Because a koop never moves.")
+    drive.calls.clear()
+    assert drive.run() == 0 and drive.calls == [], "an unchanged alias is a cache hit"
+    drive.spec["tts"]["say"] = {"coop": "kooop"}
+    assert drive.run() == 0 and [c.text for c in drive.calls] == ["Because a kooop never moves."]
+
+
+def test_timings_that_do_not_line_up_are_left_alone_rather_than_mislabelled():
+    words = [{"text": "a", "start": 0.0, "end": 0.1}]
+    assert N.display_words(words, "a coop", "a koop") == words
+    assert N.display_words(None, "a coop", "a koop") is None

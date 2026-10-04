@@ -207,6 +207,76 @@ def narration_text(scene: dict) -> str:
     return " ".join(str(scene.get("narration") or "").split())
 
 
+# ------------------------------------------------------------------- pronunciation (tts.say)
+#
+#   tts:
+#     say: {coop: koop, coops: koops}   # display word -> what the voice is SENT
+#
+# A word the voice mispronounces (ElevenLabs Adam reads "coop" as "cop") is respelled in the
+# request only. The narration, the captions and every `when: {word: …}` keep the display
+# spelling: the word timings that come back are re-labelled with the narration's own words
+# before words.json is written. Matching is whole-word and case-insensitive, punctuation
+# stays where it was, and a capitalised word keeps its capital. One token in, one token out
+# (a replacement may not contain whitespace), so the re-labelling is a 1:1 index map.
+
+def _split_core(token: str) -> tuple[str, str, str]:
+    """'"Coop,"' -> ('"', 'Coop', ',"'): leading punctuation, the word, trailing punctuation."""
+    start, end = 0, len(token)
+    while start < end and not token[start].isalnum():
+        start += 1
+    while end > start and not token[end - 1].isalnum():
+        end -= 1
+    return token[:start], token[start:end], token[end:]
+
+
+def say_map(spec: dict) -> dict:
+    """The spec's `tts.say:` aliases, lower-cased. Refuses a shape that cannot round-trip."""
+    block = spec.get("tts") or {}
+    raw = (block.get("say") if isinstance(block, dict) else None) or {}
+    if not isinstance(raw, dict):
+        raise SystemExit(f"tts.say must be a mapping of word -> spoken spelling, "
+                         f"got {type(raw).__name__}")
+    out = {}
+    for word, spoken in raw.items():
+        word, spoken = str(word).strip(), str(spoken).strip()
+        if not word or not spoken or len(word.split()) != 1 or len(spoken.split()) != 1:
+            raise SystemExit(f"tts.say: {word!r} -> {spoken!r} must be one word to one word "
+                             f"(the captions are re-labelled token for token)")
+        out[word.lower()] = spoken
+    return out
+
+
+def spoken_text(text: str, aliases: dict) -> str:
+    """The narration as the synthesiser receives it: `text` with every alias respelled."""
+    if not aliases:
+        return text
+    tokens = []
+    for token in text.split():
+        lead, core, trail = _split_core(token)
+        spoken = aliases.get(core.lower())
+        if spoken is not None:
+            if core[:1].isupper():
+                spoken = spoken[:1].upper() + spoken[1:]
+            token = lead + spoken + trail
+        tokens.append(token)
+    return " ".join(tokens)
+
+
+def display_words(words, text: str, spoken: str):
+    """Re-label word timings synthesised from `spoken` with the words of `text`.
+
+    Both are whitespace-split from the same token list, so when the timings carry one entry
+    per spoken token the labels map by index. Anything else (a provider that merged or split
+    a token) is left as the provider returned it rather than mislabelled.
+    """
+    if words is None or text == spoken:
+        return words
+    shown, said = text.split(), spoken.split()
+    if len(words) != len(said) or len(shown) != len(said):
+        return words
+    return [dict(word, text=shown[i]) for i, word in enumerate(words)]
+
+
 # ------------------------------------------------------------------------------- the cache key
 
 def cache_hash(cfg: TTSConfig, text: str) -> str:
@@ -276,8 +346,9 @@ def estimate_credits(model: str, chars: int) -> int:
 def dry_run_lines(spec: dict, cfg: TTSConfig) -> list[str]:
     scenes = spec.get("scenes") or []
     lines, total = [], 0
+    aliases = say_map(spec)
     for i, scene in enumerate(scenes):
-        n = len(narration_text(scene))
+        n = len(spoken_text(narration_text(scene), aliases))
         total += n
         lines.append(f"scene {i:02d}: {n:>5} characters" + ("" if n else "   (no narration)"))
     lines.append(f"total: {total} characters across {len(scenes)} scenes")
@@ -724,8 +795,12 @@ def main(argv: list | None = None) -> int:
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     durations = {}
+    aliases = say_map(spec)
     for i, scene in enumerate(spec["scenes"]):
-        text = narration_text(scene)
+        # `shown` is the narration as written (captions, word cues); `text` is what the voice
+        # is sent and what the cache key covers, so editing an alias re-synthesizes.
+        shown = narration_text(scene)
+        text = spoken_text(shown, aliases)
         wav, meta = out / f"scene_{i:02d}.wav", out / f"scene_{i:02d}.json"
         if not text:
             durations[i] = 0.0
@@ -793,13 +868,15 @@ def main(argv: list | None = None) -> int:
             words = None
             print(f"scene {i:02d}: {scene_cfg.provider} returned no word timings — captions "
                   f"will be skipped for this scene", file=sys.stderr, flush=True)
+        words = display_words(words, shown, text)
         captions.write_words(wav, words)
         meta.write_text(json.dumps({"hash": cache_hash(scene_cfg, text), "seconds": seconds,
                                     "voice": scene_cfg.voice,
                                     "provider_used": scene_cfg.provider,
                                     "model": scene_cfg.model, "speed": scene_cfg.speed,
                                     "lead_in_s": scene_cfg.lead_in_s,
-                                    "text": text}))
+                                    "text": text,
+                                    **({"shown": shown} if shown != text else {})}))
         print(f"scene {i:02d}: {seconds:.1f}s  [{scene_cfg.provider}]", flush=True)
     with open(out / "durations.json", "w") as fh:
         json.dump(durations, fh, indent=1)

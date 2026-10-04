@@ -449,6 +449,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 #     scene_pad: 0.10       # optional; frames held after the narration, default 0.25
 #   tts:
 #     lead_in_s: 0.05       # optional; silence prepended to every scene WAV, default 0.3
+#     say: {coop: koop}     # optional (2026-10-04); respell a word for the VOICE only. The
+#                           # request carries the alias (and so does the cache key); the
+#                           # captions, words.json and every `when: {word: …}` keep the
+#                           # narration's spelling. Whole-word, case-insensitive, one word
+#                           # to one word (narrate.say_map / spoken_text / display_words).
 # `join: fade` fades every part from and to black over 0.3 s, so frame 0 is black and every
 # join is black meeting black — `scdet` finds ZERO cuts in such a file. `join: cut` drops both
 # `fade=` clauses; the parts still encode identically, so the concat demuxer still
