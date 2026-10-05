@@ -161,6 +161,9 @@ class _Page:
         # What successive reads of publish_state_js return after the Publish click. Empty means
         # "the uploader closed" — the happy path every pre-2026-10-04 test assumed.
         self.publish_states = []
+        # What successive reads of prechecks_probe_js return. Empty means the modal is still
+        # OPEN with no buttons exposed — the "nothing to click" case before 2026-10-05.
+        self.prechecks_probes = []
         # The edit page's audience radio reads "No, it's not made for kids" unless a test
         # says the save lost it.
         self.checked[S.KIDS_NO_RADIO] = True
@@ -222,6 +225,10 @@ class _Page:
         if "/*publish-state*/" in js:
             self.calls.append("evaluate:publish-state")
             return self.publish_states.pop(0) if self.publish_states else yw.PUBLISH_DONE
+        if "/*prechecks-probe*/" in js:
+            self.calls.append("evaluate:prechecks-probe")
+            return (self.prechecks_probes.pop(0) if self.prechecks_probes
+                    else {"state": yw.DIALOG_OPEN, "labels": []})
         self.calls.append("evaluate")
         value = self.rows_reads.pop(0) if self.rows_reads else []
         return value if isinstance(value, dict) else {"count": len(value), "rows": value}
@@ -1679,6 +1686,199 @@ def test_a_modal_without_a_publish_anyway_button_stops_rather_than_guessing(pub,
     with pytest.raises(yw.PublishNotConfirmed) as exc:
         _driven(pub, page, asset)
     assert "NOT published" in str(exc.value)
+
+
+def test_a_modal_with_a_renamed_button_names_the_selector_and_what_it_found(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS])
+    page.counts[f"{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    page.counts[f"role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    page.prechecks_probes = [{"state": yw.DIALOG_OPEN, "labels": ["Go back", "Publish now"]}]
+    with pytest.raises(yw.PublishNotConfirmed) as exc:
+        _driven(pub, page, asset)
+    msg = str(exc.value)
+    assert "PUBLISH_ANYWAY_NAME" in msg and "Publish now" in msg and "NOT published" in msg
+
+
+def test_an_open_modal_with_no_buttons_does_not_blame_the_selector(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS])
+    page.counts[f"{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    page.counts[f"role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    with pytest.raises(yw.PublishNotConfirmed) as exc:
+        _driven(pub, page, asset)
+    assert "selectors_youtube" not in str(exc.value)
+    assert "NOT published" in str(exc.value)
+
+
+def test_the_click_is_followed_by_a_wait_for_the_modal_to_go(pub, asset):
+    page = _published_page([yw.PUBLISH_PRECHECKS, yw.PUBLISH_DONE])
+    _driven(pub, page, asset)
+    anyway = page.calls.index(f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}")
+    gone = page.calls.index(f"wait_for_function:{yw.prechecks_gone_js()}")
+    states = [i for i, c in enumerate(page.calls) if c == "evaluate:publish-state"]
+    assert anyway < gone < states[1]
+
+
+# 2026-10-05, ParkSheet chickens Short (eIDSiBJgbyw), trace
+# scripts/browser/runs/2026-10-05/youtube_web-070731: Publish anyway was clicked and landed;
+# 70 ms later the state read still said "prechecks" (the dialog was fading out, drawn, with
+# aria-hidden="true" on its tp-yt-paper-dialog), the role lookup — which skips aria-hidden
+# nodes — found no button, and the driver filed PublishNotConfirmed (#148) blaming the
+# selector, over a video that published fine.
+
+def _october_5_page():
+    page = _published_page([yw.PUBLISH_PRECHECKS, yw.PUBLISH_PRECHECKS, yw.PUBLISH_DONE])
+    scoped = f"{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"
+
+    def fade():  # the click lands; the button leaves the accessibility tree
+        page.counts[scoped] = 0
+        page.counts[f"role:button:{S.PUBLISH_ANYWAY_NAME}"] = 0
+    page.on_click[scoped] = [fade]
+    page.prechecks_probes = [{"state": yw.DIALOG_CLOSING, "labels": []}]
+    return page
+
+
+def test_regression_2026_10_05_a_fading_modal_is_not_a_failed_publish(pub, asset):
+    page = _october_5_page()
+    result = _driven(pub, page, asset)
+    assert result.ok
+    anyway = f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"
+    assert page.calls.count(anyway) == 1          # never re-clicked
+    assert "evaluate:prechecks-probe" in page.calls
+    assert S.PUBLISH_ANYWAY_NAME in result.detail
+    # It went on to the post-publish checks: the edit page, then the content list.
+    probe = page.calls.index("evaluate:prechecks-probe")
+    assert [c for c in page.calls[probe:] if c.startswith("goto:") and "/edit" in c]
+    assert [c for c in page.calls[probe:] if c.startswith("goto:") and "/videos/" in c]
+
+
+def test_regression_2026_10_05_through_publish_files_no_card(pub, asset, monkeypatch):
+    page = _october_5_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    assert result.ok and not result.queued_path
+
+
+# ------------------------------------------- the dialog-state rule, in Python and in the page
+
+# (rendered, display, visibility, opacity, aria-hidden on self, on ancestor) -> state
+DIALOG_CASES = [
+    ((True, "block", "visible", "1", False, False), yw.DIALOG_OPEN),
+    ((True, "block", "visible", "0.4", False, False), yw.DIALOG_OPEN),    # mid-fade, no flag
+    ((True, "block", "visible", "1", True, False), yw.DIALOG_CLOSING),    # 2026-10-05
+    ((True, "block", "visible", "0.6", False, True), yw.DIALOG_CLOSING),  # host aria-hidden
+    ((True, "block", "visible", "0", False, False), yw.DIALOG_CLOSING),
+    ((True, "none", "visible", "1", False, False), yw.DIALOG_CLOSED),
+    ((True, "block", "hidden", "1", False, False), yw.DIALOG_CLOSED),
+    ((False, "block", "visible", "1", False, False), yw.DIALOG_CLOSED),
+    ((False, "block", "visible", "1", True, False), yw.DIALOG_CLOSED),
+]
+
+
+@pytest.mark.parametrize("case,want", DIALOG_CASES)
+def test_dialog_state_classifies_element_attributes(case, want):
+    rendered, display, visibility, opacity, own, ancestor = case
+    assert yw.dialog_state(rendered=rendered, display=display, visibility=visibility,
+                           opacity=opacity, aria_hidden=own or ancestor) == want
+
+
+def test_an_unreadable_opacity_is_not_read_as_transparent():
+    assert yw.dialog_state(rendered=True, opacity="") == yw.DIALOG_OPEN
+
+
+@pytest.mark.parametrize("state,labels,blames", [
+    (yw.DIALOG_CLOSING, [], None),
+    (yw.DIALOG_CLOSED, [], None),
+    (yw.DIALOG_CLOSING, ["Publish anyway"], None),
+    (yw.DIALOG_OPEN, ["Go back", "Publish now"], True),
+    (yw.DIALOG_OPEN, [], False),
+])
+def test_a_missing_button_is_only_a_selector_problem_on_an_open_dialog_with_buttons(
+        state, labels, blames):
+    problem = yw.missing_button_problem(state, labels)
+    if blames is None:
+        assert problem is None
+    else:
+        assert "NOT published" in problem
+        assert ("PUBLISH_ANYWAY_NAME" in problem) is blames
+
+
+# The same rule, run as the JS the page actually executes, against a tiny DOM stand-in.
+_NODE = __import__("shutil").which("node")
+
+_DOM_SHIM = r"""
+const mk = (tag, o = {}) => ({tag, attrs: o.attrs || {}, style: Object.assign(
+  {display: 'block', visibility: 'visible', opacity: '1'}, o.style || {}),
+  rendered: o.rendered !== false, parentElement: null, kids: [],
+  getAttribute(n) { return n in this.attrs ? this.attrs[n] : null; },
+  getClientRects() { return this.rendered ? [1] : []; },
+  getRootNode() { return this; },
+  querySelector(s) { return this.all(s)[0] || null; },
+  querySelectorAll(s) { return this.all(s); },
+  closest(s) { let n = this; while (n) { if (s.includes('aria-hidden') &&
+    n.attrs['aria-hidden'] === 'true') return n; n = n.parentElement; } return null; },
+  all(s) { const out = []; const want = s.split(',').map(x => x.trim());
+    const walk = n => { for (const k of n.kids) { if (want.some(w => w === k.tag ||
+      (w.startsWith('[role') && k.attrs.role === 'button'))) out.push(k); walk(k); } };
+    walk(this); return out; },
+  add(k) { k.parentElement = this; this.kids.push(k); return this; }});
+global.getComputedStyle = el => el.style;
+const body = mk('body');
+global.document = {querySelectorAll: s => body.all(s), querySelector: s => body.all(s)[0] || null};
+"""
+
+
+def _run_js(setup: str, expr: str):
+    import subprocess
+    out = subprocess.run([_NODE, "-e", _DOM_SHIM + setup +
+                          "\nprocess.stdout.write(JSON.stringify(" + expr + "));"],
+                         capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout)
+
+
+def _dialog_setup(case, host_tag="host", button_label=None):
+    rendered, display, visibility, opacity, own, ancestor = case
+    return (f"const host = mk({host_tag!r}, {{attrs: {json.dumps({'aria-hidden': 'true'} if ancestor else {})}}});"
+            f" const d = mk({S.PAPER_DIALOG!r}, {{rendered: {json.dumps(rendered)},"
+            f" style: {{display: {display!r}, visibility: {visibility!r}, opacity: {opacity!r}}},"
+            f" attrs: {json.dumps({'aria-hidden': 'true'} if own else {})}}});"
+            " host.add(d); body.add(host);"
+            + (f" d.add(mk('button', {{attrs: {{'aria-label': {button_label!r}}}}}));"
+               if button_label else ""))
+
+
+@pytest.mark.skipif(not _NODE, reason="node is not installed")
+@pytest.mark.parametrize("case,want", DIALOG_CASES)
+def test_the_page_js_applies_the_same_dialog_rule(case, want):
+    got = _run_js(_dialog_setup(case), "(() => { " + yw._dialog_state_fn_js()
+                  + " return dialogState(d); })()")
+    assert got == want == yw.dialog_state(
+        rendered=case[0], display=case[1], visibility=case[2], opacity=case[3],
+        aria_hidden=case[4] or case[5])
+
+
+@pytest.mark.skipif(not _NODE, reason="node is not installed")
+def test_the_page_js_reads_a_fading_prechecks_modal_as_not_up():
+    """The 2026-10-05 DOM: uploader open, prechecks paper-dialog drawn with aria-hidden."""
+    fading = (True, "block", "visible", "1", True, False)
+    setup = (_dialog_setup(fading, host_tag=S.PRECHECKS_DIALOG, button_label="Publish anyway")
+             + f" const up = mk({S.UPLOAD_DIALOG!r}); up.add(mk({S.PAPER_DIALOG!r}));"
+             " body.add(up);")
+    state = _run_js(setup, "(" + yw.publish_state_js() + ")()")
+    assert state == yw.PUBLISH_OPEN               # NOT prechecks: wait for the uploader
+    assert _run_js(setup, "(" + yw.prechecks_gone_js() + ")()") is True
+    probe = _run_js(setup, "(" + yw.prechecks_probe_js() + ")()")
+    assert probe == {"state": yw.DIALOG_CLOSING, "labels": []}
+
+
+@pytest.mark.skipif(not _NODE, reason="node is not installed")
+def test_the_page_js_still_sees_an_open_prechecks_modal_and_its_buttons():
+    setup = _dialog_setup((True, "block", "visible", "1", False, False),
+                          host_tag=S.PRECHECKS_DIALOG, button_label="Publish anyway")
+    assert _run_js(setup, "(" + yw.publish_state_js() + ")()") == yw.PUBLISH_PRECHECKS
+    assert _run_js(setup, "(" + yw.prechecks_gone_js() + ")()") is False
+    probe = _run_js(setup, "(" + yw.prechecks_probe_js() + ")()")
+    assert probe == {"state": yw.DIALOG_OPEN, "labels": ["Publish anyway"]}
 
 
 def test_publish_waits_for_the_autosave_badge_first(pub, asset):
