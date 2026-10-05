@@ -210,9 +210,9 @@ WATCH_URL = "https://www.youtube.com/shorts/{video_id}"
 # runs/2026-10-04/youtube_web-105749 (both traces show the modal sitting there for 10 min).
 #: The Polymer dialog inside every Studio dialog host; display:none once it is closed.
 PAPER_DIALOG = "tp-yt-paper-dialog"                  # seen in both traces (uploader + modal)
-PRECHECKS_DIALOG = "ytcp-prechecks-warning-dialog"   # seen in both traces; never clicked yet
+PRECHECKS_DIALOG = "ytcp-prechecks-warning-dialog"   # seen in both traces; answered live 2026-10-05
 #: aria-label of the inner <button> inside `#secondary-action-button`.
-PUBLISH_ANYWAY_NAME = "Publish anyway"               # seen in both traces; never clicked yet
+PUBLISH_ANYWAY_NAME = "Publish anyway"               # clicked live 2026-10-05 (eIDSiBJgbyw)
 PRECHECKS_GO_BACK_NAME = "Go back"                   # seen in both traces; never clicked
 #: The uploader's top-right badge: "Saving..." while an edit is in flight, then "Saved as
 #: private". Waited on before Publish, so the last edit is not still on the wire.
@@ -226,6 +226,10 @@ SHARE_DIALOG = "ytcp-video-share-dialog"                           # UNVERIFIED 
 #: How long the driver gives the uploader, after the Publish click, to either close or show
 #: the prechecks modal. The modal took ~5 s to appear in both traces.
 PUBLISH_CONFIRM_TIMEOUT_MS = 180_000
+#: How long the still-checking modal gets to go away after "Publish anyway" is clicked. On
+#: 2026-10-05 it faded out with aria-hidden="true" already set, still drawn, for a moment
+#: after the click; reading it as open is what filed the false #148 card.
+PRECHECKS_CLOSE_TIMEOUT_MS = 15_000
 
 # --- The video's own edit page, read after Publish to prove what was SAVED (2026-10-04).
 # Verified read-only on 2026-10-04 against kUuA0z0Gv0E and bpkU2VpPSak (ParkSheet, Public).
@@ -320,7 +324,6 @@ UNVERIFIED = (
     "GOT_IT_BUTTON_TEXT",   # the visibility notice was never triggered (no Publish click)
     "WATCH_URL",            # nothing has been published through this driver yet
     "DESCRIPTION_MAX",      # YouTube's documented limit, not one we have hit
-    "PUBLISH_ANYWAY_NAME",  # read off two trace snapshots; the next live post clicks it
     "STILL_PROCESSING_DIALOG",  # tag name from Studio's CSS only
     "SHARE_DIALOG",             # tag name from Studio's CSS only
     "PROCESSING_VISIBILITY_TEXT",

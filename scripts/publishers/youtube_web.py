@@ -354,18 +354,119 @@ def is_settling(row: dict) -> bool:
 PUBLISH_PRECHECKS, PUBLISH_OPEN, PUBLISH_DONE = "prechecks", "open", "published"
 
 
+#: What `dialog_state` (and its JS twin in `_shown_js`) reports for one dialog.
+DIALOG_OPEN, DIALOG_CLOSING, DIALOG_CLOSED = "open", "closing", "closed"
+
+
+def dialog_state(*, rendered: bool, display: str = "", visibility: str = "",
+                 opacity=1.0, aria_hidden: bool = False) -> str:
+    """Is a Studio dialog open (interactive), closing (still drawn, not answerable) or closed?
+
+    Pure, so the rule is tested without a browser; `_shown_js` applies the same rule in the
+    page, and tests/test_publishers_youtube_web.py runs that JS against the same cases.
+
+    - closed: no box (`rendered` False), display:none or visibility:hidden — how a Polymer
+      paper-dialog ends up once it has gone.
+    - closing: still drawn, but `aria-hidden="true"` on the dialog or any ancestor, or fully
+      transparent. **The 2026-10-05 false card.** After "Publish anyway" the prechecks
+      dialog faded out over a few hundred ms with aria-hidden already set; the old check read
+      it as still open and went looking for a button Playwright's role lookup (correctly)
+      no longer exposes.
+    - open: anything else.
+    """
+    if not rendered or display == "none" or visibility == "hidden":
+        return DIALOG_CLOSED
+    try:
+        transparent = float(opacity) == 0.0
+    except (TypeError, ValueError):
+        transparent = False
+    if aria_hidden or transparent:
+        return DIALOG_CLOSING
+    return DIALOG_OPEN
+
+
+def _dialog_state_fn_js() -> str:
+    """JS helper `dialogState(el)` — `dialog_state` in the page, for one dialog element.
+
+    The aria-hidden walk climbs parent elements AND shadow-root hosts, because Studio's
+    dialog hosts are custom elements and the attribute can sit on either side of a root.
+    """
+    return ("const dialogState = d => { const cs = getComputedStyle(d);"
+            " if (!(d.getClientRects().length > 0) || cs.display === 'none'"
+            " || cs.visibility === 'hidden') return " + repr(DIALOG_CLOSED) + ";"
+            " let n = d, hidden = false;"
+            " while (n) { if (n.getAttribute && n.getAttribute('aria-hidden') === 'true')"
+            " { hidden = true; break; }"
+            " n = n.parentElement || (n.getRootNode && n.getRootNode() !== n"
+            " && n.getRootNode().host) || null; }"
+            " const op = parseFloat(cs.opacity);"
+            " if (hidden || op === 0) return " + repr(DIALOG_CLOSING) + ";"
+            " return " + repr(DIALOG_OPEN) + "; };")
+
+
 def _shown_js() -> str:
-    """JS helper: is any element matching `s` (or the paper-dialog inside it) on screen?
+    """JS helper: is any element matching `s` (or the paper-dialog inside it) OPEN on screen?
 
     Studio's dialog hosts are custom elements whose own box can be empty, and a closed paper
     dialog (S.PAPER_DIALOG) stays in the DOM with display:none — so presence is never the test.
+    Open means `dialog_state` says DIALOG_OPEN: a dialog that is fading out with aria-hidden
+    set is not shown (2026-10-05).
     """
-    return ("const shown = s => { let hs = []; try { hs = [...document.querySelectorAll(s)]; }"
+    return (_dialog_state_fn_js() +
+            " const shown = s => { let hs = []; try { hs = [...document.querySelectorAll(s)]; }"
             " catch (e) { hs = []; }"
-            " return hs.some(h => { const d = h.querySelector(" + repr(S.PAPER_DIALOG) + ") || h;"
-            " const cs = getComputedStyle(d);"
-            " return d.getClientRects().length > 0 && cs.display !== 'none'"
-            " && cs.visibility !== 'hidden'; }); };")
+            " return hs.some(h => dialogState(h.querySelector(" + repr(S.PAPER_DIALOG) + ") || h)"
+            " === " + repr(DIALOG_OPEN) + "); };")
+
+
+def prechecks_probe_js() -> str:
+    """JS: the still-checking dialog's state, and the accessible buttons it offers.
+
+    Returns {state, labels}: `state` is the most-open DIALOG_* of any matching dialog
+    (DIALOG_CLOSED when there is none); `labels` the aria-label (or text) of every button in
+    an OPEN one that is not aria-hidden. Read when the Publish anyway lookup comes back empty,
+    to tell "the dialog is going away" (carry on) from "the button is there under another
+    name" (a selector problem) from "the dialog has no buttons yet".
+    """
+    return ("() => { /*prechecks-probe*/ " + _dialog_state_fn_js() +
+            " let hs = []; try { hs = [...document.querySelectorAll("
+            + repr(S.PRECHECKS_DIALOG) + ")]; } catch (e) { hs = []; }"
+            " const rank = {" + repr(DIALOG_CLOSED) + ": 0, " + repr(DIALOG_CLOSING) + ": 1, "
+            + repr(DIALOG_OPEN) + ": 2};"
+            " let state = " + repr(DIALOG_CLOSED) + "; const labels = [];"
+            " for (const h of hs) { const d = h.querySelector(" + repr(S.PAPER_DIALOG) + ") || h;"
+            " const st = dialogState(d); if (rank[st] > rank[state]) state = st;"
+            " if (st !== " + repr(DIALOG_OPEN) + ") continue;"
+            " for (const b of h.querySelectorAll('button, [role=\"button\"]')) {"
+            " if (b.closest('[aria-hidden=\"true\"]')) continue;"
+            " const l = (b.getAttribute('aria-label') || b.innerText || '').trim();"
+            " if (l && !labels.includes(l)) labels.push(l); } }"
+            " return {state, labels}; }")
+
+
+def prechecks_gone_js() -> str:
+    """JS predicate: the still-checking dialog is no longer open (closing, closed or detached)."""
+    return ("() => { " + _shown_js() + " return !shown(" + repr(S.PRECHECKS_DIALOG) + "); }")
+
+
+def missing_button_problem(state: str, labels) -> str | None:
+    """Why a Publish anyway lookup came back empty, as card text; None means carry on.
+
+    Pure. A dialog that is closing or closed is the 2026-10-05 case: the click already landed,
+    so the driver carries on to the post-publish checks. Only a dialog that is OPEN and offers
+    buttons, none of them the expected name, is a selector problem worth naming.
+    """
+    if state != DIALOG_OPEN:
+        return None
+    labels = [str(x) for x in (labels or ())]
+    if labels:
+        return (f"YouTube's still-checking modal is open and offers {labels!r}, but none is "
+                f"named {S.PUBLISH_ANYWAY_NAME!r}. The video is NOT published. YouTube may have "
+                f"renamed the button: check selectors_youtube.PUBLISH_ANYWAY_NAME against "
+                f"those labels; finish this one by hand.")
+    return (f"YouTube's still-checking modal is open but exposes no buttons at all (none "
+            f"answerable, so {S.PUBLISH_ANYWAY_NAME!r} could not be clicked). The video is NOT "
+            f"published. Finish this one by hand from the content list.")
 
 
 def publish_state_js() -> str:
@@ -1391,6 +1492,11 @@ class YouTubeWebPublisher(Publisher):
         post-publish dialog (done), or neither within PUBLISH_CONFIRM_TIMEOUT_MS
         (PublishNotConfirmed — a card that says the video is NOT live, never a navigation that
         quietly turns it into a draft and a 25-minute wait for a flip that cannot come).
+
+        After a Publish anyway click the modal fades out, still drawn but already
+        aria-hidden (2026-10-05). `publish_anyway` waits for it to go, `publish_state_js` does
+        not count a closing dialog as up, and a lookup that finds no button on a closing or
+        closed dialog carries on to the checks below instead of filing a card.
         """
         answered = 0
         for _ in range(3):
@@ -1402,8 +1508,8 @@ class YouTubeWebPublisher(Publisher):
                     raise
             state = page.evaluate(publish_state_js())
             if state == PUBLISH_PRECHECKS:
-                self.publish_anyway(page)
-                answered += 1
+                if self.publish_anyway(page):
+                    answered += 1
                 continue
             if state == PUBLISH_DONE:
                 self._published_through_prechecks = bool(answered)
@@ -1419,8 +1525,13 @@ class YouTubeWebPublisher(Publisher):
               f"{S.PUBLISH_ANYWAY_NAME!r} if asked). NOT retrying: a re-run would upload a "
               f"second copy.")
 
-    def publish_anyway(self, page) -> None:
-        """Click "Publish anyway" on the still-checking modal. Never "Go back"."""
+    def publish_anyway(self, page) -> bool:
+        """Click "Publish anyway" on the still-checking modal. Never "Go back".
+
+        Returns True after a click, False when there was nothing to click because the dialog
+        is already closing or closed (2026-10-05: the fade-out after a click that DID land).
+        Raises PublishNotConfirmed only when the dialog is still genuinely open.
+        """
         button = page.locator(S.PRECHECKS_DIALOG).get_by_role(
             "button", name=S.PUBLISH_ANYWAY_NAME, exact=True)
         if not button.count():
@@ -1428,11 +1539,26 @@ class YouTubeWebPublisher(Publisher):
             # role lookup for the day the host element is renamed.
             button = page.get_by_role("button", name=S.PUBLISH_ANYWAY_NAME, exact=True)
         if not button.count():
-            raise PublishNotConfirmed(
-                f"YouTube's still-checking modal is up but no {S.PUBLISH_ANYWAY_NAME!r} button "
-                f"could be found in it. The video is NOT published. Fix "
-                f"selectors_youtube.PUBLISH_ANYWAY_NAME; finish this one by hand.")
+            probe = page.evaluate(prechecks_probe_js()) or {}
+            problem = missing_button_problem(probe.get("state"), probe.get("labels"))
+            if problem is None:
+                return False
+            raise PublishNotConfirmed(problem)
         button.first.click()
+        self.wait_for_prechecks_gone(page)
+        return True
+
+    def wait_for_prechecks_gone(self, page) -> None:
+        """After the Publish anyway click, let the modal go (aria-hidden, invisible, detached).
+
+        Tolerated on timeout: `confirm_publish` re-reads the state, and only a modal that is
+        still OPEN (not merely still drawn) gets clicked again.
+        """
+        try:
+            page.wait_for_function(prechecks_gone_js(), timeout=S.PRECHECKS_CLOSE_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001
+            if not timed_out(exc):
+                raise
 
     def verify_details(self, page, meta: dict) -> str:
         """Open the video's edit page and prove the description and audience were SAVED.
