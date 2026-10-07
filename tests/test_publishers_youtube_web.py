@@ -35,6 +35,36 @@ META = {"slug": "parksheet-2026-W38-day-6", "title": TITLE, "description": DESC,
         "tags": ["themeparks", "disney"]}
 
 
+# Footer reads captured in the youtube_web traces (scripts/browser/runs/<date>/youtube_web-*/
+# trace.zip): the uploader's ytcp-video-upload-progress, its checks-summary-status-v2
+# attribute, its .progress-label line and the #checks-tooltip / #processing-tooltip cards.
+PROBE_BEFORE_FILE = {"found": True, "status": S.CHECKS_STATUS_COMPLETED, "label": "",
+                     "checks": "", "processing": ""}                       # every trace, ?d=ud
+PROBE_UPLOADING = {"found": True, "status": S.CHECKS_STATUS_NOT_STARTED,
+                   "label": "Uploading 0% ...",
+                   "checks": "Checks will begin when SD processing completes",
+                   "processing": "Processing will start after video is uploaded"}
+PROBE_PROCESSING = {"found": True, "status": S.CHECKS_STATUS_NOT_STARTED,
+                    "label": "Upload complete ... Processing will begin shortly",
+                    "checks": "Checks will begin when SD processing completes",
+                    "processing": "Processing will start after video is uploaded"}  # 10-05..07
+PROBE_RUNNING = {"found": True, "status": S.CHECKS_STATUS_STARTED,
+                 "label": "Checking 93% ... 1 minute left",
+                 "checks": "Copyright Checking for copyright issues 1 minute left Community "
+                           "Guidelines check complete No issues found",
+                 "processing": "Video processing Processing complete"}          # 10-04 11:08
+PROBE_COMPLETE = {"found": True, "status": S.CHECKS_STATUS_COMPLETED,
+                  "label": "Checks complete. No issues found.",
+                  "checks": "Copyright check complete No issues found Community Guidelines "
+                            "check complete",
+                  "processing": "Video processing Processing complete"}         # 10-02 11:45
+# Never seen on this channel; the wording is YouTube's usual one for a Content ID match.
+PROBE_CLAIMED = {"found": True, "status": S.CHECKS_STATUS_COMPLETED,
+                 "label": "Checks complete. Copyright-claimed content found.",
+                 "checks": "Copyright Copyright-claimed content found",
+                 "processing": "Video processing Processing complete"}
+
+
 # --------------------------------------------------------------------------- the fake page
 
 class _FakeTimeout(Exception):
@@ -164,6 +194,10 @@ class _Page:
         # What successive reads of prechecks_probe_js return. Empty means the modal is still
         # OPEN with no buttons exposed — the "nothing to click" case before 2026-10-05.
         self.prechecks_probes = []
+        # What successive reads of checks_probe_js return. Empty means the footer reads
+        # "Checks complete. No issues found." — the 2026-10-02 trace's final state, and the
+        # happy path every pre-2026-10-07 test assumed (it went straight to Publish).
+        self.checks_probes = []
         # The edit page's audience radio reads "No, it's not made for kids" unless a test
         # says the save lost it.
         self.checked[S.KIDS_NO_RADIO] = True
@@ -225,6 +259,9 @@ class _Page:
         if "/*publish-state*/" in js:
             self.calls.append("evaluate:publish-state")
             return self.publish_states.pop(0) if self.publish_states else yw.PUBLISH_DONE
+        if "/*checks-state*/" in js:
+            self.calls.append("evaluate:checks-state")
+            return dict(self.checks_probes.pop(0) if self.checks_probes else PROBE_COMPLETE)
         if "/*prechecks-probe*/" in js:
             self.calls.append("evaluate:prechecks-probe")
             return (self.prechecks_probes.pop(0) if self.prechecks_probes
@@ -2048,12 +2085,253 @@ def test_a_row_still_draft_after_the_budget_says_what_the_edit_page_read(pub, as
     assert "edit page read 'Public'" in str(exc.value)
 
 
-def test_the_manual_steps_tell_a_human_about_publish_anyway(asset):
+def test_the_manual_steps_tell_a_human_to_wait_for_checks_then_publish_anyway_if_asked(asset):
     steps = " ".join(yw.manual_steps(asset, META))
-    assert S.PUBLISH_ANYWAY_NAME in steps and "do not wait for the checks" in steps
+    assert "Checks complete. No issues found." in steps and "WAIT" in steps
+    assert S.PUBLISH_ANYWAY_NAME in steps
+    assert "do not wait for the checks" not in steps
 
 
 def test_the_edit_page_channel_proof_is_not_the_header_which_holds_the_video_title():
     """Read live 2026-10-04: on /video/<id>/edit, #entity-name is the video's title."""
     assert S.CHANNEL_ID in S.EDIT_CHANNEL_LINK
     assert S.EDIT_CHANNEL_LINK != S.CHANNEL_NAME_TEXT
+
+
+# ------------------------------------------------- 2026-10-07: wait for the checks to finish
+# ~/parksheet/docs/content/2026-10-07-youtube-distribution-diagnosis.md. Shorts published at
+# "Processing will begin shortly" stalled in 3 of 6 cases, those finished after checks in 0 of
+# 8. Stephen approved waiting on the uploader until the footer reads "Checks complete. No
+# issues found." before choosing Public. The probes above are the footer reads from the traces.
+
+@pytest.mark.parametrize("probe,want", [
+    (PROBE_BEFORE_FILE, yw.CHECKS_UNKNOWN),   # COMPLETED before any file: never "complete"
+    (PROBE_UPLOADING, yw.CHECKS_PENDING),
+    (PROBE_PROCESSING, yw.CHECKS_PENDING),
+    (PROBE_RUNNING, yw.CHECKS_RUNNING),
+    (PROBE_COMPLETE, yw.CHECKS_COMPLETE),
+    (PROBE_CLAIMED, yw.CHECKS_ISSUE),
+    ({"found": False}, yw.CHECKS_UNKNOWN),
+    (None, yw.CHECKS_UNKNOWN),
+])
+def test_checks_state_classifies_the_footers_the_traces_captured(probe, want):
+    assert yw.checks_state_of(probe) == want
+
+
+def test_running_with_no_issues_so_far_is_not_an_issue():
+    """10-04's hover card says "Checking for copyright issues" and "No issues found"."""
+    assert yw.checks_state(**_args(PROBE_RUNNING)) == yw.CHECKS_RUNNING
+
+
+def _args(probe):
+    return {"status": probe["status"], "label": probe["label"],
+            "checks_text": probe["checks"], "processing_text": probe["processing"]}
+
+
+@pytest.mark.parametrize("label,checks", [
+    ("Checks complete.", ""),                                   # complete, no "no issues"
+    ("Checks complete. 1 issue found", ""),
+    ("Checks complete. Restrictions apply", ""),
+    ("Checking 40% ... 3 minutes left", "Copyright claim found"),  # a claim found mid-check
+    ("Checks complete. No issues found.", "Video blocked in some countries"),
+])
+def test_anything_a_check_found_is_an_issue(label, checks):
+    assert yw.checks_state(yw.S.CHECKS_STATUS_COMPLETED, label, checks, "") == yw.CHECKS_ISSUE
+
+
+def test_an_issue_ish_summary_attribute_is_an_issue_even_without_words():
+    assert yw.checks_state("UPLOAD_CHECKS_DATA_SUMMARY_STATUS_COPYRIGHT_CLAIM", "",
+                           "", "") == yw.CHECKS_ISSUE
+
+
+def test_a_complete_line_the_attribute_contradicts_is_still_running():
+    assert yw.checks_state(S.CHECKS_STATUS_STARTED, "Checks complete. No issues found.",
+                           "", "") == yw.CHECKS_RUNNING
+
+
+def test_a_complete_line_beside_pending_sd_processing_is_still_running():
+    assert yw.checks_state(S.CHECKS_STATUS_COMPLETED, "Checks complete. No issues found.",
+                           "", "Processing will begin shortly") == yw.CHECKS_RUNNING
+
+
+def test_the_complete_line_alone_counts_when_the_attribute_is_gone():
+    """The words are the evidence; a renamed attribute must not cost 20 minutes a day."""
+    assert yw.checks_state("", "Checks complete. No issues found.", "", "") == \
+        yw.CHECKS_COMPLETE
+
+
+@pytest.mark.parametrize("state,timed_out,want", [
+    (yw.CHECKS_COMPLETE, False, yw.DECIDE_PUBLISH),
+    (yw.CHECKS_COMPLETE, True, yw.DECIDE_PUBLISH),
+    (yw.CHECKS_ISSUE, False, yw.DECIDE_HOLD),
+    (yw.CHECKS_ISSUE, True, yw.DECIDE_HOLD),        # a late claim is still a claim
+    (yw.CHECKS_RUNNING, False, yw.DECIDE_WAIT),
+    (yw.CHECKS_PENDING, False, yw.DECIDE_WAIT),
+    (yw.CHECKS_UNKNOWN, False, yw.DECIDE_WAIT),
+    (yw.CHECKS_RUNNING, True, yw.DECIDE_FALLBACK),
+    (yw.CHECKS_PENDING, True, yw.DECIDE_FALLBACK),
+    (yw.CHECKS_UNKNOWN, True, yw.DECIDE_FALLBACK),
+])
+def test_the_fallback_decision(state, timed_out, want):
+    assert yw.checks_decision(state, timed_out=timed_out) == want
+
+
+def test_the_checks_budget_is_about_twenty_minutes_and_polls_gently():
+    assert 15 * 60_000 <= S.CHECKS_WAIT_TIMEOUT_MS <= 30 * 60_000
+    assert 10_000 <= S.CHECKS_POLL_MS <= 60_000
+
+
+def test_the_checks_reader_js_is_built_from_the_constants_and_carries_its_marker():
+    js = yw.checks_probe_js()
+    assert "/*checks-state*/" in js
+    for anchor in (S.UPLOAD_PROGRESS, S.CHECKS_SUMMARY_ATTR, S.PROGRESS_LABEL,
+                   S.CHECKS_TOOLTIP, S.PROCESSING_TOOLTIP):
+        assert repr(anchor) in js
+    assert js.count("{") == js.count("}") and js.count("(") == js.count(")")
+
+
+def test_the_moved_predicate_quotes_the_last_line_safely():
+    js = yw.checks_moved_js({"found": True, "status": S.CHECKS_STATUS_STARTED,
+                             "label": "Checking 93% ... 1 minute left"})
+    assert json.dumps("Checking 93% ... 1 minute left") in js
+    assert json.dumps(S.CHECKS_STATUS_STARTED) in js
+
+
+@pytest.mark.skipif(not _NODE, reason="node is not installed")
+def test_the_page_js_reads_the_footer_as_the_classifier_expects():
+    setup = (
+        "const label = {textContent: '  Checks complete.  No issues found. '};"
+        "const tip = {textContent: 'Copyright check complete No issues found'};"
+        "const proc = {textContent: 'Processing complete'};"
+        "const prog = {getAttribute: a => a === " + json.dumps(S.CHECKS_SUMMARY_ATTR)
+        + " ? " + json.dumps(S.CHECKS_STATUS_COMPLETED) + " : null,"
+        " querySelector: s => ({" + json.dumps(S.PROGRESS_LABEL) + ": label, "
+        + json.dumps(S.CHECKS_TOOLTIP) + ": tip, " + json.dumps(S.PROCESSING_TOOLTIP)
+        + ": proc})[s] || null};"
+        "globalThis.document = {querySelector: s => s === " + json.dumps(S.UPLOAD_PROGRESS)
+        + " ? prog : null};")
+    got = _run_js(setup, "(" + yw.checks_probe_js() + ")()")
+    assert got["found"] is True and got["label"] == "Checks complete. No issues found."
+    assert yw.checks_state_of(got) == yw.CHECKS_COMPLETE
+
+
+class _Clock:
+    """A seconds clock that moves CHECKS_POLL_MS on every read, so a 20-min wait is instant."""
+
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        self.t += S.CHECKS_POLL_MS / 1000
+        return self.t
+
+
+def test_regression_wait_then_publish(pub, asset):
+    """The new happy path: processing, checking, complete — THEN Public, THEN Publish."""
+    page = _published_page()
+    page.checks_probes = [PROBE_PROCESSING, PROBE_RUNNING, PROBE_COMPLETE]
+    pub._clock = _Clock()
+    result = _driven(pub, page, asset)
+    assert result.ok
+    assert "checks: complete" in result.detail and "BEFORE checks" not in result.detail
+    calls = page.calls
+    reads = [i for i, c in enumerate(calls) if c == "evaluate:checks-state"]
+    assert len(reads) == 3
+    # Between reads it waited on the footer CHANGING, as a condition.
+    moved = [c for c in calls[reads[0]:reads[-1]]
+             if c.startswith("wait_for_function:") and S.CHECKS_SUMMARY_ATTR in c]
+    assert len(moved) == 2
+    # Visibility step reached before the wait; Public and Publish only after it.
+    assert calls.index(f"wait_for:{S.step_selected(S.STEP_VISIBILITY)}:attached") < reads[0]
+    public = [i for i, c in enumerate(calls) if c.startswith(f"click:{S.PUBLIC_RADIO}")]
+    assert public and public[0] > reads[-1]
+    assert calls.index(f"click:{S.DONE_BUTTON}") > reads[-1]
+    # No "Publish anyway" needed: the checks were done.
+    assert not [c for c in calls if S.PUBLISH_ANYWAY_NAME in c and c.startswith("click:")]
+    # And the existing verification all still ran: edit page, then the content list.
+    done = calls.index(f"click:{S.DONE_BUTTON}")
+    assert [c for c in calls[done:] if c.startswith("goto:") and "/edit" in c]
+    assert [c for c in calls[done:] if c.startswith("goto:") and "/videos/" in c]
+
+
+def test_regression_issue_found_keeps_a_private_draft_and_files_a_card(pub, asset,
+                                                                       monkeypatch):
+    page = _published_page()
+    page.checks_probes = [PROBE_RUNNING, PROBE_CLAIMED]
+    pub._clock = _Clock()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=False)
+    assert not result.ok and result.queued_path
+    calls = page.calls
+    # Never Public, never Publish, never "Publish anyway".
+    assert not [c for c in calls if c.startswith(f"click:{S.PUBLIC_RADIO}")]
+    assert f"click:{S.DONE_BUTTON}" not in calls
+    assert not [c for c in calls if S.PUBLISH_ANYWAY_NAME in c and c.startswith("click:")]
+    # The uploader was closed (Studio keeps a private draft) and nothing was re-uploaded.
+    assert f"click:{S.DIALOG_CLOSE_BUTTON}" in calls
+    assert sum(c.startswith("set_input_files") for c in calls) == 1
+    assert not pub._submitted
+    assert "ChecksFoundIssue" in result.detail and "PRIVATE DRAFT" in result.detail
+    assert "Copyright-claimed content found" in result.detail
+    card = (pub.repo / result.queued_path).read_text(encoding="utf-8")
+    assert "kept as a private draft" in card and "Checks result" in card
+    assert "Oxo41KgeVoA" in card                       # which draft to go and look at
+    assert "upload this file" not in card              # nothing to upload: the draft exists
+
+
+def test_an_issue_is_never_retried(pub, asset, monkeypatch):
+    page = _published_page()
+    page.checks_probes = [PROBE_CLAIMED, PROBE_CLAIMED]
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    pub.publish(asset, META, dry_run=False)
+    assert sum(c.startswith("set_input_files") for c in page.calls) == 1
+
+
+def test_regression_timeout_falls_back_to_publish_anyway_with_a_warning(pub, asset, capsys):
+    page = _published_page([yw.PUBLISH_PRECHECKS, yw.PUBLISH_DONE])
+    page.checks_probes = [PROBE_RUNNING] * 200      # checks never finish
+    pub._clock = _Clock()
+    result = _driven(pub, page, asset)
+    assert result.ok
+    assert "checks: fallback" in result.detail
+    assert "BEFORE checks finished" in result.detail
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "BEFORE checks finished" in err
+    # Bounded: about CHECKS_WAIT_TIMEOUT_MS / CHECKS_POLL_MS reads, not all 200.
+    reads = page.calls.count("evaluate:checks-state")
+    assert reads <= S.CHECKS_WAIT_TIMEOUT_MS // S.CHECKS_POLL_MS + 1
+    anyway = f"click:{S.PRECHECKS_DIALOG}+role:button:{S.PUBLISH_ANYWAY_NAME}"
+    assert anyway in page.calls
+    assert S.PUBLISH_ANYWAY_NAME in result.detail
+
+
+def test_the_ledger_row_records_how_the_checks_went(pub, asset, tmp_path, monkeypatch):
+    """publish.py writes result.detail into the ledger action, so the mode lands there."""
+    from publishers import publish
+    page = _published_page()
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    monkeypatch.setitem(publish.PUBLISHERS, "youtube_web", lambda **kw: pub)
+    monkeypatch.setattr(publish, "veto_gate", lambda *a, **k: (True, "open"))
+    rows = []
+    monkeypatch.setattr(publish.ledger, "append", lambda **kw: rows.append(kw) or dict(kw))
+    meta = tmp_path / "day.json"
+    meta.write_text(json.dumps(META), encoding="utf-8")
+    rc = publish.main(["--platform", "youtube_web", "--asset", str(asset), "--meta",
+                       str(meta)], repo=tmp_path)
+    assert rc == 0
+    assert len(rows) == 1 and "checks: complete" in rows[0]["action"]
+
+
+def test_a_dry_run_reads_the_checks_footer_once_and_never_waits(pub, asset, monkeypatch):
+    page = _dry_page()
+    page.checks_probes = [PROBE_PROCESSING]
+    monkeypatch.setattr(yw.session, "open_page", _fake_open_page(page))
+    result = pub.publish(asset, META, dry_run=True)
+    assert result.ok, result.detail
+    assert page.calls.count("evaluate:checks-state") == 1
+    assert "checks footer reads 'pending'" in result.detail
+
+
+def test_check_probes_the_checks_footer_live():
+    assert any(v == S.UPLOAD_PROGRESS and stage == yw.LIVE
+               for _u, _l, _k, v, stage in yw.check_probes())

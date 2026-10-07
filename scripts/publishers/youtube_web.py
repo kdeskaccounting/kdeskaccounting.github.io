@@ -35,7 +35,11 @@ and TikTok drivers use):
 
     am I ParkSheet? ─► no ─► refuse, touch nothing
                     └► yes ─► read the content list ─► this title already there? ─► skip, ok
-                                                    └► no ─► upload, fill, Public, Publish
+                                                    └► no ─► upload, fill, walk to Visibility
+                                                             ─► wait for checks (≤ 20 min)
+                                                                 issue ─► keep private draft, card
+                                                                 timeout ─► WARNING, fall back
+                                                             ─► Public, Publish
                                                              ─► "Publish anyway" if asked
                                                              ─► edit page: description and
                                                                 audience saved (repair once)
@@ -71,6 +75,7 @@ import json
 import pathlib
 import re
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -178,6 +183,14 @@ class PublishNotConfirmed(VerificationFailed):
     upload as a private draft and then reads as "row says Draft" on the content list. It is a
     VerificationFailed (never retried: the click happened) but its card says plainly that the
     video is NOT live, so nobody waits for a Draft→Public flip that cannot come.
+    """
+
+
+class ChecksFoundIssue(RuntimeError):
+    """YouTube's checks found something (a copyright claim, a restriction). NOT published.
+
+    The upload is left as a private draft for Stephen to look at. Never retried: the same
+    file finds the same claim, and the draft is already on the channel.
     """
 
 
@@ -492,6 +505,113 @@ def publish_settled_js() -> str:
     return "() => ((" + publish_state_js() + ")()) !== " + repr(PUBLISH_OPEN)
 
 
+#: What `checks_state` reports for the uploader's footer.
+CHECKS_PENDING = "pending"      # uploading / processing; checks have not begun
+CHECKS_RUNNING = "running"      # "Checking 93% ... 1 minute left"
+CHECKS_COMPLETE = "complete"    # "Checks complete. No issues found."
+CHECKS_ISSUE = "issue"          # a check found something: never published
+CHECKS_UNKNOWN = "unknown"      # no footer, or nothing in it this driver recognises
+
+#: What `checks_decision` tells the driver to do next.
+DECIDE_WAIT, DECIDE_PUBLISH, DECIDE_HOLD, DECIDE_FALLBACK = "wait", "publish", "hold", "fallback"
+
+#: How a publish went out, for the result detail and so the ledger row ("checks: complete").
+CHECKS_MODE_COMPLETE, CHECKS_MODE_FALLBACK = "complete", "fallback"
+
+
+def checks_state(status="", label="", checks_text="", processing_text="") -> str:
+    """Classify the uploader's footer: pending, running, complete, issue or unknown.
+
+    Pure, so the rule is tested against the strings the 2026-10-02..10-07 traces captured.
+
+    - **issue** first, and broadly: an issue word in the footer line or the checks hover card
+      (after removing "No issues found"), an issue-ish summary attribute, or "Checks complete"
+      WITHOUT "No issues found". No issue has ever been seen on this channel, so the wording is
+      unknown, and holding a clean video costs a card while publishing a claimed one does not
+      come back.
+    - **complete** needs the footer to SAY so. The summary attribute alone is not enough: it
+      reads COMPLETED before any file is chosen. If the attribute is present and disagrees, or
+      the processing card shows processing still pending, it is still running.
+    - **running** / **pending** from the attribute or the line's own words.
+    """
+    label_n, checks_n, proc_n = _norm(label), _norm(checks_text), _norm(processing_text)
+    status = str(status or "").strip()
+    found_text = f"{label_n} | {checks_n}".replace(S.NO_ISSUES_TEXT, " ")
+    if any(w in found_text for w in S.CHECKS_ISSUE_WORDS):
+        return CHECKS_ISSUE
+    if any(w in status.upper() for w in ("ISSUE", "CLAIM", "BLOCK", "RESTRICT", "VIOLAT")):
+        return CHECKS_ISSUE
+    if label_n.startswith(S.CHECKS_COMPLETE_TEXT):
+        if S.NO_ISSUES_TEXT not in label_n:
+            return CHECKS_ISSUE
+        if status and status != S.CHECKS_STATUS_COMPLETED:
+            return CHECKS_RUNNING
+        if any(p in proc_n for p in S.PROCESSING_PENDING_TEXTS):
+            return CHECKS_RUNNING
+        return CHECKS_COMPLETE
+    if status == S.CHECKS_STATUS_STARTED or label_n.startswith(S.CHECKING_TEXT):
+        return CHECKS_RUNNING
+    if status == S.CHECKS_STATUS_NOT_STARTED or label_n:
+        return CHECKS_PENDING
+    return CHECKS_UNKNOWN
+
+
+def checks_state_of(probe) -> str:
+    """`checks_state` over what `checks_probe_js` returned (a dict, or None)."""
+    probe = probe if isinstance(probe, dict) else {}
+    if not probe.get("found"):
+        return CHECKS_UNKNOWN
+    return checks_state(probe.get("status"), probe.get("label"), probe.get("checks"),
+                        probe.get("processing"))
+
+
+def checks_decision(state: str, *, timed_out: bool) -> str:
+    """What to do with a footer state: wait, publish, hold as a draft, or fall back.
+
+    Pure. An issue is held even after the timeout (a claim found late is still a claim); a
+    clean result publishes; anything else waits until the budget is gone and then falls back
+    to the pre-2026-10-07 behaviour (Publish, answer "Publish anyway") with a WARNING.
+    """
+    if state == CHECKS_ISSUE:
+        return DECIDE_HOLD
+    if state == CHECKS_COMPLETE:
+        return DECIDE_PUBLISH
+    return DECIDE_FALLBACK if timed_out else DECIDE_WAIT
+
+
+def checks_probe_js() -> str:
+    """JS: {found, status, label, checks, processing} from the uploader's footer.
+
+    textContent for the hover cards because they are hidden until hovered. The
+    `/*checks-state*/` marker lets the test fake tell this read from a list read.
+    """
+    return ("() => { /*checks-state*/ let p = null;"
+            " try { p = document.querySelector(" + repr(S.UPLOAD_PROGRESS) + "); }"
+            " catch (e) { p = null; }"
+            " if (!p) return {found: false, status: '', label: '', checks: '', processing: ''};"
+            " const t = s => { let e = null; try { e = p.querySelector(s); } catch (x) {}"
+            " return e ? (e.textContent || '').replace(/\\s+/g, ' ').trim() : ''; };"
+            " return {found: true, status: p.getAttribute(" + repr(S.CHECKS_SUMMARY_ATTR) + ")"
+            " || '', label: t(" + repr(S.PROGRESS_LABEL) + "), checks: t("
+            + repr(S.CHECKS_TOOLTIP) + "), processing: t(" + repr(S.PROCESSING_TOOLTIP) + ")};"
+            " }")
+
+
+def checks_moved_js(probe) -> str:
+    """JS predicate: the footer's status attribute or line differs from `probe`.
+
+    The condition the checks wait sleeps on between re-reads (Chrome rule 6: no fixed sleeps).
+    """
+    probe = probe if isinstance(probe, dict) else {}
+    return ("() => { const p = document.querySelector(" + repr(S.UPLOAD_PROGRESS) + ");"
+            " if (!p) return " + ("true" if probe.get("found") else "false") + ";"
+            " const l = p.querySelector(" + repr(S.PROGRESS_LABEL) + ");"
+            " const label = l ? (l.textContent || '').replace(/\\s+/g, ' ').trim() : '';"
+            " return (p.getAttribute(" + repr(S.CHECKS_SUMMARY_ATTR) + ") || '') !== "
+            + json.dumps(str(probe.get("status") or "")) + " || label !== "
+            + json.dumps(str(probe.get("label") or "")) + "; }")
+
+
 def saved_js() -> str:
     """JS predicate: the uploader's draft badge is not reading "Saving…" (or is not there)."""
     return ("() => { const b = document.querySelector(" + repr(S.DRAFT_BADGE) + ");"
@@ -691,6 +811,23 @@ def plan_lines(asset: pathlib.Path, meta: dict) -> list[str]:
             f"skips if that exact title is already on {S.CONTENT_URL}"]
 
 
+def held_steps(asset: pathlib.Path, meta: dict, video_id=None) -> list[str]:
+    """The card's steps when the checks found an issue: the draft exists; nothing to upload."""
+    where = S.EDIT_URL.format(video_id=video_id) if video_id else S.CONTENT_URL
+    return [
+        "Run: python3 scripts/browser/ensure_chrome.py",
+        f"Open {where} (ParkSheet channel) and read the Checks result on the draft titled: "
+        f"{title_of(meta)}",
+        "Copyright claim: decide whether to dispute it, trim the claimed part and re-render, "
+        "or drop the day. Restriction: read the policy notice before doing anything",
+        f"If it is fine to publish after all, set Visibility to {S.PUBLIC_VISIBILITY_TEXT} on "
+        f"that draft and Save. If not, delete it (row menu -> {S.DELETE_MENU_ITEM_TEXT})",
+        "DO NOT re-run this publisher for this day while the draft is there: it refuses on a "
+        "draft of the same title (DraftInTheWay), and a fresh upload would find the same claim",
+        f"The file, for reference: {pathlib.Path(asset).resolve()}",
+    ]
+
+
 def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
     """The exact remaining manual step, for the queue card (spec Chrome rule 7)."""
     title = title_of(meta)
@@ -707,9 +844,11 @@ def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
         "ThemeParks.wiki and photo-credit lines that the licences require): "
         f"{pathlib.Path(meta.get('_meta_path') or '(the day-N.json next to the mp4)')}",
         f"Audience: '{S.KIDS_NO_NAME}'",
-        f"Next through {', '.join(S.STEP_NAMES[1:])} (do not wait for the checks to finish), "
-        f"set Visibility to Public, then Publish; if YouTube says it is still checking your "
-        f"content, click '{S.PUBLISH_ANYWAY_NAME}'",
+        f"Next through {', '.join(S.STEP_NAMES[1:])}, then WAIT with the uploader open until "
+        f"the footer reads 'Checks complete. No issues found.' (usually 2-10 min). If it "
+        f"reports a copyright claim or restriction, close the uploader (it stays a private "
+        f"draft) and do not publish. Otherwise set Visibility to Public, then Publish; if "
+        f"YouTube still says it is checking your content, click '{S.PUBLISH_ANYWAY_NAME}'",
         f"If a row with this title is there but reads {S.DRAFT_VISIBILITY_TEXT!r} or "
         f"{S.DRAFT_PENDING_TEXT!r}, that is a half-finished upload from a failed run: either "
         f"finish it or delete it (row menu -> {S.DELETE_MENU_ITEM_TEXT}) before uploading again",
@@ -748,6 +887,7 @@ def check_probes() -> tuple[tuple[str, str, str, str, str], ...]:
         (S.UPLOAD_DIALOG_URL, "file input", "css", S.FILE_INPUT, LIVE),
         (S.UPLOAD_DIALOG_URL, "select files", "css", S.SELECT_FILES_BUTTON, LIVE),
         (S.UPLOAD_DIALOG_URL, "dialog close", "css", S.DIALOG_CLOSE_BUTTON, LIVE),
+        (S.UPLOAD_DIALOG_URL, "checks footer", "css", S.UPLOAD_PROGRESS, LIVE),
         (S.UPLOAD_DIALOG_URL, "title box", "css", S.TITLE_BOX, POST_FILE),
         (S.UPLOAD_DIALOG_URL, "description box", "css", S.DESCRIPTION_BOX, POST_FILE),
         (S.UPLOAD_DIALOG_URL, "kids radio", "role-radio", S.KIDS_NO_NAME, POST_FILE),
@@ -825,6 +965,15 @@ class YouTubeWebPublisher(Publisher):
         # Set by confirm_publish / verify_details for the result detail and the card.
         self._published_through_prechecks = False
         self._edit_visibility = ""
+        # How the publish went out: CHECKS_MODE_COMPLETE or CHECKS_MODE_FALLBACK (or "" before
+        # the checks wait). Lands in the result detail and so in the ledger row.
+        self._checks_mode = ""
+        # The last footer line the checks wait read, for the WARNING and the cards.
+        self._checks_last = ""
+        # Set when the checks found an issue, so the card gives the draft's steps, not an upload's.
+        self._held = False
+        # Seconds clock for the checks budget; a test swaps in a fake one.
+        self._clock = time.monotonic
 
     # -- contract ---------------------------------------------------------------------
 
@@ -909,9 +1058,12 @@ class YouTubeWebPublisher(Publisher):
         card = session.fail_card(
             self.repo, self._page, subdir=QUEUE_SUBDIR,
             kind=self.platform, slug=base.card_slug(meta, asset), run_name=self.platform,
-            title=f"Publish {asset.name} to the {S.CHANNEL_NAME} channel by hand",
+            title=(f"YouTube checks flagged {asset.name}: kept as a private draft"
+                   if self._held else
+                   f"Publish {asset.name} to the {S.CHANNEL_NAME} channel by hand"),
             detail=detail,
-            steps=manual_steps(asset, meta))
+            steps=(held_steps(asset, meta, self._video_id) if self._held
+                   else manual_steps(asset, meta)))
         base.link_or_copy(asset, card.parent / asset.name)
         return PublishResult(platform=self.platform, ok=False, url=None,
                              queued_path=str(card.relative_to(self.repo)), detail=detail)
@@ -933,17 +1085,21 @@ class YouTubeWebPublisher(Publisher):
         self._uploaded = False
         self._published_through_prechecks = False
         self._edit_visibility = ""
+        self._checks_mode = ""
+        self._checks_last = ""
+        self._held = False
         with session.open_page(self.platform, repo=self.repo) as page:
             self._page = page
             try:
                 return self.drive(page, asset, meta)
             except (VerificationFailed, WrongChannel, TitleTooLong, FormFieldError,
-                    RowNotPublished, AmbiguousList):
+                    RowNotPublished, AmbiguousList, ChecksFoundIssue):
                 # VerificationFailed: may already be live, see above. WrongChannel is never
                 # worked around. The rest are deterministic — a title YouTube will not take, a
                 # form that will not accept its value, a row that is on the list but not public
                 # (DraftInTheWay among them, since it is a RowNotPublished) and a truncated list
                 # all fail the same way twice, so a retry only doubles the time to the card.
+                # ChecksFoundIssue: the draft is on the channel and the claim will not go away.
                 raise
             except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
                 if self._submitted:
@@ -994,6 +1150,10 @@ class YouTubeWebPublisher(Publisher):
                         f"nothing uploaded"))
 
         self.upload(page, asset, meta)
+        # 2026-10-07: wait for YouTube's checks BEFORE choosing Public. Until then the upload
+        # sits on the Visibility step as "Saved as private", which is what YouTube recommends.
+        if self.await_checks(page) == DECIDE_HOLD:
+            self.hold_as_draft(page, asset, meta)
         self.set_public(page)
         self.submit(page)
         saved = self.verify_details(page, meta)
@@ -1035,6 +1195,10 @@ class YouTubeWebPublisher(Publisher):
             platform=self.platform, ok=True, url=self.row_url(hit), queued_path=None,
             detail=(f"published {pathlib.Path(asset).name} to {S.CHANNEL_NAME} as "
                     f"{S.PUBLIC_VISIBILITY_TEXT}: {title}"
+                    + f"; checks: {self._checks_mode or 'unknown'}"
+                    + (f" (published BEFORE checks finished: footer read "
+                       f"{self._checks_last!r} after {S.CHECKS_WAIT_TIMEOUT_MS // 60_000} min)"
+                       if self._checks_mode == CHECKS_MODE_FALLBACK else "")
                     + (f" (answered {S.PUBLISH_ANYWAY_NAME!r} while checks ran)"
                        if self._published_through_prechecks else "")
                     + f"; {saved}"))
@@ -1077,6 +1241,13 @@ class YouTubeWebPublisher(Publisher):
                 self.set_public(page)
                 reached.append(f"visibility set to {S.PUBLIC_VISIBILITY_TEXT} "
                                f"(Publish NOT clicked)")
+                # One read of the checks footer, never the 20-min wait: it proves the anchors
+                # a live run polls still resolve, at no cost to the rehearsal.
+                probe = page.evaluate(checks_probe_js())
+                probe = probe if isinstance(probe, dict) else {}
+                reached.append(f"checks footer reads {checks_state_of(probe)!r} "
+                               f"({str(probe.get('label') or '')!r}); a live run waits for "
+                               f"{CHECKS_COMPLETE!r}")
                 if self._video_id:
                     reached.append(f"draft video id {self._video_id}")
             except Exception as exc:  # noqa: BLE001 — re-raised below, after the clean-up
@@ -1390,6 +1561,80 @@ class YouTubeWebPublisher(Publisher):
                     f"the form is showing a question the driver does not answer, it stops "
                     f"here rather than clicking past it.") from exc
 
+    def await_checks(self, page) -> str:
+        """Sit on the uploader until YouTube's checks finish. Returns a DECIDE_* value.
+
+        **2026-10-07, Stephen's call.** Until now the driver clicked Publish ~16 s after the
+        file landed, while the footer still read "Processing will begin shortly", and answered
+        "Publish anyway". Shorts published that way stalled in 3 of 6 cases (0 of 8 for ones
+        finished after checks). So: re-read the footer (`checks_probe_js`), classify it
+        (`checks_state`), and let `checks_decision` say what to do. Between reads it waits as
+        a CONDITION for the footer to change, bounded by CHECKS_POLL_MS.
+
+        - DECIDE_PUBLISH: "Checks complete. No issues found." → checks: complete.
+        - DECIDE_HOLD: a check found something → the caller keeps it a private draft.
+        - DECIDE_FALLBACK: CHECKS_WAIT_TIMEOUT_MS passed → WARNING, then today's behaviour
+          (Publish, answer "Publish anyway") → checks: fallback.
+        """
+        deadline = self._clock() + S.CHECKS_WAIT_TIMEOUT_MS / 1000
+        while True:
+            probe = page.evaluate(checks_probe_js())
+            probe = probe if isinstance(probe, dict) else {}
+            state = checks_state_of(probe)
+            self._checks_last = str(probe.get("label") or "")
+            remaining = deadline - self._clock()
+            decision = checks_decision(state, timed_out=remaining <= 0)
+            if decision == DECIDE_PUBLISH:
+                self._checks_mode = CHECKS_MODE_COMPLETE
+                return decision
+            if decision == DECIDE_HOLD:
+                return decision
+            if decision == DECIDE_FALLBACK:
+                self._checks_mode = CHECKS_MODE_FALLBACK
+                print(f"{self.platform}: WARNING: YouTube's checks did not finish within "
+                      f"{S.CHECKS_WAIT_TIMEOUT_MS // 60_000} min (footer state {state!r}, "
+                      f"reads {self._checks_last!r}). Publishing BEFORE checks finished "
+                      f"(fallback): Publish, then {S.PUBLISH_ANYWAY_NAME!r} if asked.",
+                      file=sys.stderr)
+                return decision
+            try:
+                page.wait_for_function(
+                    checks_moved_js(probe),
+                    timeout=max(1, min(S.CHECKS_POLL_MS, int(remaining * 1000))))
+            except Exception as exc:  # noqa: BLE001 — the re-read decides
+                if not timed_out(exc):
+                    raise
+
+    def hold_as_draft(self, page, asset: pathlib.Path, meta: dict) -> None:
+        """A check found an issue: close the uploader (Studio saves a PRIVATE draft), raise.
+
+        Publish is never clicked. The close is what a person does and what the dry run has
+        always relied on ("Your video … has been saved as draft", verified 2026-09-25); if it
+        fails, the tab closing at the end of the run saves the same draft.
+        """
+        self._held = True
+        try:
+            self._video_id = self._video_id or video_id_from(
+                page.locator(S.UPLOAD_DIALOG).first.inner_text())
+        except Exception:  # noqa: BLE001 — the id only improves the card
+            pass
+        try:
+            close = page.locator(S.DIALOG_CLOSE_BUTTON)
+            if close.count():
+                close.first.click()
+        except Exception:  # noqa: BLE001 — a draft is saved either way
+            pass
+        where = (S.EDIT_URL.format(video_id=self._video_id) if self._video_id
+                 else S.CONTENT_URL)
+        raise ChecksFoundIssue(
+            f"YouTube's checks found an issue with {pathlib.Path(asset).name} "
+            f"({title_of(meta)!r}): the uploader footer reads {self._checks_last!r}. NOT "
+            f"published: it is a PRIVATE DRAFT on the channel"
+            + (f" (video id {self._video_id})" if self._video_id else "")
+            + f". Open {where} and read the Checks result (copyright claim or restriction). "
+              f"Decide by hand: dispute or fix it, or delete the draft. Do NOT re-run this "
+              f"day: it would refuse on the draft anyway (DraftInTheWay).")
+
     def set_public(self, page) -> None:
         """Select Public on the Visibility step and answer the one-time notice.
 
@@ -1447,6 +1692,8 @@ class YouTubeWebPublisher(Publisher):
 
     def submit(self, page) -> None:
         """Click Publish. Everything after this line is a card, never a retry.
+
+        Reached only after `await_checks` said publish (checks complete) or fall back (timeout).
 
         `self._submitted` is set immediately BEFORE the click, not after: the click itself can
         raise once the request is already on the wire, and a retry from there would upload the
