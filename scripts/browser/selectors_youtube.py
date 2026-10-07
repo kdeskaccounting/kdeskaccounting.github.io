@@ -226,6 +226,51 @@ SHARE_DIALOG = "ytcp-video-share-dialog"                           # UNVERIFIED 
 #: How long the driver gives the uploader, after the Publish click, to either close or show
 #: the prechecks modal. The modal took ~5 s to appear in both traces.
 PUBLISH_CONFIRM_TIMEOUT_MS = 180_000
+#: --- Waiting for YouTube's checks BEFORE publishing (2026-10-07, Stephen's call).
+#: ~/parksheet/docs/content/2026-10-07-youtube-distribution-diagnosis.md: Shorts published at
+#: "Processing will begin shortly" stalled in 3 of 6 cases, those finished after checks in 0 of
+#: 8. So the driver now sits on the uploader until the footer says the checks are done.
+#: The uploader's footer progress widget. Scoped to the uploads dialog: a "compact" twin of the
+#: same element appears on the content list after the dialog closes (07:38:05 on 2026-10-07).
+#: Present before any file is chosen too (empty label, status COMPLETED), so --check sees it.
+UPLOAD_PROGRESS = "ytcp-uploads-dialog ytcp-video-upload-progress"  # seen in every trace 10-02..10-07
+#: Its machine-readable summary. Values seen: NOT_STARTED (uploading, "Processing will begin
+#: shortly"), STARTED ("Checking 93% ... 1 minute left", runs/2026-10-04/youtube_web-105749),
+#: COMPLETED ("Checks complete. No issues found.", runs/2026-10-02/youtube_web-113516 and
+#: -135349). COMPLETED is ALSO the value before a file is chosen, so it is never read alone.
+CHECKS_SUMMARY_ATTR = "checks-summary-status-v2"                    # seen 2026-10-02..10-07
+CHECKS_STATUS_NOT_STARTED = "UPLOAD_CHECKS_DATA_SUMMARY_STATUS_NOT_STARTED"   # seen
+CHECKS_STATUS_STARTED = "UPLOAD_CHECKS_DATA_SUMMARY_STATUS_STARTED"           # seen 2026-10-04
+CHECKS_STATUS_COMPLETED = "UPLOAD_CHECKS_DATA_SUMMARY_STATUS_COMPLETED"       # seen 2026-10-02
+#: The footer's human-readable line, inside UPLOAD_PROGRESS. Texts seen: "Uploading 85% ...",
+#: "Upload complete ... Processing will begin shortly", "Checking 93% ... 1 minute left",
+#: "Checks complete. No issues found."
+PROGRESS_LABEL = ".progress-label"                                  # seen 2026-10-02..10-07
+#: The hover cards under the footer (hidden; read through textContent). Checks: "Checks will
+#: begin when SD processing completes" / "Checking for copyright issues … 1 minute left" /
+#: "Copyright check complete No issues found Community Guidelines check complete".
+#: Processing: "Processing will start after video is uploaded" / "Processing complete".
+CHECKS_TOOLTIP = "#checks-tooltip"                                  # seen 2026-10-02, 10-04
+PROCESSING_TOOLTIP = "#processing-tooltip"                          # seen 2026-10-02, 10-04
+#: Lowercased substrings the classifier reads (youtube_web.checks_state).
+CHECKS_COMPLETE_TEXT = "checks complete"                            # seen 2026-10-02
+NO_ISSUES_TEXT = "no issues found"                                  # seen 2026-10-02, 10-04
+CHECKING_TEXT = "checking"                                          # seen 2026-10-04
+#: Words that mean a check FOUND something. No issue has ever been seen on this channel, so
+#: this is deliberately broad, and "Checks complete" without "No issues found" counts as an
+#: issue whatever its wording: holding a clean video as a draft costs one card, publishing a
+#: claimed one cannot be taken back. UNVERIFIED wording.
+CHECKS_ISSUE_WORDS = ("claim", "restrict", "violat", "blocked", "strike", "issues found",
+                      "issue found", "ineligible")
+#: Processing that is visibly NOT finished. Checks only run after SD processing, so a
+#: "checks complete" beside one of these is a contradiction and is waited out, not published.
+PROCESSING_PENDING_TEXTS = ("processing will", "still being processed", "processing sd",
+                            "processing hd", "sd processing")
+#: How long the driver waits on the checks before falling back to "Publish anyway". The
+#: 10-02 checks finished inside the driver's old 10-min modal wait; 20 min is generous.
+CHECKS_WAIT_TIMEOUT_MS = 20 * 60_000
+#: The ceiling of one condition wait for the footer to change, between re-reads.
+CHECKS_POLL_MS = 30_000
 #: How long the still-checking modal gets to go away after "Publish anyway" is clicked. On
 #: 2026-10-05 it faded out with aria-hidden="true" already set, still drawn, for a moment
 #: after the click; reading it as open is what filed the false #148 card.
@@ -328,4 +373,5 @@ UNVERIFIED = (
     "SHARE_DIALOG",             # tag name from Studio's CSS only
     "PROCESSING_VISIBILITY_TEXT",
     "EDIT_SAVE_BUTTON",     # read live (disabled); only clicked when a repair is needed
+    "CHECKS_ISSUE_WORDS",   # no check has ever found an issue on this channel
 )

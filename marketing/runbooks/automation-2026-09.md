@@ -434,8 +434,22 @@ click is deliberately **not** retried: the video may already be live, and the ca
 to go and look at. It verifies after publishing that the row exists *and* reads `Public`; a video
 that lands as Private is a failure, not a success.
 
-**Publishing while YouTube's checks run (fixed 2026-10-04).** The driver never waits for the
-copyright/ad-suitability checks: it walks straight to Visibility, selects Public (read back via
+**Waiting for YouTube's checks before publishing (2026-10-07, Stephen's call).** After the
+details are filled and the uploader is on Visibility (still "Saved as private"), the driver now
+polls the footer (`ytcp-video-upload-progress`: its `checks-summary-status-v2` attribute and its
+"Checks complete. No issues found." line) for up to **20 min** before choosing Public. Clean →
+Public → Publish, and the result/ledger detail says `checks: complete`. A check that finds
+anything (copyright claim, restriction, or "Checks complete" without "No issues found") → the
+uploader is closed, the video stays a **private draft**, and a `ChecksFoundIssue` card says which
+draft to review; nothing is published or retried. Timeout → a stderr **WARNING**, then the
+fallback below (Publish, answer *Publish anyway*), and the detail says `checks: fallback`. Why:
+`~/parksheet/docs/content/2026-10-07-youtube-distribution-diagnosis.md` (Shorts published at
+"Processing will begin shortly" stalled 3/6, after-checks 0/8 — weak evidence). A whole run can
+now take ~50 min (20 checks + 25 settle), so run it with a **60-min** timeout.
+
+**Publishing while YouTube's checks run (fixed 2026-10-04; now the timeout fallback).** Before
+2026-10-07 the driver never waited for the
+copyright/ad-suitability checks: it walked straight to Visibility, selects Public (read back via
 `aria-checked`), waits for the "Saving…" badge to clear, and clicks Publish. When the checks are
 still running ("taking longer than usual"), YouTube answers with a modal — *We're still checking
 your content* — and the driver clicks **Publish anyway** (never *Go back*). Until 2026-10-04
