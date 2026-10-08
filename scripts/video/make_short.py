@@ -42,6 +42,7 @@ HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
 import captions
 import cards
+import human_voice
 import illustrate
 import media
 from short_variants import safe_slug, select_short, short_paths
@@ -2276,6 +2277,12 @@ def main():
             f"  scripts/video/.venv-tts/bin/python scripts/video/narrate.py "
             f"--spec {spec_path} --out {build / 'audio'}")
     durs = json.load(open(dj))
+    # `voice: human` renders only from a human_voice.py build of the recording and script the
+    # spec names now; a TTS spec refuses audio a human build left behind.
+    human_voice.check_audio(spec, spec_path, build / "audio")
+    if human_voice.is_human(spec):
+        print(f"narration: human read ({', '.join(p.name for p in human_voice.human_sources(spec, spec_path))})",
+              flush=True)
     parts = []
     # Where each scene lands in the finished Short. Measured from the ENCODED part rather than
     # from the `dur` asked for: `-t 4.633` at 30 fps lands on a frame boundary, and one frame
