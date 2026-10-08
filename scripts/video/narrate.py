@@ -763,6 +763,14 @@ def main(argv: list | None = None) -> int:
     import yaml  # lazy: absent outside the TTS venv
     with open(a.spec) as fh:
         spec = yaml.safe_load(fh)
+    import human_voice  # stdlib-only; owns the `voice: human` switch
+    if human_voice.is_human(spec):
+        # Synthesising here would overwrite the person's read with TTS (and bill for it).
+        print(f"this spec is `voice: human`: its narration is a recording, built by "
+              f"human_voice.py, not synthesised. Run:\n  scripts/video/.venv-tts/bin/python "
+              f"scripts/video/human_voice.py --spec {a.spec}\nTo go back to TTS, remove "
+              f"`voice: human` from the spec.", file=sys.stderr)
+        return 2
     cfg = tts_config(spec, a.voice, a.speed)
 
     if a.tts_check:
@@ -794,6 +802,12 @@ def main(argv: list | None = None) -> int:
 
     out = pathlib.Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    # A human build's scenes carry a `human:` hash no config matches, so every scene below
+    # re-synthesises; the marker goes first so make_short never takes the result for a read.
+    try:
+        (out / human_voice.MARKER).unlink()
+    except OSError:
+        pass
     durations = {}
     aliases = say_map(spec)
     for i, scene in enumerate(spec["scenes"]):
