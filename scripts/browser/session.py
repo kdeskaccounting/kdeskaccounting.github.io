@@ -281,9 +281,93 @@ def fail_card(repo: pathlib.Path, page, *, kind: str, slug: str, title: str, det
     return write_queue_card(repo, subdir, f"{kind}-{safe_slug}", body)
 
 
+@dataclasses.dataclass
+class _Trace:
+    """One open_page's tracing state, so trace_paused() can find the context and run dir."""
+    ctx: object
+    name: str
+    out: pathlib.Path
+    active: bool = False
+    parts: int = 0
+
+    def start(self) -> None:
+        self.ctx.tracing.start(name=self.name, screenshots=True, snapshots=True)
+        self.active = True
+
+
+#: id(page) -> its _Trace, for the pages open_page currently has open. Keyed by id because a
+#: Playwright Page is not ours to hang attributes on; the entry is dropped in teardown.
+_TRACES: dict[int, _Trace] = {}
+
+
+def _say(text: str) -> None:
+    print(redact_secrets(text), file=sys.stderr)
+
+
+@contextlib.contextmanager
+def trace_paused(page, reason: str = ""):
+    """Stop tracing for a long, boring stretch (a poll loop), then start it again.
+
+    2026-10-08: the trace of a 4-minute wait-for-checks loop carried a screenshot and DOM
+    snapshot per frame, and the CDP connection dropped 26 s after Publish. A paused stretch
+    records nothing; what came before it is saved as trace-part<N>.zip beside trace.zip,
+    and the trace restarts (screenshots and snapshots on) for the steps that matter.
+
+    A no-op for a page open_page did not open (the tests' fakes) or with tracing off. Never
+    raises on its own account: a pause or resume that fails is logged, and whatever the body
+    raised is what propagates.
+    """
+    t = _TRACES.get(id(page))
+    if t is None or not t.active:
+        yield
+        return
+    t.parts += 1
+    part = t.out / f"trace-part{t.parts}.zip"
+    paused = False
+    try:
+        t.ctx.tracing.stop(path=str(part))
+        t.active = False
+        paused = True
+        _say(f"trace: paused ({reason or 'quiet stretch'}); saved {part}")
+    except Exception as exc:  # noqa: BLE001 - tracing is evidence, never the run
+        _say(f"trace: could not pause ({type(exc).__name__}: {exc}); tracing carries on")
+    try:
+        yield
+    finally:
+        if paused:
+            try:
+                t.start()
+                _say("trace: resumed")
+            except Exception as exc:  # noqa: BLE001
+                _say(f"trace: could not resume ({type(exc).__name__}: {exc}); the rest of "
+                     f"this run is untraced")
+
+
+def _teardown_step(name: str, what: str, fn, primary) -> None:
+    """Run one clean-up call; log its failure, never raise it.
+
+    The 2026-10-08 incident: the CDP connection dropped after Publish, and `Tracing.stop` in
+    the old `finally` raised TargetClosedError, which REPLACED the run's own exception. The
+    card then carried the teardown error and the standard "upload it by hand" steps over a
+    video that was already live. A clean-up call can fail; it can never be the error.
+    """
+    try:
+        fn()
+    except Exception as exc:  # noqa: BLE001 - see docstring
+        tail = (f"ignored; the run's own error ({type(primary).__name__}: {primary}) is "
+                f"what is reported" if primary is not None
+                else "ignored; the run itself had finished")
+        _say(f"{name}: teardown: {what} failed ({type(exc).__name__}: {exc}); {tail}")
+
+
 @contextlib.contextmanager
 def open_page(name: str, *, repo: pathlib.Path = REPO, tracing: bool = True):
-    """Yield a Page on the logged-in debug Chrome, with a trace.zip per run."""
+    """Yield a Page on the logged-in debug Chrome, with a trace.zip per run.
+
+    Teardown can never mask the run's own error (see _teardown_step), and a dropped CDP
+    connection is announced on stderr the moment it happens (the browser's `disconnected`
+    event), so a later TargetClosedError reads as the consequence it is.
+    """
     from playwright.sync_api import sync_playwright  # lazy: absent in the test env
 
     from browser import ensure_chrome
@@ -292,25 +376,51 @@ def open_page(name: str, *, repo: pathlib.Path = REPO, tracing: bool = True):
     out = trace_dir(repo, name)
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp(CDP_URL)
+        finished = {"done": False}
+
+        def _disconnected(*_a) -> None:
+            if finished["done"]:
+                return              # our own teardown letting go: expected, not news
+            when = dt.datetime.now().astimezone().strftime("%H:%M:%S %z")
+            _say(f"{name}: BROWSER DISCONNECTED at {when}: the CDP connection to {CDP_URL} "
+                 f"dropped mid-run. Every browser call after this fails (TargetClosedError); "
+                 f"the first error the run reports is the one to read.")
+
+        browser.on("disconnected", _disconnected)
         ctx = browser.contexts[0]
+        trace = _Trace(ctx, name, out)
         if tracing:
-            ctx.tracing.start(name=name, screenshots=True, snapshots=True)
+            trace.start()
         page = ctx.new_page()
+        _TRACES[id(page)] = trace
+        primary = None
         try:
             yield page
+        except BaseException as exc:
+            primary = exc
+            raise
         finally:
+            _TRACES.pop(id(page), None)
+
             # Never leave the debug Chrome with zero pages: Playwright cannot attach to a
             # browser that has no default context (seen 2026-09-30, "Browser context
             # management is not supported"), and the next run then fails before it starts.
-            try:
+            def _keep_one_page():
                 if len(ctx.pages) <= 1:
                     ctx.new_page().goto("about:blank")
-            except Exception:  # noqa: BLE001
-                pass
-            if tracing:
-                ctx.tracing.stop(path=str(trace_path(out)))
-                print(f"trace: {trace_path(out)}", file=sys.stderr)
-            page.close()
+
+            def _stop_trace():
+                if trace.active:
+                    trace.active = False
+                    ctx.tracing.stop(path=str(trace_path(out)))
+                    _say(f"trace: {trace_path(out)}")
+
+            _teardown_step(name, "keeping a page open", _keep_one_page, primary)
+            _teardown_step(name, "Tracing.stop", _stop_trace, primary)
+            _teardown_step(name, "page.close", page.close, primary)
+            # The context is the debug Chrome's own default one (contexts[0]), shared with
+            # every other tab: it is deliberately never closed here.
+            finished["done"] = True
 
 
 def check(site: str, *, page=None) -> SiteStatus:

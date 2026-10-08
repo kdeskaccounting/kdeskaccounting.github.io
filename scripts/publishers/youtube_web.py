@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import datetime as dt
 import json
 import pathlib
 import re
@@ -828,6 +829,53 @@ def held_steps(asset: pathlib.Path, meta: dict, video_id=None) -> list[str]:
     ]
 
 
+def clicked_at_text(clicked_at) -> str:
+    """When Publish was clicked, as the card prints it."""
+    if clicked_at is None:
+        return "(time not recorded)"
+    return clicked_at.strftime("%Y-%m-%d %H:%M:%S %z")
+
+
+def probably_live_notice(clicked_at) -> str:
+    """The first line of every card and ledger row for a failure AFTER the Publish click.
+
+    2026-10-08 (ledger #158): the Tower of Terror Short went live at 07:42:00, the CDP
+    connection dropped 26 s later, and the card told a human to upload it by hand — a
+    duplicate waiting to happen. Past the click the video is most likely up; the card says so
+    before it says anything else.
+    """
+    return (f"Publish was clicked at {clicked_at_text(clicked_at)}: the video is PROBABLY "
+            f"LIVE. Check the Shorts list first; DO NOT upload again.")
+
+
+def post_publish_steps(asset: pathlib.Path, meta: dict, video_id=None,
+                       clicked_at=None) -> list[str]:
+    """The card's steps when something failed AFTER Publish. Never an upload."""
+    title = title_of(meta)
+    when = clicked_at_text(clicked_at)
+    steps = [
+        f"DO NOT upload {pathlib.Path(asset).name} again and DO NOT re-run this publisher for "
+        f"this day: Publish was clicked at {when}, so YouTube almost certainly has the video",
+        f"Open {S.CONTENT_URL} (the top-right avatar must be '{S.CHANNEL_NAME}') and find "
+        f"the row titled: {title}",
+        f"Row reads {S.PUBLIC_VISIBILITY_TEXT!r}: the day is done. Nothing to upload",
+        f"Row reads {S.DRAFT_VISIBILITY_TEXT!r} or {S.DRAFT_PENDING_TEXT!r}: YouTube is usually "
+        f"still processing; look again in 10-15 min. If it is still not "
+        f"{S.PUBLIC_VISIBILITY_TEXT} then, open that row, set Visibility to "
+        f"{S.PUBLIC_VISIBILITY_TEXT} and Save (answer {S.PUBLISH_ANYWAY_NAME!r} if asked). "
+        f"Do not upload a new copy",
+        f"No row on the Shorts tab: check {S.CONTENT_VIDEOS_URL} too, and look again in "
+        f"15 min. If it is on neither tab after that, stop and tell Stephen; this card is "
+        f"not a licence to upload",
+    ]
+    if video_id:
+        steps.insert(2, f"The uploader reported this video: {watch_url(video_id)} (edit page "
+                        f"{S.EDIT_URL.format(video_id=video_id)})")
+    steps.append(f"Once it is {S.PUBLIC_VISIBILITY_TEXT}, check the description and audience "
+                 f"on its edit page (the description carries licence-required attribution)")
+    return steps
+
+
 def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
     """The exact remaining manual step, for the queue card (spec Chrome rule 7)."""
     title = title_of(meta)
@@ -955,6 +1003,8 @@ class YouTubeWebPublisher(Publisher):
         # True once Publish has been clicked for the attempt in flight. Reset per _do_publish
         # call; while set, nothing is retried (see _do_publish).
         self._submitted = False
+        # When Publish was clicked (aware datetime), for the "probably live" card.
+        self._submitted_at = None
         # The video id read out of the uploader, so a failure after the click can still say
         # which video to go and look at.
         self._video_id = None
@@ -1028,6 +1078,10 @@ class YouTubeWebPublisher(Publisher):
         asset = pathlib.Path(asset)
         if not asset.exists():
             raise FileNotFoundError(f"asset not found: {asset}")
+        # A batch reuses one publisher: day 1's Publish click must never colour day 2's card
+        # (a preflight failure on day 2 queues before _do_publish gets to reset these).
+        self._submitted = False
+        self._submitted_at = None
         if not dry_run:
             return super().publish(asset, meta, dry_run)
         blocked = self.preflight()
@@ -1055,6 +1109,19 @@ class YouTubeWebPublisher(Publisher):
         """
         detail = self.mask(detail)
         asset = pathlib.Path(asset)
+        if self._submitted:
+            # Past the Publish click: the card and the ledger row lead with "probably live",
+            # and the steps are a check, never an upload (2026-10-08, ledger #158).
+            detail = f"{probably_live_notice(self._submitted_at)}\n\n{detail}"
+            card = session.fail_card(
+                self.repo, self._page, subdir=QUEUE_SUBDIR,
+                kind=self.platform, slug=base.card_slug(meta, asset), run_name=self.platform,
+                title=(f"{asset.name}: Publish was clicked, the video is PROBABLY LIVE "
+                       f"(check the {S.CHANNEL_NAME} Shorts list, do not upload again)"),
+                detail=detail, limit=1600,
+                steps=post_publish_steps(asset, meta, self._video_id, self._submitted_at))
+            return PublishResult(platform=self.platform, ok=False, url=None,
+                                 queued_path=str(card.relative_to(self.repo)), detail=detail)
         card = session.fail_card(
             self.repo, self._page, subdir=QUEUE_SUBDIR,
             kind=self.platform, slug=base.card_slug(meta, asset), run_name=self.platform,
@@ -1081,6 +1148,7 @@ class YouTubeWebPublisher(Publisher):
         reuses one publisher and day 2 must start clean.
         """
         self._submitted = False
+        self._submitted_at = None
         self._video_id = None
         self._uploaded = False
         self._published_through_prechecks = False
@@ -1576,6 +1644,14 @@ class YouTubeWebPublisher(Publisher):
         - DECIDE_FALLBACK: CHECKS_WAIT_TIMEOUT_MS passed → WARNING, then today's behaviour
           (Publish, answer "Publish anyway") → checks: fallback.
         """
+        # Untraced while it polls: a screenshot + snapshot per frame for up to 20 minutes made
+        # the trace heavy, and none of it explains a failure (2026-10-08). The trace restarts
+        # for set_public / Publish / the verification, which are the steps worth replaying.
+        with session.trace_paused(page, "waiting for YouTube's checks"):
+            return self._poll_checks(page)
+
+    def _poll_checks(self, page) -> str:
+        """await_checks' loop, run with tracing paused."""
         deadline = self._clock() + S.CHECKS_WAIT_TIMEOUT_MS / 1000
         while True:
             probe = page.evaluate(checks_probe_js())
@@ -1708,6 +1784,9 @@ class YouTubeWebPublisher(Publisher):
         self.wait_for_saved(page)
         page.wait_for_function(enabled_js(S.DONE_BUTTON), timeout=S.ANCHOR_TIMEOUT_MS)
         self._submitted = True          # point of no return — never re-upload past here
+        self._submitted_at = dt.datetime.now().astimezone()
+        print(f"{self.platform}: Publish clicked at {clicked_at_text(self._submitted_at)}",
+              file=sys.stderr)
         button.click()
         self.confirm_publish(page)
 
