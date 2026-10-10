@@ -33,7 +33,8 @@ and is untouched; this one is `youtube_web`.
 **Shape** (spec Chrome rule 4 — the same read → diff → apply → re-read → assert the Gumroad
 and TikTok drivers use):
 
-    am I ParkSheet? ─► no ─► refuse, touch nothing
+    am I ParkSheet? ─► no, another santiagokdesk channel ─► switch (and switch BACK after)
+                    ─► no, another Google account ─► refuse, touch nothing
                     └► yes ─► read the content list ─► this title already there? ─► skip, ok
                                                     └► no ─► upload, fill, walk to Visibility
                                                              ─► wait for checks (≤ 20 min)
@@ -48,8 +49,12 @@ and TikTok drivers use):
 **The channel guard is not decoration.** The debug Chrome profile also holds Stephen's
 personal YouTube channel, and Studio remembers whichever was last used. Posting a ParkSheet
 Short to the personal channel is not something a later run can undo, so every entry point —
-`--check`, a dry run and a live publish alike — reads the channel name first and refuses on
-anything but ParkSheet.
+`--check`, a dry run and a live publish alike — reads the channel name first. `--check`
+refuses on anything but ParkSheet. A dry run or publish that finds Studio on another channel of
+the santiagokdesk Google account (Court of Inquiry, KDeskAccounting, ...) switches to ParkSheet
+through the avatar menu and, success or failure, switches back to the channel it found
+(`browser/studio_channel.py`, 2026-10-10); a different Google account is still a refusal, and
+credentials are never entered.
 
 **Idempotency** is the rest of the safety story. Re-running a day, or resuming after a crash,
 must never put the same video on the channel twice, so the title read comes first and a post
@@ -82,6 +87,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from browser import selectors_youtube as S  # noqa: E402
 from browser import session  # noqa: E402
+from browser import studio_channel  # noqa: E402
 from publishers import base  # noqa: E402
 from publishers.base import REPO, Publisher, PublishResult  # noqa: E402
 
@@ -100,9 +106,11 @@ MIN_TITLE_LEN = 12
 ELLIPSIS = ("…", "...")
 
 
-#: Other channels on the santiagokdesk Google account. Studio may open on one of these after
-#: a restart; the driver switches to ParkSheet itself. Any other name is another account.
-SIBLING_CHANNELS = frozenset({"kdeskaccounting"})
+# 2026-10-10: which channels may be switched away from is no longer a hard-coded list. Studio
+# was on Court of Inquiry (another santiagokdesk channel) and the old {"kdeskaccounting"} list
+# refused. browser/studio_channel.py reads the Switch account menu instead: any channel of the
+# santiagokdesk account is switched (and switched BACK after the run); another Google account
+# is still a refusal.
 
 
 class WrongChannel(RuntimeError):
@@ -1024,6 +1032,9 @@ class YouTubeWebPublisher(Publisher):
         self._held = False
         # Seconds clock for the checks budget; a test swaps in a fake one.
         self._clock = time.monotonic
+        # The channel Studio was on before assert_channel switched it to ParkSheet (None when
+        # no switch happened). restore_channel puts it back after the run.
+        self._restore_channel = None
 
     # -- contract ---------------------------------------------------------------------
 
@@ -1156,48 +1167,56 @@ class YouTubeWebPublisher(Publisher):
         self._checks_mode = ""
         self._checks_last = ""
         self._held = False
+        self._restore_channel = None
         with session.open_page(self.platform, repo=self.repo) as page:
             self._page = page
             try:
-                return self.drive(page, asset, meta)
-            except (VerificationFailed, WrongChannel, TitleTooLong, FormFieldError,
-                    RowNotPublished, AmbiguousList, ChecksFoundIssue):
-                # VerificationFailed: may already be live, see above. WrongChannel is never
-                # worked around. The rest are deterministic — a title YouTube will not take, a
-                # form that will not accept its value, a row that is on the list but not public
-                # (DraftInTheWay among them, since it is a RowNotPublished) and a truncated list
-                # all fail the same way twice, so a retry only doubles the time to the card.
-                # ChecksFoundIssue: the draft is on the channel and the claim will not go away.
-                raise
-            except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
-                if self._submitted:
-                    raise VerificationFailed(
-                        f"{type(exc).__name__}: {exc} — this happened AFTER Publish was "
-                        f"clicked, so YouTube may have taken the video"
-                        + (f" ({watch_url(self._video_id)})" if self._video_id else "")
-                        + f". NOT retrying: a second attempt would upload "
-                          f"{pathlib.Path(asset).name} twice.") from exc
-                if self._uploaded:
-                    # The file is already with YouTube even though Publish was never clicked —
-                    # a timeout in set_public lands here. Re-running drive() from the top would
-                    # navigate away, which SILENTLY saves the half-filled upload as a draft,
-                    # and then upload the same mp4 a second time; the content read cannot catch
-                    # that, because a draft is not a published row. So this is a card, and the
-                    # card has to say the draft is there, or nobody will know to delete it.
-                    raise DraftNotRemoved(
-                        f"{type(exc).__name__}: {exc} — this happened AFTER "
-                        f"{pathlib.Path(asset).name} was handed to YouTube but BEFORE Publish "
-                        f"was clicked, so a draft titled {title_of(meta)!r} exists on the "
-                        f"channel"
-                        + (f" (video id {self._video_id})" if self._video_id else "")
-                        + f". NOT retrying: a retry would leave that draft behind and upload "
-                          f"the file again. Delete the draft at {S.CONTENT_URL} "
-                          f"(row menu -> {S.DELETE_MENU_ITEM_TEXT}) before running this day "
-                          f"again.") from exc
-                print(f"{self.platform}: retrying once after "
-                      f"{session.redact_secrets(f'{type(exc).__name__}: {exc}')[:160]}",
-                      file=sys.stderr)
-                return self.drive(page, asset, meta)
+                return self._drive_with_retry(page, asset, meta)
+            finally:
+                self.restore_channel(page)
+
+    def _drive_with_retry(self, page, asset: pathlib.Path, meta: dict) -> PublishResult:
+        """drive(), with the one retry _do_publish describes."""
+        try:
+            return self.drive(page, asset, meta)
+        except (VerificationFailed, WrongChannel, TitleTooLong, FormFieldError,
+                RowNotPublished, AmbiguousList, ChecksFoundIssue):
+            # VerificationFailed: may already be live, see above. WrongChannel is never
+            # worked around. The rest are deterministic — a title YouTube will not take, a
+            # form that will not accept its value, a row that is on the list but not public
+            # (DraftInTheWay among them, since it is a RowNotPublished) and a truncated list
+            # all fail the same way twice, so a retry only doubles the time to the card.
+            # ChecksFoundIssue: the draft is on the channel and the claim will not go away.
+            raise
+        except Exception as exc:  # noqa: BLE001 — one retry, then base.publish queues
+            if self._submitted:
+                raise VerificationFailed(
+                    f"{type(exc).__name__}: {exc} — this happened AFTER Publish was "
+                    f"clicked, so YouTube may have taken the video"
+                    + (f" ({watch_url(self._video_id)})" if self._video_id else "")
+                    + f". NOT retrying: a second attempt would upload "
+                      f"{pathlib.Path(asset).name} twice.") from exc
+            if self._uploaded:
+                # The file is already with YouTube even though Publish was never clicked —
+                # a timeout in set_public lands here. Re-running drive() from the top would
+                # navigate away, which SILENTLY saves the half-filled upload as a draft,
+                # and then upload the same mp4 a second time; the content read cannot catch
+                # that, because a draft is not a published row. So this is a card, and the
+                # card has to say the draft is there, or nobody will know to delete it.
+                raise DraftNotRemoved(
+                    f"{type(exc).__name__}: {exc} — this happened AFTER "
+                    f"{pathlib.Path(asset).name} was handed to YouTube but BEFORE Publish "
+                    f"was clicked, so a draft titled {title_of(meta)!r} exists on the "
+                    f"channel"
+                    + (f" (video id {self._video_id})" if self._video_id else "")
+                    + f". NOT retrying: a retry would leave that draft behind and upload "
+                      f"the file again. Delete the draft at {S.CONTENT_URL} "
+                      f"(row menu -> {S.DELETE_MENU_ITEM_TEXT}) before running this day "
+                      f"again.") from exc
+            print(f"{self.platform}: retrying once after "
+                  f"{session.redact_secrets(f'{type(exc).__name__}: {exc}')[:160]}",
+                  file=sys.stderr)
+            return self.drive(page, asset, meta)
 
     def drive(self, page, asset: pathlib.Path, meta: dict) -> PublishResult:
         """channel guard → read → skip-if-present → upload → re-read → assert Public."""
@@ -1283,54 +1302,63 @@ class YouTubeWebPublisher(Publisher):
         title = title_of(meta)
         reached: list[str] = []
         self._uploaded = False
+        self._restore_channel = None
         with session.open_page(f"{self.platform}-dry-run", repo=self.repo) as page:
             self._page = page
-            self.assert_channel(page)
-            reached.append(f"channel confirmed: {S.CHANNEL_NAME}")
-            before = self.read_content(page)
-            reached.append(f"content list read: {len(before)} row(s)")
-            refuse_if_ambiguous(before, title)
-            hit = find_video(before, title)
-            if hit is not None:
-                self.refuse_unless_public(hit, title)
-                return PublishResult(
-                    platform=self.platform, ok=True, url=self.row_url(hit), queued_path=None,
-                    detail=(f"dry-run: already published — a video titled {title!r} is on "
-                            f"{S.CONTENT_URL}; a live run would upload nothing"))
-            # Not try/finally: a `finally` that raises REPLACES the exception on its way out,
-            # so a clean-up failure used to hide the reason the run failed in the first place —
-            # and the reason is what a reader of the card needs. The clean-up still always runs.
-            primary = None
             try:
-                self.upload(page, asset, meta)
-                reached.append(f"uploaded {asset.name}, title and description verified, "
-                               f"audience set to {S.KIDS_NO_NAME!r}")
-                reached.append("walked " + " -> ".join(S.STEP_NAMES))
-                self.set_public(page)
-                reached.append(f"visibility set to {S.PUBLIC_VISIBILITY_TEXT} "
-                               f"(Publish NOT clicked)")
-                # One read of the checks footer, never the 20-min wait: it proves the anchors
-                # a live run polls still resolve, at no cost to the rehearsal.
-                probe = page.evaluate(checks_probe_js())
-                probe = probe if isinstance(probe, dict) else {}
-                reached.append(f"checks footer reads {checks_state_of(probe)!r} "
-                               f"({str(probe.get('label') or '')!r}); a live run waits for "
-                               f"{CHECKS_COMPLETE!r}")
-                if self._video_id:
-                    reached.append(f"draft video id {self._video_id}")
-            except Exception as exc:  # noqa: BLE001 — re-raised below, after the clean-up
-                primary = exc
-            try:
-                reached.append(self.discard_draft(page, title, before))
-            except Exception as cleanup:  # noqa: BLE001
-                if primary is None:
-                    raise
-                raise DraftNotRemoved(
-                    f"{type(cleanup).__name__}: {cleanup} — AND the run had already failed "
-                    f"with {type(primary).__name__}: {primary}, which is the cause to fix "
-                    f"first.") from primary
-            if primary is not None:
-                raise primary
+                return self._dry_run_on(page, asset, meta, title, reached)
+            finally:
+                self.restore_channel(page)
+
+    def _dry_run_on(self, page, asset: pathlib.Path, meta: dict, title: str,
+                    reached: list) -> PublishResult:
+        """_do_dry_run's body, on its page."""
+        self.assert_channel(page)
+        reached.append(f"channel confirmed: {S.CHANNEL_NAME}")
+        before = self.read_content(page)
+        reached.append(f"content list read: {len(before)} row(s)")
+        refuse_if_ambiguous(before, title)
+        hit = find_video(before, title)
+        if hit is not None:
+            self.refuse_unless_public(hit, title)
+            return PublishResult(
+                platform=self.platform, ok=True, url=self.row_url(hit), queued_path=None,
+                detail=(f"dry-run: already published — a video titled {title!r} is on "
+                        f"{S.CONTENT_URL}; a live run would upload nothing"))
+        # Not try/finally: a `finally` that raises REPLACES the exception on its way out,
+        # so a clean-up failure used to hide the reason the run failed in the first place —
+        # and the reason is what a reader of the card needs. The clean-up still always runs.
+        primary = None
+        try:
+            self.upload(page, asset, meta)
+            reached.append(f"uploaded {asset.name}, title and description verified, "
+                           f"audience set to {S.KIDS_NO_NAME!r}")
+            reached.append("walked " + " -> ".join(S.STEP_NAMES))
+            self.set_public(page)
+            reached.append(f"visibility set to {S.PUBLIC_VISIBILITY_TEXT} "
+                           f"(Publish NOT clicked)")
+            # One read of the checks footer, never the 20-min wait: it proves the anchors
+            # a live run polls still resolve, at no cost to the rehearsal.
+            probe = page.evaluate(checks_probe_js())
+            probe = probe if isinstance(probe, dict) else {}
+            reached.append(f"checks footer reads {checks_state_of(probe)!r} "
+                           f"({str(probe.get('label') or '')!r}); a live run waits for "
+                           f"{CHECKS_COMPLETE!r}")
+            if self._video_id:
+                reached.append(f"draft video id {self._video_id}")
+        except Exception as exc:  # noqa: BLE001 — re-raised below, after the clean-up
+            primary = exc
+        try:
+            reached.append(self.discard_draft(page, title, before))
+        except Exception as cleanup:  # noqa: BLE001
+            if primary is None:
+                raise
+            raise DraftNotRemoved(
+                f"{type(cleanup).__name__}: {cleanup} — AND the run had already failed "
+                f"with {type(primary).__name__}: {primary}, which is the cause to fix "
+                f"first.") from primary
+        if primary is not None:
+            raise primary
         return PublishResult(
             platform=self.platform, ok=True, url=None, queued_path=None,
             detail="dry-run: " + "; ".join(plan_lines(asset, meta) + reached))
@@ -1361,16 +1389,21 @@ class YouTubeWebPublisher(Publisher):
                 f"also holds Stephen's personal channel and a Short posted there cannot be "
                 f"moved.")
 
-    def switch_channel(self, page) -> None:
-        """Avatar -> Switch account -> ParkSheet, then wait for the header to say so."""
-        page.locator(S.AVATAR_BUTTON).first.click()
-        page.get_by_text(S.SWITCH_ACCOUNT_TEXT, exact=False).first.click()
-        page.get_by_text(S.CHANNEL_NAME, exact=True).first.click()
-        page.wait_for_function(
-            "() => { const e = document.querySelector(" + repr(S.CHANNEL_NAME_TEXT) + ");"
-            " return !!e && e.textContent.trim().toLowerCase() === "
-            + json.dumps(S.CHANNEL_NAME.lower()) + "; }",
-            timeout=S.NAV_TIMEOUT_MS)
+    def switch_channel(self, page, current: str) -> None:
+        """Avatar -> Switch account -> ParkSheet, if `studio_channel.plan_switch` allows it.
+
+        Raises WrongChannel when it does not: another Google account (the smichels1 channels),
+        a sign-in or passkey prompt, or a menu that cannot be read. Credentials are never
+        entered.
+        """
+        try:
+            studio_channel.switch_to(page, current, S.CHANNEL_NAME)
+        except studio_channel.ChannelRefused as exc:
+            raise WrongChannel(
+                f"YouTube Studio is signed in as {current!r}, not {S.CHANNEL_NAME!r}, and "
+                f"switching was refused: {exc}. Refusing to upload: a ParkSheet Short posted "
+                f"to another channel cannot be moved. Switch channels in Studio by hand "
+                f"(avatar -> Switch account) and run this again.") from exc
 
     def assert_channel(self, page) -> str:
         """Refuse to do anything unless Studio is signed in as ParkSheet.
@@ -1380,22 +1413,28 @@ class YouTubeWebPublisher(Publisher):
         header's own channel name (what a person reads, but a substring of another channel's
         name would slip through, so it is compared normalised and whole).
 
-        Stephen's personal channel lives in this same Chrome profile and Studio opens whichever
-        was last used. Posting a ParkSheet Short there is not undoable, which is why this is a
-        hard refusal rather than a warning.
+        Studio opens whichever channel was used last. Another channel of the SAME Google
+        account (santiagokdesk: KDeskAccounting, Court of Inquiry, ...) is switched to ParkSheet,
+        and the channel found is remembered in `self._restore_channel` so the run can switch
+        back afterwards (Stephen works in Court of Inquiry in this profile). Another Google
+        account is a hard refusal, because a ParkSheet Short posted elsewhere is not undoable.
         """
         self.goto(page, S.STUDIO_URL)
-        page.locator(S.CHANNEL_NAME_TEXT).first.wait_for(state="visible",
-                                                         timeout=S.ANCHOR_TIMEOUT_MS)
-        name = (page.locator(S.CHANNEL_NAME_TEXT).first.text_content() or "").strip()
-        if _norm(name) != _norm(S.CHANNEL_NAME) and _norm(name) in SIBLING_CHANNELS:
-            # A sibling channel of the SAME Google account (santiagokdesk): Studio remembers
-            # the last channel used, and it reverts to the primary one after a Chrome restart
-            # (2026-09-30). Switching is what a person does from the avatar menu, and is
-            # allowed because it changes nothing but the header; a channel that is not on
-            # this list means a different Google session, which stays a hard refusal.
-            self.switch_channel(page)
-            name = (page.locator(S.CHANNEL_NAME_TEXT).first.text_content() or "").strip()
+        name = studio_channel.current_channel(page)
+        if _norm(name) != _norm(S.CHANNEL_NAME):
+            # Remembered BEFORE the switch, so a switch that times out half-way is still put
+            # back; forgotten again on a refusal, which switched nothing.
+            first = self._restore_channel is None
+            if first:
+                self._restore_channel = name
+            try:
+                self.switch_channel(page, name)
+            except WrongChannel:
+                if first:
+                    self._restore_channel = None
+                raise
+            self.goto(page, S.STUDIO_URL)
+            name = studio_channel.current_channel(page)
         if _norm(name) != _norm(S.CHANNEL_NAME):
             raise WrongChannel(
                 f"YouTube Studio is signed in as {name!r}, not {S.CHANNEL_NAME!r}. Refusing to "
@@ -1408,6 +1447,23 @@ class YouTubeWebPublisher(Publisher):
                 f"carry the ParkSheet channel id {S.CHANNEL_ID}. Refusing to upload against a "
                 f"channel the two tests disagree about.")
         return name
+
+    def restore_channel(self, page) -> None:
+        """Best-effort: switch Studio back to the channel `assert_channel` found. Never raises.
+
+        Runs after the run, success or failure, in a tab of its own: the run's page may be
+        mid-dialog, and navigating it away would save a half-filled upload as a draft.
+        """
+        original, self._restore_channel = self._restore_channel, None
+        if not original:
+            return
+        try:
+            context = page.context
+        except Exception as exc:  # noqa: BLE001 — logged, never raised
+            print(f"{self.platform}: COULD NOT switch Studio back to {original!r} "
+                  f"({type(exc).__name__}: {exc})", file=sys.stderr)
+            return
+        studio_channel.restore_in_new_tab(context, original, label=self.platform)
 
     def refuse_unless_public(self, row: dict, title: str) -> None:
         """Let the skip through ONLY for a row that reads Public. Everything else raises.
