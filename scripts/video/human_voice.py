@@ -427,6 +427,27 @@ def normalise(tokens: list[str]) -> list[tuple[str, tuple[int, ...]]]:
     return out
 
 
+_DIGIT_GROUP = re.compile(r"^,\d{3}\b")
+
+
+def merge_digit_groups(words: list[dict]) -> list[dict]:
+    """Whisper writes "27,000" as two timed words, "27" and ",000"; put them back together
+    so the number meets the script's "twenty-seven thousand" as one word, and both of its
+    caption tokens are timed across the whole of it."""
+    out: list[dict] = []
+    for w in words:
+        text = str(w.get("text", "")).strip()
+        if (out and _DIGIT_GROUP.match(text)
+                and re.search(r"\d$", str(out[-1].get("text", "")).strip())):
+            prev = dict(out[-1])
+            prev["text"] = str(prev["text"]).strip() + text
+            prev["end"] = w.get("end", prev.get("end"))
+            out[-1] = prev
+        else:
+            out.append(w)
+    return out
+
+
 def sub_cost(a: str, b: str) -> float:
     """Cost of hearing `b` where the script says `a`: 0 if equal, near 0 if spelled alike."""
     if a == b:
@@ -1338,7 +1359,7 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
     for k, src in enumerate(srcs):
         dropped += [f"{w['text']} @{w['start']:.1f}s" + (f" (file {k})" if k else "")
                     for w in src.words if w.get("p", 1.0) < MIN_WORD_P]
-        src.words = [w for w in src.words if w.get("p", 1.0) >= MIN_WORD_P]
+        src.words = merge_digit_groups([w for w in src.words if w.get("p", 1.0) >= MIN_WORD_P])
         flat = [(w, i) for i, word in enumerate(src.words) for w, _ in normalise([word["text"]])]
         heard = [w for w, _ in flat]
         # a transcript word may normalise to 0 or 2+ words; keep each one's source times
@@ -1536,7 +1557,8 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
         padded = work / "verify.input.wav"
         save_audio(padded, np.concatenate([np.zeros(int(0.5 * SR), np.float32), final,
                                            np.zeros(int(1.0 * SR), np.float32)]))
-        heard = transcribe(padded, work / "verify.transcript.json", verify_model, "")
+        heard = merge_digit_groups(transcribe(padded, work / "verify.transcript.json",
+                                              verify_model, ""))
         heard_norm = [w for word in heard for w, _ in normalise([word["text"]])]
         script_flat = [w for s in sentences for w in [x for x, _ in s.norm]]
         rep = take_report(all_tokens, normalise(all_tokens), heard_norm)

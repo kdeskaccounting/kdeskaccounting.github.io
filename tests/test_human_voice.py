@@ -465,3 +465,14 @@ def test_spec_pacing_sets_targets_and_limits_together():
         H.spec_pacing({"human_voice_pacing": {"gap": 0.2}})
     with pytest.raises(SystemExit, match="outside"):
         H.spec_pacing({"human_voice_pacing": {"sentence_gap": 2}})
+
+
+def test_whisper_thousands_split_in_two_words_is_merged_and_meets_the_script():
+    words = [{"text": " More", "start": 0.0, "end": 0.2}, {"text": " 27", "start": 0.6, "end": 1.0},
+             {"text": ",000", "start": 1.2, "end": 2.0}, {"text": " acres.", "start": 2.0, "end": 2.4}]
+    merged = H.merge_digit_groups(words)
+    assert [w["text"].strip() for w in merged] == ["More", "27,000", "acres."]
+    assert (merged[1]["start"], merged[1]["end"]) == (0.6, 2.0)
+    heard = [w for x in merged for w, _ in H.normalise([x["text"]])]
+    assert heard == norm("More than twenty-seven thousand acres.")[:1] + ["27000", "acres"]
+    assert H.merge_digit_groups([{"text": ",000", "start": 0, "end": 1}])[0]["text"] == ",000"
