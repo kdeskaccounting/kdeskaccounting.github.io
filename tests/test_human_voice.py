@@ -334,3 +334,134 @@ def test_a_word_in_pure_silence_is_not_audible():
     assert H.audible((1.5, 1.7), islands)
     assert not H.audible((2.3, 2.5), islands)
     assert not H.audible((1.99, 2.4), islands)
+
+
+# --- tempo (human_voice_tempo) ------------------------------------------------------------
+
+def test_spec_tempo_defaults_to_1_and_rejects_a_typo():
+    assert H.spec_tempo({}) == 1.0 and H.spec_tempo({"human_voice_tempo": None}) == 1.0
+    assert H.spec_tempo({"human_voice_tempo": 1.1}) == 1.1
+    assert H.spec_tempo({"human_voice_tempo": "1.1"}) == 1.1
+    with pytest.raises(SystemExit, match="outside"):
+        H.spec_tempo({"human_voice_tempo": 11})
+    with pytest.raises(SystemExit, match="number"):
+        H.spec_tempo({"human_voice_tempo": "fast"})
+
+
+def test_tempo_filter_is_atempo_and_a_no_op_at_1():
+    assert H.tempo_filter(1.0) is None
+    assert H.tempo_filter(1.1) == "atempo=1.1"
+
+
+def test_make_short_guard_refuses_a_build_made_at_another_tempo(tmp_path):
+    spec, path, wav = write_spec(tmp_path, human_voice_tempo=1.1)
+    audio = tmp_path / "audio"
+    audio.mkdir()
+    marker = {"source_sha1": [H.file_digest(wav)], "script_sha1": H.script_digest(spec)}
+    (audio / H.MARKER).write_text(json.dumps(marker))           # built before tempo existed
+    with pytest.raises(SystemExit, match="tempo"):
+        H.check_audio(spec, path, audio)
+    (audio / H.MARKER).write_text(json.dumps({**marker, "tempo": 1.1}))
+    H.check_audio(spec, path, audio)
+    spec.pop("human_voice_tempo")
+    with pytest.raises(SystemExit, match="tempo"):
+        H.check_audio(spec, path, audio)
+
+
+def _zero_crossing_hz(samples, sr):
+    flips = sum(1 for x, y in zip(samples, samples[1:]) if (x < 0) != (y < 0))
+    return flips / 2 / (len(samples) / sr)
+
+
+def test_tempo_filter_shortens_the_read_without_moving_its_pitch(tmp_path):
+    """The real filter through the real ffmpeg: 1.1x is 1/1.1 the length at the same pitch."""
+    import array
+    import math
+    import os
+    import subprocess
+    if not os.path.exists(H.FFMPEG) and not __import__("shutil").which(H.FFMPEG):
+        pytest.skip("no ffmpeg")
+    sr, seconds, hz = 48000, 2.0, 220.0
+    tone = array.array("f", (0.5 * math.sin(2 * math.pi * hz * k / sr)
+                             for k in range(int(sr * seconds))))
+    src = tmp_path / "tone.f32"
+    src.write_bytes(tone.tobytes())
+    out = subprocess.run([H.FFMPEG, "-v", "error", "-f", "f32le", "-ar", str(sr), "-ac", "1",
+                          "-i", str(src), "-af", H.tempo_filter(1.1), "-f", "f32le", "-"],
+                         capture_output=True, check=True).stdout
+    fast = array.array("f")
+    fast.frombytes(out)
+    assert len(fast) / sr == pytest.approx(seconds / 1.1, abs=0.03)
+    middle = fast[int(0.2 * sr):int(-0.2 * sr)]
+    assert _zero_crossing_hz(middle, sr) == pytest.approx(hz, rel=0.01)   # no chipmunk
+
+
+# --- breaths, shared boundaries, pacing ---------------------------------------------------
+
+LOUD, FLOOR = -20.0, -74.0
+
+
+def frames(*runs):
+    """[(seconds, dB, voiced), ...] -> per-10 ms dB and voicing lists."""
+    db, voiced = [], []
+    for seconds, level, v in runs:
+        n = int(round(seconds / 0.01))
+        db += [level] * n
+        voiced += [v] * n
+    return db, voiced
+
+
+def test_an_unvoiced_inhale_between_words_becomes_a_breath_span():
+    db, voiced = frames((0.5, -20, True), (0.3, -48, False), (0.5, -20, True))
+    spans = H.breath_spans(db, voiced, LOUD, FLOOR)
+    assert spans == [(0.54, 0.76)]          # 0.5-0.8 less the 40 ms guards
+
+
+def test_a_short_fricative_and_a_loud_sibilant_are_not_breaths():
+    db, voiced = frames((0.5, -20, True), (0.08, -45, False), (0.5, -20, True),
+                        (0.25, -26, False), (0.5, -20, True))
+    assert H.breath_spans(db, voiced, LOUD, FLOOR) == []
+
+
+def test_plain_silence_is_left_to_the_gap_trimmer():
+    db, voiced = frames((0.5, -20, True), (0.5, -80, False), (0.5, -20, True))
+    assert H.breath_spans(db, voiced, LOUD, FLOOR) == []
+
+
+def test_outside_words_a_louder_or_voiced_inhale_is_a_breath_inside_a_word_it_is_not():
+    # -38 dB is above the in-word bar (loud - 22) but under the outside bar (loud - 15)
+    db, voiced = frames((0.5, -20, True), (0.4, -38, True), (0.5, -20, True))
+    assert H.breath_spans(db, voiced, LOUD, FLOOR) == []
+    outside = [False] * len(db)
+    assert H.breath_spans(db, voiced, LOUD, FLOOR, in_word=outside) == [(0.54, 0.86)]
+    covered = [True] * len(db)
+    assert H.breath_spans(db, voiced, LOUD, FLOOR, in_word=covered) == []
+
+
+def test_word_mask_covers_each_word_shrunk_at_both_ends():
+    mask = H.word_mask([{"start": 0.10, "end": 0.30}], 40)
+    assert [k for k, m in enumerate(mask) if m] == list(range(14, 27))
+
+
+def test_back_to_back_takes_split_at_one_quiet_point():
+    db = [-20.0] * 100
+    db[57] = -70.0                           # the gap between the two words
+    point = H.shared_boundary(db, 0.50, 0.62)
+    assert point == 0.57
+    assert H.shared_boundary(db, 0.62, 0.50) == point      # order does not matter
+    # a straddling island split at that point lands in exactly one take
+    islands = [(0.2, 0.9)]
+    first = H.take_runs(islands, 0.0, point, 0.2, 0.50, cut_before=True, cut_after=False)
+    second = H.take_runs(islands, point, 2.0, 0.62, 0.9, cut_before=False, cut_after=True)
+    assert first[-1][1] == second[0][0] == point
+
+
+def test_spec_pacing_sets_targets_and_limits_together():
+    p = H.spec_pacing({"human_voice_pacing": {"sentence_gap": 0.2, "pause": 0.15}})
+    assert (p.sentence_target, p.scene_gap, p.sentence_limit) == (0.2, 0.2, 0.25)
+    assert (p.pause_target, p.pause_limit) == (0.15, 0.30)
+    assert H.spec_pacing({}) == H.Pacing()
+    with pytest.raises(SystemExit, match="unknown"):
+        H.spec_pacing({"human_voice_pacing": {"gap": 0.2}})
+    with pytest.raises(SystemExit, match="outside"):
+        H.spec_pacing({"human_voice_pacing": {"sentence_gap": 2}})

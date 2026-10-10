@@ -24,6 +24,14 @@ a flub is fixed by pausing and re-reading the whole sentence) goes through:
                   noise-sampled on the leading room tone, if that env cannot be built
   2. polish       high-pass 80 Hz, -2 dB at 250 Hz, +2.5 dB presence at 4 kHz, de-ess,
                   3:1 compression (ffmpeg, the chain in POLISH)
+  2b. tempo       optional, `human_voice_tempo: 1.1` in the spec: a pitch-preserving speed-up
+                  (ffmpeg atempo, WSOLA) of the cleaned read, BEFORE anything is transcribed
+                  or cut, so the takes, word timings, gaps and scene lengths all follow the
+                  faster read. 1.0 (the default) leaves the audio untouched.
+  2c. breaths     quiet, unvoiced stretches (an inhale before a sentence, a gasp) are
+                  replaced with the file's own room tone AFTER transcription, so the gap
+                  trimmer sees them as the silences they are (BREATH_* below); `--keep-breaths`
+                  turns this off
   3. transcribe   faster-whisper with word timestamps (another ephemeral `uv` env), one
                   pause-separated phrase at a time so a re-read cannot be merged into its
                   flub; words Whisper itself scores under MIN_WORD_P are dropped
@@ -104,6 +112,86 @@ HOUSE_LUFS = -16.5
 #: from clipping a plosive on the way there.
 PEAK_LIMIT = 0.79
 
+#: `human_voice_tempo:` bounds. atempo itself takes 0.5-100, but a read sped up past ~1.3x stops
+#: sounding like a person, and one slowed down below ~0.8x smears; outside these it is a typo.
+TEMPO_MIN, TEMPO_MAX = 0.75, 1.5
+
+
+def spec_tempo(spec) -> float:
+    """`human_voice_tempo:` -> a float in [TEMPO_MIN, TEMPO_MAX]; 1.0 when it is not set."""
+    raw = (spec or {}).get("human_voice_tempo")
+    if raw in (None, ""):
+        return 1.0
+    try:
+        tempo = float(raw)
+    except (TypeError, ValueError):
+        raise SystemExit(f"human_voice_tempo must be a number, got {raw!r}")
+    if not (TEMPO_MIN <= tempo <= TEMPO_MAX):
+        raise SystemExit(f"human_voice_tempo {tempo:g} is outside {TEMPO_MIN:g}-{TEMPO_MAX:g} "
+                         f"(1.1 = 10% faster, pitch unchanged)")
+    return tempo
+
+
+def tempo_filter(tempo: float) -> str | None:
+    """The ffmpeg filter for a pitch-preserving tempo change, or None for 1.0 (no-op)."""
+    if abs(tempo - 1.0) < 1e-6:
+        return None
+    return f"atempo={tempo:.6g}"
+
+
+#: Breaths. An inhale sits 25-35 dB under the voice, above the VAD threshold (loud - 35 dB), so
+#: without this it is "speech" and no gap around it is ever trimmed (measured on Stephen's
+#: W42 lions-rock read: one 7.3 s island across four sentences, 2.4 s of inhales in it).
+#: A breath is a run of frames more than BREATH_DB under the loud speech level AND unvoiced
+#: (no pitch), at least BREATH_MIN_S long; BREATH_GUARD_S at each end is left alone so a
+#: soft onset or a decaying word tail is never clipped. Weak fricatives (f, th) are shorter
+#: than the minimum; sibilants are louder than the ceiling.
+BREATH_DB = 22.0
+#: Outside every transcript word the bar is lower: an inhale between sentences measured
+#: loud - 17 dB on the W42 reads (louder than the in-word bar, voiced or not), and no word
+#: is there to protect. Sibilant onsets ("So") sit at loud - 3..6 dB, far above it.
+BREATH_DB_OUTSIDE = 15.0
+BREATH_MIN_S = 0.15
+BREATH_GUARD_S = 0.04
+BREATH_VOICED = 0.45      # normalised autocorrelation peak (70-350 Hz) that counts as voiced
+
+
+def breath_spans(db, voiced, loud: float, floor: float, hop: float = 0.01,
+                 below: float = BREATH_DB, min_len: float = BREATH_MIN_S,
+                 guard: float = BREATH_GUARD_S, in_word=None,
+                 below_outside: float = BREATH_DB_OUTSIDE) -> list[tuple[float, float]]:
+    """Per-frame dB and voicing -> the (start, end) seconds to replace with room tone.
+
+    A frame is breath-like if it is unvoiced and under `loud - below`, or (when `in_word`
+    says no transcript word covers it) under `loud - below_outside`, voiced or not. A run
+    of breath-like frames (silence frames included, so a breath with a gap in it is one
+    run) counts if it is at least `min_len` long and some of it is above `floor` (else it
+    is plain silence already). `guard` at each end is left alone.
+    """
+    ceiling, outside = loud - below, loud - below_outside
+
+    def breathy(k):
+        if in_word is not None and not in_word[k] and db[k] < outside:
+            return True
+        return db[k] < ceiling and not voiced[k]
+
+    out, k, n = [], 0, len(db)
+    while k < n:
+        if breathy(k):
+            j = k
+            while j < n and breathy(j):
+                j += 1
+            a, b = k * hop, j * hop
+            if b - a >= min_len and any(db[x] > floor for x in range(k, j)):
+                a2, b2 = a + guard, b - guard
+                if b2 - a2 > 0.02:
+                    out.append((round(a2, 3), round(b2, 3)))
+            k = j
+        else:
+            k += 1
+    return out
+
+
 #: ffmpeg polish chain, applied to the denoised file before anything is cut. Gentle on
 #: purpose: a Yeti in a closet is already close and dry; this is clean-up, not a sound.
 POLISH = ",".join([
@@ -125,6 +213,34 @@ class Pacing:
     scene_gap: float = 0.30         # silence heard at a scene join: tail + pad + lead-in
     last_tail: float = 0.30         # after the final word of the Short
     edge_fade: float = 0.004        # fade at every piece edge, against clicks
+
+
+def spec_pacing(spec, base: Pacing = Pacing()) -> Pacing:
+    """`human_voice_pacing: {sentence_gap: s, pause: s}` -> a Pacing.
+
+    sentence_gap is the silence between sentences AND at a scene join (tail + pad + lead-in);
+    any longer gap in the read becomes it. pause is the same for a pause inside a sentence
+    (a pause up to pause + 0.15 s is kept as read). Unset keys keep the defaults.
+    """
+    cfg = (spec or {}).get("human_voice_pacing") or {}
+    unknown = set(cfg) - {"sentence_gap", "pause"}
+    if unknown:
+        raise SystemExit(f"human_voice_pacing: unknown key(s) {sorted(unknown)} "
+                         f"(sentence_gap, pause)")
+    out = base
+    if cfg.get("sentence_gap") is not None:
+        gap = float(cfg["sentence_gap"])
+        if not 0.1 <= gap <= 0.6:
+            raise SystemExit(f"human_voice_pacing.sentence_gap {gap:g} is outside 0.1-0.6 s")
+        out = dataclasses.replace(out, sentence_target=gap, scene_gap=gap,
+                                  sentence_limit=min(out.sentence_limit, gap + 0.05))
+    if cfg.get("pause") is not None:
+        pause = float(cfg["pause"])
+        if not 0.05 <= pause <= 0.6:
+            raise SystemExit(f"human_voice_pacing.pause {pause:g} is outside 0.05-0.6 s")
+        out = dataclasses.replace(out, pause_target=pause,
+                                  pause_limit=min(out.pause_limit, pause + 0.15))
+    return out
 
 
 # =============================================================================== the switch
@@ -205,6 +321,10 @@ def check_audio(spec: dict, spec_path, audio_dir) -> None:
     if stored.get("source_sha1") != want:
         raise SystemExit(f"the human narration in {audio_dir} was built from a different "
                          f"recording than `human_voice:` names now. Rebuild it:\n  {command}")
+    if abs(float(stored.get("tempo", 1.0)) - spec_tempo(spec)) > 1e-6:
+        raise SystemExit(f"the human narration in {audio_dir} was built at tempo "
+                         f"{float(stored.get('tempo', 1.0)):g}, but the spec now says "
+                         f"human_voice_tempo {spec_tempo(spec):g}. Rebuild it:\n  {command}")
     if stored.get("script_sha1") != script_digest(spec):
         raise SystemExit(f"the narration text changed after the human narration was built; "
                          f"the captions would not match the voice. Rebuild it (and re-record "
@@ -636,6 +756,24 @@ def take_runs(islands: list[tuple[float, float]], lo: float, hi: float, w0: floa
     return runs
 
 
+def shared_boundary(db, prev_end: float, next_start: float, hop: float = 0.01) -> float:
+    """Where two kept, back-to-back takes split: the quietest frame between the end of the
+    one's last word and the start of the other's first word (per-hop dB in `db`).
+
+    Both takes use this ONE point, the earlier as its window's end and the later as its
+    start, so audio between the words lands in exactly one of them. (With the earlier
+    take ending at the next word's start and the later starting at the previous word's
+    end, an island across both was split twice and its middle played twice.)
+    """
+    a, b = sorted((prev_end, next_start))
+    lo_k, hi_k = int(math.floor(a / hop)), int(math.ceil(b / hop))
+    lo_k, hi_k = max(lo_k, 0), min(hi_k, len(db) - 1)
+    if hi_k <= lo_k:
+        return round((a + b) / 2, 3)
+    k = min(range(lo_k, hi_k + 1), key=lambda x: (db[x], abs(x * hop - (a + b) / 2)))
+    return round(k * hop, 3)
+
+
 def audible(span: tuple[float, float], islands: list[tuple[float, float]],
             need: float = 0.03) -> bool:
     """Does a transcript word's span overlap detected speech by at least `need` seconds?"""
@@ -812,6 +950,67 @@ def vad_islands(audio, sr: int = SR, hop: float = 0.01, floor_db: float | None =
         else:
             merged.append([a, b])
     return [(round(a, 3), round(b, 3)) for a, b in merged if b - a >= min_len], thresh
+
+
+def voicing(audio, sr: int = SR, win: float = 0.03, hop: float = 0.01):
+    """Per hop: is the frame voiced (a pitch between 70 and 350 Hz)? FFT autocorrelation."""
+    import numpy as np
+    w, h = int(win * sr), int(hop * sr)
+    if len(audio) < w:
+        return np.zeros(1, bool)
+    n = 1 + (len(audio) - w) // h
+    idx = np.arange(w)[None, :] + h * np.arange(n)[:, None]
+    frames = audio[idx] * np.hanning(w)[None, :]
+    spec = np.fft.rfft(frames, n=2 * w, axis=1)
+    ac = np.fft.irfft(np.abs(spec) ** 2, axis=1)[:, :w]
+    lo, hi = int(sr / 350), int(sr / 70)
+    peak = ac[:, lo:hi].max(axis=1) / np.maximum(ac[:, 0], 1e-12)
+    return (peak > BREATH_VOICED) & (ac[:, 0] > 0)
+
+
+def word_mask(words: list[dict], n: int, hop: float = 0.01, shrink: float = 0.04):
+    """Per hop: does a transcript word cover this frame (its span shrunk by `shrink`)?"""
+    mask = [False] * n
+    for w in words:
+        a = int(math.ceil(round((float(w["start"]) + shrink) / hop, 6)))
+        b = int(math.floor(round((float(w["end"]) - shrink) / hop, 6)))
+        for k in range(max(a, 0), min(b + 1, n)):
+            mask[k] = True
+    return mask
+
+
+def remove_breaths(audio, room, floor_db: float | None, words: list[dict] | None = None,
+                   sr: int = SR):
+    """Replace every breath (`breath_spans`) with room tone. Returns (audio, spans).
+
+    With `words` (the transcript), a stretch no word covers is held to the lower bar
+    (BREATH_DB_OUTSIDE), voiced or not: an inhale through a half-closed throat has a pitch,
+    and it is still a gasp.
+    """
+    import numpy as np
+    hop = 0.01
+    db = frame_db(audio, sr, win=0.03, hop=hop)
+    voiced = voicing(audio, sr, win=0.03, hop=hop)
+    n = min(len(db), len(voiced))
+    in_word = word_mask(words, n, hop) if words is not None else None
+    loud = float(np.percentile(db, 95))
+    floor = float(np.percentile(db, 10)) if floor_db is None else floor_db
+    # a 50 ms median on both: one noisy frame must not split a breath into two short runs
+    db_s = np.array([np.median(db[max(0, k - 2):k + 3]) for k in range(n)])
+    voiced_s = np.array([voiced[max(0, k - 2):k + 3].sum() >= 3 for k in range(n)])
+    spans = breath_spans(db_s, voiced_s, loud, floor + 6.0, hop, in_word=in_word)
+    out = audio.copy()
+    tone = room if len(room) else np.zeros(1, np.float32)
+    fade = int(0.01 * sr)
+    for a, b in spans:
+        i, j = int(a * sr), int(b * sr)
+        fill = np.resize(tone, j - i).astype(np.float32)
+        if j - i > 2 * fade:
+            ramp = np.linspace(0.0, 1.0, fade, dtype=np.float32)
+            fill[:fade] = out[i:i + fade] * ramp[::-1] + fill[:fade] * ramp
+            fill[-fade:] = out[j - fade:j] * ramp + fill[-fade:] * ramp[::-1]
+        out[i:j] = fill
+    return out, spans
 
 
 def render_pieces(pieces: list[Piece], sources: list, room: list, fade: float,
@@ -998,6 +1197,8 @@ class Source:
     floor_raw_db: float | None = None
     floor_clean_db: float | None = None
     denoiser: str = ""
+    breaths: list = dataclasses.field(default_factory=list)
+    frames_db: object = None      # per-10 ms level of `audio`, after the breath stage
 
 
 def room_tone_span(audio, sr: int = SR) -> tuple[float, float]:
@@ -1026,7 +1227,8 @@ def room_floor(audio, span: tuple[float, float]) -> float | None:
 
 
 def prepare_source(path, work: pathlib.Path, k: int, mode: str, atten_db: float,
-                   model: str, hotwords: str) -> Source:
+                   model: str, hotwords: str, tempo: float = 1.0,
+                   breaths: bool = True) -> Source:
     import numpy as np
     src = Source(path=pathlib.Path(path))
     raw = load_audio(path)
@@ -1045,6 +1247,13 @@ def prepare_source(path, work: pathlib.Path, k: int, mode: str, atten_db: float,
     # output, so re-running after a spec or pacing tweak takes seconds, not minutes.
     key = {"raw_sha1": file_digest(path), "denoise": mode, "atten_db": atten_db,
            "polish": POLISH, "model": model, "hotwords": hotwords, "chunked": 1}
+    speed = tempo_filter(tempo)
+    if speed:
+        # the tempo change runs before transcription, so it is part of what the cache keys on
+        key["tempo"] = speed
+    raw_room = (a, b)
+    # the leading room tone, on the (possibly sped-up) clock everything below runs on
+    a, b = a / tempo, b / tempo
     key_file = work / f"src{k}.cache.json"
     try:
         cached = json.loads(key_file.read_text())
@@ -1056,8 +1265,9 @@ def prepare_source(path, work: pathlib.Path, k: int, mode: str, atten_db: float,
     else:
         key_file.unlink(missing_ok=True)
         save_audio(raw48, raw, subtype="FLOAT")
-        src.denoiser = denoise(raw48, clean, (a, b), mode, atten_db)
-        run([FFMPEG, "-y", "-v", "error", "-i", str(clean), "-af", POLISH, "-ar", str(SR),
+        src.denoiser = denoise(raw48, clean, raw_room, mode, atten_db)
+        run([FFMPEG, "-y", "-v", "error", "-i", str(clean), "-af",
+             POLISH + (f",{speed}" if speed else ""), "-ar", str(SR),
              "-ac", "1", "-c:a", "pcm_f32le", str(polished)])
         audio = load_audio(polished)
         floor = room_floor(audio, (a, b))
@@ -1069,7 +1279,13 @@ def prepare_source(path, work: pathlib.Path, k: int, mode: str, atten_db: float,
     src.room_span = (a, b)
     src.room = src.audio[int(a * SR):int(b * SR)].copy()
     src.floor_clean_db = room_floor(src.audio, (a, b))
+    if breaths:
+        # after transcription (the cached transcript stays valid), before anything is cut
+        src.audio, src.breaths = remove_breaths(src.audio, src.room, src.floor_clean_db,
+                                                [w for w in src.words
+                                                 if w.get("p", 1.0) >= MIN_WORD_P])
     src.islands, _ = vad_islands(src.audio, floor_db=src.floor_clean_db)
+    src.frames_db = frame_db(src.audio, SR, win=0.03, hop=0.01)
     return src
 
 
@@ -1095,7 +1311,8 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
           model: str = DEFAULT_MODEL, denoise_mode: str = "auto",
           atten_db: float = DEFAULT_ATTEN_LIM_DB, pacing: Pacing = Pacing(),
           target_lufs: float = HOUSE_LUFS, allow_missing: bool = False,
-          verify: bool = True, verify_model: str = VERIFY_MODEL) -> dict:
+          verify: bool = True, verify_model: str = VERIFY_MODEL,
+          tempo: float = 1.0, breaths: bool = True) -> dict:
     """The whole pipeline. Returns the report (also written as audio/human_report.json)."""
     import numpy as np
     out_dir = pathlib.Path(out_dir)
@@ -1110,7 +1327,7 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
     script_norm = [[w for w, _ in s.norm] for s in sentences]
 
     # 1-3: every file is denoised, polished and transcribed on its own
-    srcs = [prepare_source(p, work, k, denoise_mode, atten_db, model, hot)
+    srcs = [prepare_source(p, work, k, denoise_mode, atten_db, model, hot, tempo, breaths)
             for k, p in enumerate(sources)]
 
     # 4: align. The main file reads the whole script; a patch may hold any of it.
@@ -1198,6 +1415,11 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
                                  and chosen[i - 1][1].end == take.start)
             next_adjacent = bool(i + 1 < len(chosen) and chosen[i + 1]
                                  and chosen[i + 1][0] == k and chosen[i + 1][1].start == take.end)
+            # a kept neighbour read straight on: both takes split at the same point
+            if prev_adjacent:
+                lo = shared_boundary(src.frames_db, times[take.start - 1][1], times[take.start][0])
+            if next_adjacent:
+                hi = shared_boundary(src.frames_db, times[take.end - 1][1], times[take.end][0])
             follows = prev_adjacent and (i - 1) in by_scene[idx]
             runs = take_runs(src.islands, lo, hi, w0, w1, cut_before=not prev_adjacent,
                              cut_after=not next_adjacent) or [(w0, w1)]
@@ -1295,12 +1517,17 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
                      "room_tone_s": round(s.room_span[1] - s.room_span[0], 2),
                      "noise_floor_raw_dbfs": s.floor_raw_db,
                      "noise_floor_clean_dbfs": s.floor_clean_db,
-                     "level_match_db": round(file_gain[k], 2)} for k, s in enumerate(srcs)],
+                     "level_match_db": round(file_gain[k], 2),
+                     "breaths_removed": len(s.breaths),
+                     "breath_s": round(sum(b - a for a, b in s.breaths), 2)}
+                    for k, s in enumerate(srcs)],
         "sentences": report_sentences, "cut_words": junk_cut, "ignored_words": dropped,
         "durations": {str(k): round(v, 3) for k, v in durations.items()},
         "narration_s": round(runtime, 2), "script_words": script_words,
         "words_per_s": round(script_words / runtime, 2) if runtime else None,
-        "gain_db": round(gain_db, 2), "loudness": loud, "target_lufs": target_lufs,
+        "tempo": tempo, "pacing": dataclasses.asdict(pacing),
+        "gain_db": round(gain_db, 2), "loudness": loud,
+        "target_lufs": target_lufs,
         "word_gaps_max_s": max(gaps) if gaps else None,
         "problems": problems,
     }
@@ -1320,7 +1547,7 @@ def build(spec: dict, spec_path, out_dir: pathlib.Path, *, sources: list[pathlib
     sources_sha = [file_digest(p) for p in sources]
     (out_dir / MARKER).write_text(json.dumps({
         "sources": [str(p) for p in sources], "source_sha1": sources_sha,
-        "script_sha1": script_digest(spec), "built": report["built"]}, indent=1))
+        "script_sha1": script_digest(spec), "tempo": tempo, "built": report["built"]}, indent=1))
     (out_dir / "human_report.json").write_text(json.dumps(report, indent=1, default=str))
     return report
 
@@ -1349,10 +1576,14 @@ def print_report(report: dict) -> None:
     for s in report["sources"]:
         print(f"source {s['path']}\n  denoise: {s['denoiser']}; room tone {s['room_tone_s']}s; "
               f"noise floor {s['noise_floor_raw_dbfs']} -> {s['noise_floor_clean_dbfs']} dBFS"
-              + (f"; level matched {s['level_match_db']:+.1f} dB" if s["level_match_db"] else ""))
+              + (f"; level matched {s['level_match_db']:+.1f} dB" if s["level_match_db"] else "")
+              + (f"; {s['breaths_removed']} breaths ({s['breath_s']}s) to room tone"
+                 if s.get("breaths_removed") else ""))
     _print_alignment(report["sentences"], report["cut_words"])
     loud = report["loudness"]
-    print(f"narration {report['narration_s']}s, {report['script_words']} words, "
+    print(f"narration {report['narration_s']}s"
+          + (f" (tempo {report['tempo']:g}x)" if report.get("tempo", 1.0) != 1.0 else "")
+          + f", {report['script_words']} words, "
           f"{report['words_per_s']} w/s (gate S10 wants >= 3.0 on the finished Short); "
           f"gain {report['gain_db']:+.1f} dB -> {loud['integrated_lufs']} LUFS "
           f"(house {report['target_lufs']}), TP {loud['true_peak_dbfs']}, "
@@ -1389,7 +1620,13 @@ def main(argv: list | None = None) -> int:
     ap.add_argument("--atten-db", type=float, default=DEFAULT_ATTEN_LIM_DB,
                     help="DeepFilterNet attenuation limit, dB (0 = unlimited)")
     ap.add_argument("--target-lufs", type=float, default=HOUSE_LUFS)
-    ap.add_argument("--sentence-gap", type=float, default=Pacing.sentence_target)
+    ap.add_argument("--sentence-gap", type=float, default=None,
+                    help="override human_voice_pacing.sentence_gap")
+    ap.add_argument("--tempo", type=float, default=None,
+                    help="override `human_voice_tempo:` (pitch-preserving speed, e.g. 1.1); "
+                         "make_short.py refuses the build unless the spec says the same")
+    ap.add_argument("--keep-breaths", action="store_true",
+                    help="leave inhales in (default: replace them with room tone)")
     ap.add_argument("--allow-missing", action="store_true",
                     help="build even if a sentence was never read in full")
     ap.add_argument("--no-verify", action="store_true",
@@ -1407,12 +1644,15 @@ def main(argv: list | None = None) -> int:
         if not path.is_file():
             raise SystemExit(f"no such recording: {path}")
     out = (pathlib.Path(a.out) if a.out else HERE / "build" / spec["slug"] / "audio")
-    pacing = dataclasses.replace(Pacing(), sentence_target=a.sentence_gap,
-                                 scene_gap=a.sentence_gap)
+    tempo = spec_tempo(spec if a.tempo is None else {"human_voice_tempo": a.tempo})
+    pacing = spec_pacing(spec)
+    if a.sentence_gap is not None:
+        pacing = spec_pacing({"human_voice_pacing": {"sentence_gap": a.sentence_gap}}, pacing)
     report = build(spec, spec_path, out, sources=sources, model=a.model,
                    denoise_mode=a.denoise, atten_db=a.atten_db, pacing=pacing,
                    target_lufs=a.target_lufs, allow_missing=a.allow_missing,
-                   verify=not a.no_verify, verify_model=a.verify_model)
+                   verify=not a.no_verify, verify_model=a.verify_model, tempo=tempo,
+                   breaths=not a.keep_breaths)
     print_report(report)
     print(f"wrote {out} (report: {out / 'human_report.json'}; listen: "
           f"{out.parent / 'human_work' / 'narration.wav'})")
