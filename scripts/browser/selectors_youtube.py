@@ -94,6 +94,18 @@ LOGIN_MARKER = "/signin"
 CHANNEL_NAME_TEXT = "#entity-name"       # verified 2026-09-25: matched 1, text "ParkSheet"
 AVATAR_BUTTON = "#avatar-btn"            # verified 2026-09-25: matched 1, aria-label "Account"
 SWITCH_ACCOUNT_TEXT = "Switch account"   # verified 2026-09-29: avatar menu item; the list then names each channel
+#: The Google account whose channels a driver may switch between (scripts/browser/studio_channel.py).
+ACCOUNT_EMAIL = "santiagokdesk@gmail.com"
+# The Switch account panel, verified 2026-10-10 with Studio on Court of Inquiry: one section per
+# Google account; the ACTIVE account's section carries the google-account header with its email,
+# the others ("Other accounts") an item-section header with theirs; one item per channel.
+SWITCH_SECTION = "ytd-account-section-list-renderer"                    # verified 2026-10-10: 2 sections
+ACTIVE_ACCOUNT_EMAIL = "ytd-google-account-header-renderer #email"      # verified 2026-10-10: santiagokdesk@gmail.com
+OTHER_ACCOUNT_HEADER = "ytd-account-item-section-header-renderer"       # verified 2026-10-10: smichels1@gmail.com
+SWITCH_CHANNEL_ITEM = "ytd-account-item-renderer"                       # verified 2026-10-10: 6 channels
+SWITCH_CHANNEL_TITLE = "ytd-account-item-renderer #channel-title"       # verified 2026-10-10: "ParkSheet", "Court of Inquiry", ...
+#: Where a cross-account switch lands (a sign-in / passkey prompt). Never typed into.
+SIGN_IN_HOST = "accounts.google.com"
 #: What to wait for before reading the channel name, so the probe does not race the render.
 STUDIO_PAGE_READY = CHANNEL_NAME_TEXT    # verified 2026-09-25
 

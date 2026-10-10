@@ -1619,26 +1619,34 @@ def test_the_settle_budget_is_bounded_and_generous():
 
 def test_a_sibling_channel_of_the_same_account_is_switched_not_refused(monkeypatch):
     pub = yw.YouTubeWebPublisher()
-    names = iter(["KDeskAccounting", S.CHANNEL_NAME])
     page = _Page(url=S.channel_url())
     page.texts[S.CHANNEL_NAME_TEXT] = "KDeskAccounting"
     switched = []
-    def fake_switch(pg):
-        switched.append(True); page.texts[S.CHANNEL_NAME_TEXT] = S.CHANNEL_NAME
+    def fake_switch(pg, current):
+        switched.append(current); page.texts[S.CHANNEL_NAME_TEXT] = S.CHANNEL_NAME
     monkeypatch.setattr(pub, "switch_channel", fake_switch)
     monkeypatch.setattr(pub, "goto", lambda pg, url: None)
     assert pub.assert_channel(page) is not None
-    assert switched == [True]
+    assert switched == ["KDeskAccounting"]
+    assert pub._restore_channel == "KDeskAccounting"
 
 
 def test_a_foreign_google_account_is_still_refused(monkeypatch):
+    """The account check lives in studio_channel.plan_switch (tests/test_youtube_channel_switch.py);
+    here: the menu says the active account is smichels1, so nothing is clicked."""
+    from browser import studio_channel as sc
     pub = yw.YouTubeWebPublisher()
     page = _Page(url=S.channel_url())
     page.texts[S.CHANNEL_NAME_TEXT] = "Stephen is Acting"
-    monkeypatch.setattr(pub, "switch_channel", lambda pg: pytest.fail("must not switch"))
+    monkeypatch.setattr(sc, "read_accounts", lambda pg: [
+        {"active": True, "email": "smichels1@gmail.com",
+         "channels": ["Stephen is Acting", "booshigotyou"]},
+        {"active": False, "email": "santiagokdesk@gmail.com", "channels": ["ParkSheet"]}])
+    monkeypatch.setattr(sc, "click_channel", lambda pg, name: pytest.fail("must not switch"))
     monkeypatch.setattr(pub, "goto", lambda pg, url: None)
     with pytest.raises(yw.WrongChannel):
         pub.assert_channel(page)
+    assert pub._restore_channel is None
 
 
 # ----------------------------------------- 2026-10-04: publishing while YouTube's checks run
