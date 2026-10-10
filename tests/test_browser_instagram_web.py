@@ -75,3 +75,63 @@ def test_unconfirmed_after_shared_toast_says_probably_live_and_no_retry():
     assert "has been shared" in why and "PROBABLY LIVE" in why
     assert "Do NOT re-run with --go" in why
     assert "instagram.com/park.sheet/" in why
+
+
+# --- Trial Reels (--trial). instagram.com has no trial option (2026-10-09), so --trial only checks and aborts.
+
+# The New reel dialog text as read on 2026-10-09, with Accessibility and Advanced settings expanded.
+NEW_REEL_2026_10_09 = """New reel
+Share
+Tag people
+park.sheet
+Add a caption...
+0/2,200
+Add AI label
+This label is required for realistic photos and videos made with AI. People will see it on your content. Learn more
+Accessibility
+Auto-generated captions
+Auto-generated captions added to your video help people with hearing impairments. They are only available on the iOS and Android apps and may take a few minutes to appear.
+Advanced settings
+Hide like and view counts on this post
+Only you will see the total number of likes and views on this post. You can change this later by going to the ··· menu at the top of the post. To hide like counts on other people's posts, go to your account settings. Learn more
+Turn off commenting
+You can change this later by going to the ··· menu at the top of your post.
+Your reel will be shared with your followers in their feeds and can be seen on your profile. It may also appear in places like Reels, where anyone can see it."""
+
+
+def test_web_new_reel_screen_has_no_trial_control():
+    assert ig.trial_control_label(NEW_REEL_2026_10_09) is None
+
+
+@pytest.mark.parametrize("text, want", [
+    ("New reel\nTrial\nShare", "Trial"),
+    ("Advanced settings\n  Share as trial reel  \nTurn off commenting", "Share as trial reel"),
+    ("TRIAL REELS\nOnly shown to non-followers", "TRIAL REELS"),
+])
+def test_trial_control_label_finds_a_trial_line(text, want):
+    assert ig.trial_control_label(text) == want
+
+
+@pytest.mark.parametrize("text", [None, "", "Industrial Light", "Free trials\n", "Trials and tribulations"])
+def test_trial_control_label_needs_the_word_trial(text):
+    assert ig.trial_control_label(text) is None
+
+
+def test_trial_messages_say_nothing_was_shared_and_point_to_the_app():
+    for msg in (ig.TRIAL_MISSING, ig.trial_found_message("Trial")):
+        assert "Nothing was shared" in msg and "discarded" in msg and "app" in msg
+
+
+def test_trial_check_never_shares_or_types_a_caption():
+    # --trial must never fall back to a normal post: its code path has no Share click and no caption typing
+    import inspect
+    for fn in (ig.run_trial_check, ig.open_new_reel, ig.discard):
+        src = inspect.getsource(fn)
+        assert '"Share"' not in src and "'Share'" not in src
+        assert "keyboard.type" not in src
+
+
+def test_trial_is_routed_before_the_profile_read_and_share():
+    import inspect
+    src = inspect.getsource(ig.main)
+    assert src.index("if args.trial") < src.index("HANDLE}/") < src.index('"Share"')

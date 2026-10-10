@@ -23,8 +23,18 @@ tile being new and its alt text matching the title/caption. The tile count is on
 when neither the header count nor the newest tile can be read. If Instagram said "shared" but
 nothing confirms it, the exit message says the reel is probably live and must be checked by hand.
 
+Trial Reels (--trial, checked 2026-10-09): instagram.com's uploader has NO trial option. The
+"New reel" screen offers caption, location, collaborators, Add AI label, Accessibility (auto
+captions) and Advanced settings (hide counts, turn off commenting), and nothing else. The Trial
+toggle exists only in the mobile app's composer and in Meta's publishing API (trial_params, used by
+API publishers; not wired up here). So --trial is a guard and a re-check: it walks to the
+"New reel" screen, looks for a trial control, then ALWAYS discards. It never types a caption, never
+clicks Share, and never falls back to a normal post, even with --go. Exit 4 = no trial option on web
+(the expected result; post the trial from the app, see the ParkSheet runbook). Exit 5 = a trial control
+has appeared on web. Posting through it is not built or verified yet, so it still aborts.
+
 Exit codes: 0 posted (or already posted / dry run), 1 not signed in, 2 not confirmed -- check
-the profile by hand and do NOT re-run with --go.
+the profile by hand and do NOT re-run with --go; 4/5 --trial aborted before Share (see above).
 """
 from __future__ import annotations
 
@@ -88,6 +98,32 @@ def verify(*, before_count: int | None, after_count: int | None,
                    "and check by hand. Do NOT re-run with --go (it would risk a duplicate).")
 
 
+_TRIAL = re.compile(r"\btrial\b", re.IGNORECASE)
+
+
+def trial_control_label(dialog_text: str | None) -> str | None:
+    """The line of the "New reel" dialog that offers a trial ("Trial", "Share as trial reel"...).
+
+    None when no line mentions a trial, which is the case on instagram.com as of 2026-10-09.
+    """
+    for line in (dialog_text or "").splitlines():
+        if _TRIAL.search(line):
+            return line.strip()
+    return None
+
+
+TRIAL_MISSING = (
+    "--trial: instagram.com has no Trial Reel option on the New reel screen (checked again just now). "
+    "Nothing was shared; the draft was discarded. Post the trial from the Instagram app "
+    "(ParkSheet runbook, 'Daily Trial Reel').")
+
+
+def trial_found_message(label: str) -> str:
+    return (f"--trial: instagram.com now shows a trial control ({label!r}), but posting through it is "
+            "not built or verified yet. Nothing was shared; the draft was discarded. Post the trial "
+            "from the app today, and have the --trial share path built against this screen.")
+
+
 def read_post_count(page) -> int | None:
     """The header's "N posts" figure, else the og/meta description's "N Posts"."""
     try:
@@ -134,11 +170,70 @@ def dismiss_overlays(page) -> None:
             page.keyboard.press("Escape"); page.wait_for_timeout(1000)
 
 
+def open_new_reel(page, asset: pathlib.Path, tag: str) -> None:
+    """From the home feed: Create -> Post -> load the file -> Next (crop) -> Next (edit) = "New reel"."""
+    dismiss_overlays(page)  # e.g. "Turn on Notifications" -> Not Now
+    page.locator("svg[aria-label='New post'], svg[aria-label='Create']").first.click()
+    page.wait_for_timeout(1500)
+    page.get_by_text("Post", exact=True).first.click()
+    page.wait_for_timeout(2500)
+    dlg = page.locator("[role=dialog]").last
+    dlg.locator("input[type=file]").first.set_input_files(str(asset))
+    page.wait_for_timeout(6000)
+    page.screenshot(path=str(SHOTS / f"{tag}-1-loaded.png"))
+    for step in ("crop", "edit"):
+        ok = page.get_by_role("button", name="OK", exact=True)
+        if ok.count():  # "Video posts are now shared as reels" notice
+            ok.first.click(); page.wait_for_timeout(1000)
+        nxt = page.locator("[role=dialog]").last.get_by_role("button", name="Next", exact=True).first
+        nxt.wait_for(state="visible", timeout=60_000)
+        nxt.click(); page.wait_for_timeout(3000)
+        page.screenshot(path=str(SHOTS / f"{tag}-2-{step}.png"))
+
+
+def discard(page) -> bool:
+    """Close the create dialog without sharing; True once no dialog is left."""
+    for _ in range(3):
+        if not page.locator("[role=dialog]").count():
+            return True
+        page.keyboard.press("Escape"); page.wait_for_timeout(1000)
+        d = page.get_by_role("button", name="Discard", exact=True)
+        if d.count():
+            d.first.click(); page.wait_for_timeout(1200)
+    return not page.locator("[role=dialog]").count()
+
+
+def run_trial_check(page, asset: pathlib.Path, tag: str) -> int:
+    """--trial: never shares. Walks to the New reel screen, looks for a trial control, discards."""
+    page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
+    page.wait_for_timeout(5000)
+    if "/accounts/login" in page.url:
+        print("not signed in to Instagram in the debug Chrome"); return 1
+    try:
+        open_new_reel(page, asset, tag)
+        dlg = page.locator("[role=dialog]").last
+        for label in ("Advanced settings", "Accessibility"):  # collapsed sections; disclosure only
+            el = dlg.get_by_text(label, exact=True)
+            if el.count():
+                el.first.click(); page.wait_for_timeout(1000)
+        text = dlg.inner_text()
+        page.screenshot(path=str(SHOTS / f"{tag}-trial-check.png"))
+    finally:
+        gone = discard(page)
+        print("draft discarded:", gone)
+    label = trial_control_label(text)
+    print(trial_found_message(label) if label else TRIAL_MISSING)
+    return 5 if label else 4
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--asset", type=pathlib.Path, required=True)
     ap.add_argument("--meta", type=pathlib.Path, required=True)
     ap.add_argument("--go", action="store_true", help="really click Share")
+    ap.add_argument("--trial", action="store_true",
+                    help="post as a Trial Reel. instagram.com has no trial option (2026-10-09), so this "
+                         "checks for one and always aborts before Share; never a normal post")
     args = ap.parse_args(argv)
     meta = json.loads(args.meta.read_text())
     title = str(meta["title"]).strip()
@@ -153,6 +248,8 @@ def main(argv=None) -> int:
         browser = p.chromium.connect_over_cdp(CDP, timeout=30_000)
         page = browser.contexts[0].new_page()
         try:
+            if args.trial:  # before any profile read: no grid lookup, no Share, ever
+                return run_trial_check(page, args.asset, tag)
             page.goto(f"https://www.instagram.com/{HANDLE}/", wait_until="domcontentloaded")
             page.wait_for_timeout(6000)
             if "/accounts/login" in page.url:
@@ -166,23 +263,7 @@ def main(argv=None) -> int:
 
             page.goto("https://www.instagram.com/", wait_until="domcontentloaded")
             page.wait_for_timeout(5000)
-            dismiss_overlays(page)  # e.g. "Turn on Notifications" -> Not Now
-            page.locator("svg[aria-label='New post'], svg[aria-label='Create']").first.click()
-            page.wait_for_timeout(1500)
-            page.get_by_text("Post", exact=True).first.click()
-            page.wait_for_timeout(2500)
-            dlg = page.locator("[role=dialog]").last
-            dlg.locator("input[type=file]").first.set_input_files(str(args.asset))
-            page.wait_for_timeout(6000)
-            page.screenshot(path=str(SHOTS / f"{tag}-1-loaded.png"))
-            for step in ("crop", "edit"):
-                ok = page.get_by_role("button", name="OK", exact=True)
-                if ok.count():  # "Video posts are now shared as reels" notice
-                    ok.first.click(); page.wait_for_timeout(1000)
-                nxt = page.locator("[role=dialog]").last.get_by_role("button", name="Next", exact=True).first
-                nxt.wait_for(state="visible", timeout=60_000)
-                nxt.click(); page.wait_for_timeout(3000)
-                page.screenshot(path=str(SHOTS / f"{tag}-2-{step}.png"))
+            open_new_reel(page, args.asset, tag)
             # verified 2026-09-29: the placeholder reads "Add a caption..." on the New reel step
             box = page.locator("[aria-label='Add a caption...'], [aria-label='Write a caption...'], [role=dialog] div[contenteditable='true']").first
             box.wait_for(state="visible", timeout=30_000)
