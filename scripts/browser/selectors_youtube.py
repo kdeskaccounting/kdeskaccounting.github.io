@@ -307,6 +307,36 @@ EDIT_SAVE_BUTTON = "ytcp-button#save"                # verified 2026-10-04 (disa
 #: Draft by the settle poll (wait for Public), never as success. UNVERIFIED wording.
 PROCESSING_VISIBILITY_TEXT = "Processing"
 
+# --- AI use ("altered or synthetic content"), 2026-10-13 (Stephen: keep disclosing AI images).
+# YouTube auto-labelled Trash cans (6juKsOLIxvE) on 2026-10-11 and asked for the disclosure to be
+# reviewed (~/parksheet/docs/content/notices/2026-10-11-trash-cans-notice.md). Nearly every
+# hand build uses gpt-image-1 stills, so a meta with `ai_disclosure` true answers Yes.
+# Read live 2026-10-13 on the EDIT page of 6juKsOLIxvE: the section is NOT rendered until the
+# "Show more" toggle is clicked (or the page is opened with ?scroll_to=altered_content). The
+# question is one Yes/No radio pair; the four cases ("realistic-looking scene that didn't
+# actually occur" among them) are a plain <ul>, not checkboxes, and choosing Yes stamped no
+# sub-options. Same Polymer component in the uploader is assumed, NOT seen (UNVERIFIED there).
+#: The details form's "Show more" / "Show less" toggle. aria-label "Show advanced settings", so
+#: it is found by id, never by role + name. Clicking it while expanded COLLAPSES it, so the
+#: driver only clicks it when the Yes radio is not visible.
+ADVANCED_TOGGLE = "#toggle-button"                     # verified 2026-10-13 (edit page): "Show more"
+AI_USE_SECTION = "ytkp-altered-content-select"         # verified 2026-10-13 (edit page), heading "AI use"
+#: The radios by their own `name`. Yes: aria-label "Yes, AI was used"; No: "No, AI wasn't used".
+AI_USE_YES_RADIO = "tp-yt-paper-radio-button[name='VIDEO_HAS_ALTERED_CONTENT_YES']"  # verified 2026-10-13
+AI_USE_NO_RADIO = "tp-yt-paper-radio-button[name='VIDEO_HAS_ALTERED_CONTENT_NO']"    # verified 2026-10-13
+AI_USE_YES_NAME = "Yes, AI was used"                   # verified 2026-10-13: aria-label
+#: If YouTube ever turns the four cases into checkboxes under Yes, the one a realistic AI still
+#: fits. None exist today (2026-10-13), so this only ever ticks a box that has appeared.
+AI_USE_CHECKBOX = f"{AI_USE_SECTION} [role='checkbox']"   # UNVERIFIED: no checkbox exists today
+AI_USE_REALISTIC_TEXT = "realistic-looking scene"      # verified 2026-10-13: the list item's copy
+#: The scope prefix for the same anchors inside the uploader (its Details step has its own
+#: "Show more" toggle). Prefixed so the uploader never clicks a toggle on the page behind it.
+AI_USE_IN_UPLOADER = f"{UPLOAD_DIALOG} "                # UNVERIFIED: only the edit page was read
+#: The edit page's scope: the whole page.
+AI_USE_ON_EDIT_PAGE = ""
+#: How long the section gets to render after the toggle is clicked.
+AI_USE_TIMEOUT_MS = 15_000
+
 # --- Deleting a draft (the whole of --dry-run's clean-up, and nothing else ever calls it).
 # Closing the uploader saves a draft with no prompt, so the draft is removed from the content
 # list: hover the row, open its Options menu, Delete forever, tick the acknowledgement, confirm.
@@ -353,6 +383,8 @@ POST_FILE_ONLY = (
     "DELETE_MENU_ITEM_TEXT",
     "DELETE_CONFIRM_CHECKBOX",
     "DELETE_CONFIRM_BUTTON",
+    "ADVANCED_TOGGLE",      # in the uploader the details form exists only after a file
+    "AI_USE_YES_RADIO",
 )
 
 # Anchors that can only be seen by actually publishing a video to the channel. A dry run
@@ -386,4 +418,8 @@ UNVERIFIED = (
     "PROCESSING_VISIBILITY_TEXT",
     "EDIT_SAVE_BUTTON",     # read live (disabled); only clicked when a repair is needed
     "CHECKS_ISSUE_WORDS",   # no check has ever found an issue on this channel
+    "AI_USE_CHECKBOX",      # no per-case checkbox exists today; ticked only if one appears
+    # The AI-use radios and toggle were read on the EDIT page; the uploader's copy of the same
+    # component is assumed. A run that cannot find it there warns and the edit-page check sets it.
+    "AI_USE_IN_UPLOADER",
 )

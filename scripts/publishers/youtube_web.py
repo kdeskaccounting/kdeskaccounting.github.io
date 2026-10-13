@@ -43,7 +43,9 @@ and TikTok drivers use):
                                                              ─► Public, Publish
                                                              ─► "Publish anyway" if asked
                                                              ─► edit page: description and
-                                                                audience saved (repair once)
+                                                                audience saved (repair once);
+                                                                AI use = Yes when the meta
+                                                                says ai_disclosure (else card)
                                                              ─► re-read ─► assert Public
 
 **The channel guard is not decoration.** The debug Chrome profile also holds Stephen's
@@ -241,6 +243,31 @@ def description_of(meta: dict) -> str:
     and a hashtag wall in the description is not what the renderer wrote.
     """
     return str(meta.get("description") or "").rstrip()
+
+
+def _truthy(value) -> bool:
+    """A meta flag read the forgiving way: true/1/"yes" are yes; anything else is no."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "yes", "y", "1")
+    return False
+
+
+def ai_disclosure_of(meta: dict) -> bool:
+    """Does this Short answer YouTube's "AI use" question with Yes? (2026-10-13)
+
+    `meta["ai_disclosure"]` is either a plain flag (`true`) or an object such as
+    `{"altered": true}` / `{"realistic_scene": true}` — any true value in it means Yes, because
+    YouTube asks one Yes/No question that covers all four cases. Absent means "leave the
+    question alone", which is what every pre-2026-10-13 meta does.
+    """
+    value = (meta or {}).get("ai_disclosure")
+    if isinstance(value, dict):
+        return any(_truthy(v) for v in value.values())
+    return _truthy(value)
 
 
 def check_title(title: str) -> None:
@@ -817,7 +844,9 @@ def plan_lines(asset: pathlib.Path, meta: dict) -> list[str]:
             # Deliberately not "…key: the exact title": session.redact_secrets treats
             # `key: <word>` as a credential and masked the sentence to "key: ***" in the
             # 12:07 run. The wording is the fix; loosening the redactor is not.
-            f"skips if that exact title is already on {S.CONTENT_URL}"]
+            f"skips if that exact title is already on {S.CONTENT_URL}"] + (
+        [f"AI use: answers {S.AI_USE_YES_NAME!r} (meta ai_disclosure)"]
+        if ai_disclosure_of(meta) else [])
 
 
 def held_steps(asset: pathlib.Path, meta: dict, video_id=None) -> list[str]:
@@ -881,7 +910,25 @@ def post_publish_steps(asset: pathlib.Path, meta: dict, video_id=None,
                         f"{S.EDIT_URL.format(video_id=video_id)})")
     steps.append(f"Once it is {S.PUBLIC_VISIBILITY_TEXT}, check the description and audience "
                  f"on its edit page (the description carries licence-required attribution)")
+    if ai_disclosure_of(meta):
+        steps.append("On the same edit page, Show more -> AI use: it must read 'Yes' (this "
+                     "Short uses AI-generated images); set it and Save if not")
     return steps
+
+
+def ai_use_steps(meta: dict, video_id=None) -> list[str]:
+    """The card's steps when the AI-use answer could not be set or confirmed. Never an upload."""
+    where = S.EDIT_URL.format(video_id=video_id) if video_id else S.CONTENT_URL
+    return [
+        "Run: python3 scripts/browser/ensure_chrome.py",
+        f"Open {where} (the side nav must be the {S.CHANNEL_NAME} channel)"
+        + ("" if video_id else f" and open the video titled: {title_of(meta)}"),
+        "Click 'Show more', scroll to 'AI use' (\"Was AI used to generate or edit your content "
+        "...?\") and choose 'Yes' — the Short uses AI-generated images, which is the "
+        "\"realistic-looking scene that didn't actually occur\" case",
+        "Click Save, reload the page and confirm 'Yes' is still selected",
+        "Change nothing else on the page. The video itself is published; do NOT upload again",
+    ]
 
 
 def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
@@ -900,6 +947,8 @@ def manual_steps(asset: pathlib.Path, meta: dict) -> list[str]:
         "ThemeParks.wiki and photo-credit lines that the licences require): "
         f"{pathlib.Path(meta.get('_meta_path') or '(the day-N.json next to the mp4)')}",
         f"Audience: '{S.KIDS_NO_NAME}'",
+    ] + ([f"AI use (click 'Show more' if it is not shown): answer 'Yes' — this Short uses "
+          f"AI-generated images (meta ai_disclosure)"] if ai_disclosure_of(meta) else []) + [
         f"Next through {', '.join(S.STEP_NAMES[1:])}, then WAIT with the uploader open until "
         f"the footer reads 'Checks complete. No issues found.' (usually 2-10 min). If it "
         f"reports a copyright claim or restriction, close the uploader (it stays a private "
@@ -1035,6 +1084,11 @@ class YouTubeWebPublisher(Publisher):
         # The channel Studio was on before assert_channel switched it to ParkSheet (None when
         # no switch happened). restore_channel puts it back after the run.
         self._restore_channel = None
+        # The AI-use answer in the uploader: "" (not asked for), "yes", or the problem that
+        # stopped it (a WARNING; the edit-page check then sets it or files a card).
+        self._ai_uploader = ""
+        # Path of the AI-use card filed by this attempt, if any (relative to the repo).
+        self._ai_card = None
 
     # -- contract ---------------------------------------------------------------------
 
@@ -1168,6 +1222,8 @@ class YouTubeWebPublisher(Publisher):
         self._checks_last = ""
         self._held = False
         self._restore_channel = None
+        self._ai_uploader = ""
+        self._ai_card = None
         with session.open_page(self.platform, repo=self.repo) as page:
             self._page = page
             try:
@@ -1303,6 +1359,8 @@ class YouTubeWebPublisher(Publisher):
         reached: list[str] = []
         self._uploaded = False
         self._restore_channel = None
+        self._ai_uploader = ""
+        self._ai_card = None
         with session.open_page(f"{self.platform}-dry-run", repo=self.repo) as page:
             self._page = page
             try:
@@ -1333,6 +1391,10 @@ class YouTubeWebPublisher(Publisher):
             self.upload(page, asset, meta)
             reached.append(f"uploaded {asset.name}, title and description verified, "
                            f"audience set to {S.KIDS_NO_NAME!r}")
+            if self._ai_uploader:
+                reached.append(f"AI use answered {S.AI_USE_YES_NAME!r}" if self._ai_uploader == "yes"
+                               else f"AI use NOT answered in the uploader ({self._ai_uploader}); "
+                                    f"a live run would set it on the edit page")
             reached.append("walked " + " -> ".join(S.STEP_NAMES))
             self.set_public(page)
             reached.append(f"visibility set to {S.PUBLIC_VISIBILITY_TEXT} "
@@ -1557,6 +1619,8 @@ class YouTubeWebPublisher(Publisher):
         self.fill_box(page, S.TITLE_BOX, title, "title")
         self.fill_box(page, S.DESCRIPTION_BOX, desc, "description")
         self.set_audience(page)
+        if ai_disclosure_of(meta):
+            self.disclose_ai_in_uploader(page)
         self.next_to_visibility(page)
 
     def open_uploader(self, page) -> None:
@@ -1661,6 +1725,103 @@ class YouTubeWebPublisher(Publisher):
                     f"selectors_youtube.KIDS_NO_NAME.")
         page.locator(f"text={S.KIDS_UNANSWERED_TEXT}").first.wait_for(
             state="hidden", timeout=S.ANCHOR_TIMEOUT_MS)
+
+    # -- AI use (2026-10-13) --------------------------------------------------------
+
+    def ai_use_yes(self, page, scope: str):
+        """The AI-use Yes radio under `scope`, expanding "Show more" first if it is hidden.
+
+        The section is not rendered until the details form's advanced half is open (edit page,
+        2026-10-13), and the toggle COLLAPSES it when clicked twice — so it is clicked only
+        while the radio is not visible. Raises when the radio does not appear.
+        """
+        yes = page.locator(f"{scope}{S.AI_USE_YES_RADIO}").first
+        if not yes.is_visible():
+            page.locator(f"{scope}{S.ADVANCED_TOGGLE}").first.click()
+            yes.wait_for(state="visible", timeout=S.AI_USE_TIMEOUT_MS)
+        return yes
+
+    def answer_ai_use(self, page, scope: str) -> str:
+        """Answer "Was AI used ...?" with Yes. Returns "" on success, else the problem.
+
+        Never raises: the disclosure must not cost the post. A missing control is a WARNING
+        and, past Publish, a card (verify_ai_use) — not a failed publish. If YouTube ever adds
+        per-case checkboxes under Yes, the "realistic-looking scene" one is ticked.
+        """
+        try:
+            yes = self.ai_use_yes(page, scope)
+            if not yes.is_checked():
+                yes.click()
+            if not yes.is_checked():
+                yes.click(force=True)       # an overlay can swallow the first click
+            if not yes.is_checked():
+                return f"clicked {S.AI_USE_YES_NAME!r} but it does not read checked"
+            box = (page.locator(f"{scope}{S.AI_USE_CHECKBOX}")
+                   .filter(has_text=re.compile(re.escape(S.AI_USE_REALISTIC_TEXT), re.I)))
+            if box.count() and not box.first.is_checked():
+                box.first.click()
+            return ""
+        except Exception as exc:  # noqa: BLE001 — reported, never fatal
+            return (f"the AI-use question was not found or would not take Yes "
+                    f"({type(exc).__name__}: {str(exc).splitlines()[0][:200] if str(exc) else ''})"
+                    f"; fix selectors_youtube.AI_USE_YES_RADIO / ADVANCED_TOGGLE")
+
+    def disclose_ai_in_uploader(self, page) -> None:
+        """Answer AI use = Yes on the Details step. A miss is a WARNING, never a failure."""
+        problem = self.answer_ai_use(page, S.AI_USE_IN_UPLOADER)
+        self._ai_uploader = problem or "yes"
+        if problem:
+            print(f"{self.platform}: WARNING: {problem}. Publishing anyway; the edit page is "
+                  f"checked after Publish and a card is filed if it still cannot be set.",
+                  file=sys.stderr)
+
+    def verify_ai_use(self, page, meta: dict, url: str) -> str:
+        """On the edit page: AI use must read Yes; set it and Save once if not. Never raises.
+
+        A control that cannot be found or a Yes that does not stick files a card (the video is
+        live by then, and only this one answer is missing) and returns a note saying so.
+        """
+        problem = ""
+        try:
+            if self.ai_use_yes(page, S.AI_USE_ON_EDIT_PAGE).is_checked():
+                return "AI use: Yes saved"
+            problem = self.answer_ai_use(page, S.AI_USE_ON_EDIT_PAGE)
+            if not problem:
+                page.wait_for_function(enabled_js(S.EDIT_SAVE_BUTTON),
+                                       timeout=S.ANCHOR_TIMEOUT_MS)
+                page.locator(S.EDIT_SAVE_BUTTON).first.click()
+                page.wait_for_function(disabled_js(S.EDIT_SAVE_BUTTON),
+                                       timeout=S.ANCHOR_TIMEOUT_MS)
+                self.goto(page, url)
+                if self.ai_use_yes(page, S.AI_USE_ON_EDIT_PAGE).is_checked():
+                    return "AI use: Yes (set on the edit page)"
+                problem = "Yes was chosen and saved but did not read back after a reload"
+        except Exception as exc:  # noqa: BLE001 — reported, never fatal
+            problem = problem or f"{type(exc).__name__}: {str(exc)[:200]}"
+        print(f"{self.platform}: WARNING: AI use is NOT confirmed as Yes on {url}: {problem}",
+              file=sys.stderr)
+        card = self.ai_use_card(page, meta, problem)
+        return (f"AI use NOT confirmed ({problem})"
+                + (f"; card {card}" if card else "; the card could not be written either"))
+
+    def ai_use_card(self, page, meta: dict, problem: str):
+        """File the "set AI use by hand" card. Returns its repo-relative path, or None."""
+        try:
+            slug = base.card_slug(meta, pathlib.Path("youtube-short")) + "-ai-use"
+            card = session.fail_card(
+                self.repo, page, subdir=QUEUE_SUBDIR, kind=self.platform, slug=slug,
+                run_name=self.platform,
+                title=(f"Set 'AI use: Yes' by hand on {title_of(meta)!r} (the video IS "
+                       f"published)"),
+                detail=(f"The Short uses AI-generated images (meta ai_disclosure) and the "
+                        f"driver could not set or confirm YouTube's AI-use answer: {problem}"),
+                steps=ai_use_steps(meta, self._video_id))
+            self._ai_card = str(card.relative_to(self.repo))
+            return self._ai_card
+        except Exception as exc:  # noqa: BLE001
+            print(f"{self.platform}: could not write the AI-use card "
+                  f"({type(exc).__name__}: {exc})", file=sys.stderr)
+            return None
 
     def next_to_visibility(self, page) -> None:
         """Details -> Video elements -> Initial check -> Visibility, asserting each arrival.
@@ -2013,8 +2174,9 @@ class YouTubeWebPublisher(Publisher):
         except Exception:  # noqa: BLE001 — informational only
             pass
         self._edit_visibility = vis
+        ai = ("; " + self.verify_ai_use(page, meta, url)) if ai_disclosure_of(meta) else ""
         return (f"edit page: description and audience saved{repaired}"
-                + (f"; visibility reads {vis!r}" if vis else ""))
+                + (f"; visibility reads {vis!r}" if vis else "") + ai)
 
     # -- the dry run's clean-up -------------------------------------------------------
 
