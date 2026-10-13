@@ -2343,3 +2343,127 @@ def test_a_dry_run_reads_the_checks_footer_once_and_never_waits(pub, asset, monk
 def test_check_probes_the_checks_footer_live():
     assert any(v == S.UPLOAD_PROGRESS and stage == yw.LIVE
                for _u, _l, _k, v, stage in yw.check_probes())
+
+
+# ------------------------------------------- AI use: YouTube's AI disclosure (2026-10-13)
+# Stephen, 2026-10-13: AI-image Shorts carry YouTube's AI disclosure. The control was read live
+# on the edit page of 6juKsOLIxvE: hidden until "Show more", then one Yes/No radio pair.
+
+META_AI = dict(META, ai_disclosure=True)
+UP_YES = S.AI_USE_IN_UPLOADER + S.AI_USE_YES_RADIO
+UP_TOGGLE = S.AI_USE_IN_UPLOADER + S.ADVANCED_TOGGLE
+EDIT_YES = S.AI_USE_ON_EDIT_PAGE + S.AI_USE_YES_RADIO
+EDIT_TOGGLE = S.AI_USE_ON_EDIT_PAGE + S.ADVANCED_TOGGLE
+
+
+@pytest.mark.parametrize("value, want", [
+    (True, True), (False, False), (None, False), ("yes", True), ("true", True), ("no", False),
+    (1, True), (0, False), ({"altered": True}, True), ({"realistic_scene": True}, True),
+    ({"altered": False}, False), ({}, False), ([], False),
+])
+def test_ai_disclosure_reads_a_flag_or_an_object(value, want):
+    assert yw.ai_disclosure_of({"ai_disclosure": value}) is want
+
+
+def test_a_meta_without_the_field_does_not_disclose():
+    assert yw.ai_disclosure_of(META) is False
+    assert yw.ai_disclosure_of({}) is False
+
+
+def test_without_ai_disclosure_the_ai_question_is_never_touched(pub, asset):
+    page = _published_page()
+    result = _driven(pub, page, asset, META)
+    assert result.ok
+    assert not [c for c in page.calls if "ALTERED_CONTENT" in c or S.ADVANCED_TOGGLE in c]
+    assert "AI use" not in result.detail
+
+
+def test_ai_disclosure_answers_yes_in_the_uploader_before_next(pub, asset):
+    page = _published_page()
+    result = _driven(pub, page, asset, META_AI)
+    assert result.ok
+    assert f"click:{UP_YES}" in page.calls
+    assert page.calls.index(f"click:{UP_YES}") < page.calls.index(f"click:{S.NEXT_BUTTON}")
+    # Visible already: the toggle is NOT clicked (a second click would collapse it).
+    assert f"click:{UP_TOGGLE}" not in page.calls
+    # The uploader never presses the No radio.
+    assert not [c for c in page.calls if "ALTERED_CONTENT_NO" in c]
+    assert pub._ai_uploader == "yes"
+
+
+def test_a_hidden_ai_section_is_opened_with_show_more_first(pub, asset):
+    page = _published_page()
+    page.counts[UP_YES] = 0
+    page.on_click[UP_TOGGLE] = [lambda: page.counts.__setitem__(UP_YES, 1)]
+    _driven(pub, page, asset, META_AI)
+    assert page.calls.index(f"click:{UP_TOGGLE}") < page.calls.index(f"click:{UP_YES}")
+
+
+def test_a_missing_ai_control_in_the_uploader_warns_and_still_publishes(pub, asset, capsys):
+    page = _published_page()
+    page.counts[UP_YES] = 0                       # Show more does not reveal it
+    result = _driven(pub, page, asset, META_AI)
+    assert result.ok
+    assert f"click:{S.DONE_BUTTON}" in page.calls             # Publish still happened
+    assert "WARNING" in capsys.readouterr().err
+    # ...and the edit page set it instead.
+    assert f"click:{EDIT_YES}" in page.calls
+    assert "AI use: Yes (set on the edit page)" in result.detail
+
+
+def test_the_edit_page_confirms_a_saved_yes_without_saving_again(pub, asset):
+    page = _published_page()
+    page.checked[EDIT_YES] = True
+    result = _driven(pub, page, asset, META_AI)
+    assert "AI use: Yes saved" in result.detail
+    assert f"click:{S.EDIT_SAVE_BUTTON}" not in page.calls
+
+
+def test_a_yes_that_did_not_save_is_set_and_saved_on_the_edit_page(pub):
+    page = _edit_page(description=DESC)
+    pub._video_id = "Oxo41KgeVoA"
+    note = pub.verify_details(page, META_AI)
+    assert f"click:{EDIT_YES}" in page.calls
+    assert page.calls.index(f"click:{EDIT_YES}") < page.calls.index(f"click:{S.EDIT_SAVE_BUTTON}")
+    assert f"wait_for_function:{yw.disabled_js(S.EDIT_SAVE_BUTTON)}" in page.calls
+    # Re-read after the save.
+    assert page.calls.count(f"goto:{S.EDIT_URL.format(video_id='Oxo41KgeVoA')}") == 2
+    assert "AI use: Yes (set on the edit page)" in note
+
+
+def test_a_yes_that_will_not_stick_files_a_card_and_does_not_fail(pub, tmp_path, capsys):
+    page = _edit_page(description=DESC)
+    page.unclickable.add(EDIT_YES)
+    pub._video_id = "Oxo41KgeVoA"
+    note = pub.verify_details(page, META_AI)            # does not raise
+    assert "AI use NOT confirmed" in note
+    assert pub._ai_card and (tmp_path / pub._ai_card).exists()
+    card = (tmp_path / pub._ai_card).read_text(encoding="utf-8")
+    assert "AI use" in card and "Oxo41KgeVoA" in card and "do NOT upload again" in card
+    assert "WARNING" in capsys.readouterr().err
+    assert f"click:{S.EDIT_SAVE_BUTTON}" not in page.calls
+
+
+def test_an_edit_page_without_the_ai_control_files_a_card_and_publish_stays_ok(pub, asset):
+    page = _published_page()
+    page.counts[EDIT_YES] = 0
+    result = _driven(pub, page, asset, META_AI)
+    assert result.ok
+    assert "AI use NOT confirmed" in result.detail and pub._ai_card in result.detail
+    assert (pub.repo / pub._ai_card).exists()
+
+
+def test_a_realistic_scene_checkbox_is_ticked_if_youtube_ever_adds_one(pub):
+    page = _Page()
+    assert pub.answer_ai_use(page, S.AI_USE_ON_EDIT_PAGE) == ""
+    box = (f"{S.AI_USE_CHECKBOX}|has_text="
+           f"{yw.re.escape(S.AI_USE_REALISTIC_TEXT)}")
+    assert f"click:{box}" in page.calls
+
+
+def test_the_dry_run_and_the_hand_card_mention_the_ai_answer_only_when_flagged(asset):
+    assert any("AI use" in line for line in yw.plan_lines(asset, META_AI))
+    assert not any("AI use" in line for line in yw.plan_lines(asset, META))
+    assert any("AI use" in line and "Yes" in line for line in yw.manual_steps(asset, META_AI))
+    assert not any("AI use" in line for line in yw.manual_steps(asset, META))
+    assert any("AI use" in line for line in yw.post_publish_steps(asset, META_AI, "x" * 11))
