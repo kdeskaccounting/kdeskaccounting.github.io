@@ -367,6 +367,9 @@ def check_beats(scene: dict, spec_path) -> None:
             kind = media_kind(resolve_src(spec_path, src))
             check_credit(kind, beat.get("credit") or scene.get("credit"))
             check_motion(kind, beat.get("motion") or default_motion(kind))
+            if beat.get("start") and kind != "video":
+                raise ValueError(f"`start: {beat.get('start')}` is an in-point into footage, "
+                                 f"and a still has none. Take it off the beat.")
             # crop_chain's w/h are the frame the crop will be covered TO and are not part of
             # the clause it returns (it is all iw/ih-relative), so any frame validates it.
             crop_chain(1, 1, beat.get("crop"))

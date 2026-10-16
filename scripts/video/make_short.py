@@ -222,7 +222,18 @@ def scene_beats(scene: dict) -> list:
                 f"beats[{index}] is {seconds:.2f}s and the renderer's backstop is "
                 f"{MAX_PICTURE_S}s. One picture held longer than that is the defect this "
                 f"whole change set exists to remove.")
-        out.append({"src": src, "seconds": seconds,
+        # `start:` is an IN-POINT into footage (seconds into the source file): which 2-3 s of
+        # a stock clip this beat plays. The out-point is the beat's own `seconds`. A still has
+        # no in-point; media.check_beats refuses one there, where the source's kind is known.
+        try:
+            start = float(beat.get("start") or 0.0)
+        except (TypeError, ValueError):
+            raise SystemExit(f"beats[{index}] `start` must be a number of seconds into the "
+                             f"clip, got {beat.get('start')!r}") from None
+        if start < 0.0:
+            raise SystemExit(f"beats[{index}] has `start: {start:.2f}`; an in-point is "
+                             f"seconds into the clip, so it cannot be negative")
+        out.append({"src": src, "seconds": seconds, "start": start,
                     "motion": str(beat.get("motion") or "").strip(),
                     "crop": dict(beat.get("crop") or {}),
                     # The PICTURE's own attribution, not the scene's: a still borrowed into a
@@ -1104,6 +1115,10 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
             # shot through and freeze its last frame, and a looped input never reaches tpad.
             if beat["motion"] == "clip":
                 args += list(media.CLIP_INPUT_ARGS)
+            # The beat's in-point, as an INPUT seek: the clip plays from `start` for the
+            # beat's span (beat_steps trims the out-point). Footage only (check_beats).
+            if beat.get("start"):
+                args += ["-ss", f"{float(beat['start']):.3f}"]
             args += ["-i", str(beat["src"])]
         steps = beat_steps(beats, dur, fill=fill, focus=focus)
     else:

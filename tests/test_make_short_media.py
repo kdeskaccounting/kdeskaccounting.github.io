@@ -1128,3 +1128,47 @@ def test_a_scene_that_owes_nothing_gets_no_plate(stub_main):
     """A footage scene with footage beats and no credit anywhere: no layer, as today."""
     assert media.credit_text({"kind": "media"}) == ""
     assert media.scene_credits({}) == []
+
+
+# --- stock-video b-roll: a beat's in-point (2026-10-16) -------------------------------------
+
+def test_a_video_beat_with_an_in_point_seeks_its_own_input(stub_main):
+    """`start:` picks which seconds of a stock clip the beat plays: an input seek on THAT
+    beat's input only, so the other beats' inputs are untouched."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/still.png", "seconds": 1.5},
+        {"src": "assets/clip.mp4", "seconds": 2.5, "start": 3.25}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    assert cmd.count("-ss") == 1
+    at = cmd.index("-ss")
+    assert cmd[at + 1] == "3.250"
+    assert cmd[at + 2:at + 4] == ["-i", str((stub_main.assets / "clip.mp4").resolve())]
+
+
+def test_a_video_beat_is_muted_because_only_the_narration_is_mapped(stub_main):
+    """Stock footage carries its own sound; the part maps the WAV's audio and nothing else."""
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/clip.mp4", "seconds": 1.5, "start": 1.0},
+        {"src": "assets/still.png", "seconds": 1.5}]
+    M.main()
+    cmd = _media_cmds(stub_main)[0]
+    chain = cmd[cmd.index("-filter_complex") + 1]
+    assert re.findall(r"\[(\d+):a\]", chain) == ["2"]          # the WAV, after the 2 beats
+    assert cmd[cmd.index("-map") + 1:cmd.index("-map") + 4] == ["[v]", "-map", "[a]"]
+
+
+def test_an_in_point_on_a_still_is_refused_by_name(stub_main):
+    stub_main.spec["scenes"][0]["beats"] = [
+        {"src": "assets/still.png", "seconds": 1.5, "start": 2.0},
+        {"src": "assets/clip.mp4", "seconds": 1.5}]
+    with pytest.raises((SystemExit, ValueError)) as excinfo:
+        M.main()
+    assert "in-point" in str(excinfo.value) and "beats[0]" in str(excinfo.value)
+
+
+def test_a_negative_in_point_is_refused(stub_main):
+    with pytest.raises(SystemExit) as excinfo:
+        M.scene_beats({"beats": [{"src": "a.mp4", "seconds": 1.0, "start": -1},
+                                 {"src": "b.png", "seconds": 1.0}]})
+    assert "negative" in str(excinfo.value)
