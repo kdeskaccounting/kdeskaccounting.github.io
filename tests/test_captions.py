@@ -747,6 +747,32 @@ def test_the_plate_text_is_escaped_like_every_other_burned_in_string():
     assert "<b>" not in html and "&lt;b&gt;" in html
 
 
+def test_a_plate_with_no_style_is_the_house_plate_byte_for_byte():
+    plain = C.plate_settings({"plate": dict(PLATE)})
+    house = C.plate_settings({"plate": dict(PLATE, style="house")})
+    assert plain.style == "house"
+    assert C.plate_html(plain, "#FFE234", _tokens(), 1080, 1920) == \
+        C.plate_html(house, "#FFE234", _tokens(), 1080, 1920)
+
+
+def test_the_search_plate_keeps_the_written_case_in_a_white_bar_with_no_kicker():
+    plate = C.plate_settings({"plate": {"text": "why does disney world take your fingerprint?",
+                                        "kicker": "EPCOT", "style": "search",
+                                        "headline_frac": 0.055}})
+    html = C.plate_html(plate, "#FFE234", _tokens(), 1080, 1920)
+    assert "why does disney world take your fingerprint?" in html
+    assert "uppercase" not in html
+    assert "EPCOT" not in html
+    assert "background:#FFFFFF" in html.replace(" ", "")
+    assert "background:transparent" in html.replace(" ", "")
+
+
+def test_an_unknown_plate_style_is_refused_by_name():
+    with pytest.raises(ValueError) as excinfo:
+        C.plate_settings({"plate": {"text": "x", "style": "neon"}})
+    assert "neon" in str(excinfo.value)
+
+
 # --- the plate replaces the hook's cues ---------------------------------------------------
 
 def test_a_cue_starting_inside_the_plate_window_is_dropped():

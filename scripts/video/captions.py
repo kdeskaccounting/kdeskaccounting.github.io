@@ -717,6 +717,14 @@ class Plate:
     seconds: float = DEFAULT_PLATE_S
     position: str = "center"
     headline_frac: float = PLATE_HEADLINE_PX_FRAC
+    #: "house" (the default: white ALL CAPS headline, the look every plate has had) or
+    #: "search" (2026-10-29, ParkSheet's search-phrase test): the text typed into a plain
+    #: white search bar, in the case it was written in. Opt-in; a plate with no `style:`
+    #: renders exactly the bytes it always did.
+    style: str = "house"
+
+
+PLATE_STYLES: tuple[str, ...] = ("house", "search")
 
 
 def plate_settings(short: dict):
@@ -759,8 +767,45 @@ def plate_settings(short: dict):
     seconds = float(block.get("seconds", DEFAULT_PLATE_S))
     if not 0.0 < seconds <= 4.0:
         raise ValueError(f"short.plate.seconds must be in (0, 4.0]; got {seconds!r}")
+    style = str(block.get("style", "house"))
+    if style not in PLATE_STYLES:
+        raise ValueError(f"short.plate.style must be one of {', '.join(PLATE_STYLES)}; "
+                         f"got {style!r}")
     return Plate(text=text, kicker=str(block.get("kicker") or "").strip(),
-                 seconds=seconds, position=position, headline_frac=headline_frac)
+                 seconds=seconds, position=position, headline_frac=headline_frac,
+                 style=style)
+
+
+def search_plate_html(plate: Plate, brand: dict, width: int, height: int) -> str:
+    """The `style: search` plate: the phrase typed into a plain white search bar.
+
+    No platform's branding -- a rounded white bar, a drawn magnifier, dark sentence-case
+    text that wraps inside the bar. The kicker, if any, is ignored: a search bar has none.
+    """
+    head_px = height * plate.headline_frac
+    centre = BAND_CENTER_FRAC[plate.position]
+    pad_x = round(width * SAFE_X_FRAC * 0.6)
+    icon = head_px * 0.95
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
+  background:transparent;font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+.wrap{{position:absolute;left:{pad_x}px;right:{pad_x}px;top:{round(height * centre)}px;
+  transform:translateY(-50%)}}
+.bar{{display:flex;align-items:center;gap:{0.45 * head_px:.0f}px;background:#FFFFFF;
+  border-radius:{0.9 * head_px:.0f}px;padding:{0.42 * head_px:.0f}px {0.6 * head_px:.0f}px;
+  box-shadow:0 {0.18 * head_px:.0f}px {0.5 * head_px:.0f}px rgba(0,0,0,.45)}}
+.bar svg{{flex:0 0 auto;width:{icon:.0f}px;height:{icon:.0f}px}}
+.q{{font-size:{head_px:.0f}px;font-weight:700;line-height:1.12;color:#16181D;
+  letter-spacing:-.01em}}
+.caret{{display:inline-block;width:{0.08 * head_px:.1f}px;height:{0.95 * head_px:.0f}px;
+  background:#1A73E8;vertical-align:-{0.14 * head_px:.0f}px;margin-left:{0.06 * head_px:.0f}px}}
+</style></head><body><div class="wrap"><div class="bar">
+<svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.5" fill="none" stroke="#5F6368"
+ stroke-width="2.6"/><line x1="15" y1="15" x2="21.5" y2="21.5" stroke="#5F6368"
+ stroke-width="2.8" stroke-linecap="round"/></svg>
+<div class="q">{_html.escape(plate.text, quote=True)}<span class="caret"></span></div>
+</div></div></body></html>"""
 
 
 def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) -> str:
@@ -772,6 +817,8 @@ def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) 
     moves: the kicker, the safe-zone padding and the band centre are what they were.
     """
     colour = _checked_accent(accent)
+    if plate.style == "search":
+        return search_plate_html(plate, brand, width, height)
     kicker_px = height * PLATE_KICKER_PX_FRAC
     head_px = height * plate.headline_frac
     centre = BAND_CENTER_FRAC[plate.position]
