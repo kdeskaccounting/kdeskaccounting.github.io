@@ -26,7 +26,12 @@ CDP_URL = "http://localhost:9222"
 
 def chrome_argv(profile: pathlib.Path, port: int) -> list[str]:
     return [CHROME_APP, f"--user-data-dir={profile}", f"--remote-debugging-port={port}",
-            "--no-first-run", "--no-default-browser-check", "--mute-audio"]
+            "--no-first-run", "--no-default-browser-check", "--mute-audio",
+            # Off-screen and un-throttled (Stephen 2026-11-02): no window pops up over other work,
+            # and hidden tabs keep full speed.
+            "--window-position=-2400,-2400", "--window-size=1280,900",
+            "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows", "--restore-last-session"]
 
 
 def probe(port: int = 9222, timeout: float = 2.0) -> dict | None:
