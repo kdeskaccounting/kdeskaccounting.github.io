@@ -26,7 +26,7 @@ CDP_URL = "http://localhost:9222"
 
 def chrome_argv(profile: pathlib.Path, port: int) -> list[str]:
     return [CHROME_APP, f"--user-data-dir={profile}", f"--remote-debugging-port={port}",
-            "--no-first-run", "--no-default-browser-check"]
+            "--no-first-run", "--no-default-browser-check", "--mute-audio"]
 
 
 def probe(port: int = 9222, timeout: float = 2.0) -> dict | None:
