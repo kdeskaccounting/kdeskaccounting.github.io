@@ -46,6 +46,7 @@ import crashzoom
 import human_voice
 import illustrate
 import media
+import specload
 from short_variants import safe_slug, select_short, short_paths
 FPS = 30; OUT_W, OUT_H = 1080, 1920; RW, RH = 1296, 2304      # render at 1.2x so zoompan never upsamples
 TOP, BOT = 360, 312                                            # bands at render scale (300 / 260 at 1080 wide)
@@ -2399,7 +2400,7 @@ def main():
     # --slug also builds a path, so it is validated before it is used to open anything.
     slug = safe_slug(a.slug) if a.slug else None
     spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
-    spec = yaml.safe_load(open(spec_path))
+    spec = specload.load(spec_path)   # resolves `extends:` (ParkSheet audit #5)
     # Preflight: every media scene is checked here, before a single frame is rendered. The
     # shape of a scene's `beats:` belongs to this module (it is the render that consumes it),
     # so it is checked in the same pass rather than when the loop below reaches that scene.

@@ -270,6 +270,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # captions.CARLITO_ADVANCE_EM (Carlito is Calibri-metric, not Arial-metric). Default "" renders
 # the old bytes. Caption windows are shot through ONE persistent Playwright page
 # (render_sheets.screenshot(..., reuse=True)), byte-identical to one chrome process per window.
+# SPEC INHERITANCE (2026-11-03): a spec may say `extends: <base.yaml>` (relative to itself);
+# scripts/video/specload.py merges it in for make_short, narrate, build_video and illustrate:
+# mappings merge recursively (child wins), lists/scalars/null replace (so `scenes:` is whole),
+# chains allowed, cycles refused. No `extends:` = the exact object yaml.safe_load returns.
+# `specload.py <spec>` prints the resolved spec. ParkSheet's video/hand/_template/ uses it.
 # ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
 # each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
 # footage scene is licensed on its own line — falling back to the scene's `credit:` when the
