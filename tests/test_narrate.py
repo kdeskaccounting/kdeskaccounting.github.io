@@ -1141,3 +1141,121 @@ def test_timings_that_do_not_line_up_are_left_alone_rather_than_mislabelled():
     words = [{"text": "a", "start": 0.0, "end": 0.1}]
     assert N.display_words(words, "a coop", "a koop") == words
     assert N.display_words(None, "a coop", "a koop") is None
+
+
+# --- per-scene lead-in, re-padded locally (2026-11-03) ------------------------------------
+
+def _pcm_wav(path, lead_s, body=(1200, -1200, 900, -900) * 600):
+    """A real 16-bit mono WAV at narrate.SR: `lead_s` of digital silence, then `body`."""
+    import struct
+    import wave
+    with wave.open(str(path), "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)
+        out.setframerate(N.SR)
+        out.writeframes(b"\x00\x00" * int(lead_s * N.SR) + struct.pack(f"<{len(body)}h", *body))
+    return len(body)
+
+
+def _first_nonzero_s(path):
+    import wave
+    with wave.open(str(path), "rb") as src:
+        frames = src.readframes(src.getnframes())
+    for i in range(0, len(frames), 2):
+        if frames[i:i + 2] != b"\x00\x00":
+            return (i // 2) / N.SR
+    return None
+
+
+def test_a_scene_lead_in_overrides_the_spec_lead_in_for_that_scene_only():
+    cfg = N.tts_config(spec_with(tts=dict(EL, lead_in_s=0.05)))
+    assert N.scene_lead_in({"narration": "x"}, cfg) == pytest.approx(0.05)
+    assert N.scene_lead_in({"narration": "x", "lead_in_s": 0.52}, cfg) == pytest.approx(0.52)
+
+
+def test_an_impossible_scene_lead_in_is_refused_by_name():
+    cfg = N.tts_config(spec_with(tts=EL))
+    with pytest.raises(SystemExit) as excinfo:
+        N.scene_lead_in({"lead_in_s": 1.5}, cfg)
+    assert "lead_in_s" in str(excinfo.value)
+
+
+def test_relead_swaps_the_silence_and_keeps_every_billed_sample(tmp_path):
+    wav = tmp_path / "scene_00.wav"
+    body = _pcm_wav(wav, 0.05)
+    seconds = N.relead_cached(wav, 0.05, 0.52)
+    assert seconds == pytest.approx((int(0.52 * N.SR) + body) / N.SR)
+    assert _first_nonzero_s(wav) == pytest.approx(int(0.52 * N.SR) / N.SR)
+    # and back again, byte for byte
+    N.relead_cached(wav, 0.52, 0.05)
+    again = tmp_path / "again.wav"
+    _pcm_wav(again, 0.05)
+    assert wav.read_bytes() == again.read_bytes()
+
+
+@pytest.mark.parametrize("content", [b"RIFFfake", b""])
+def test_relead_refuses_a_file_it_cannot_prove_is_silence_then_audio(tmp_path, content):
+    wav = tmp_path / "scene_00.wav"
+    wav.write_bytes(content)
+    assert N.relead_cached(wav, 0.3, 0.05) is None
+    assert wav.read_bytes() == content
+
+
+def test_relead_refuses_when_the_recorded_lead_in_is_not_actually_silent(tmp_path):
+    """A WAV padded by hand to a lead-in its meta does not record must not be cut into."""
+    wav = tmp_path / "scene_00.wav"
+    _pcm_wav(wav, 0.0)                      # speech from sample 0, meta claims 0.3 s of silence
+    before = wav.read_bytes()
+    assert N.relead_cached(wav, 0.3, 0.05) is None
+    assert wav.read_bytes() == before
+
+
+def _real_wavs(drive, lead_s):
+    """Replace the drive fixture's stub WAVs with real silence+audio files at `lead_s`."""
+    for i in (0, 2):
+        _pcm_wav(drive.out / f"scene_{i:02d}.wav", lead_s)
+
+
+def test_a_scene_lead_in_change_is_re_padded_locally_with_no_request(drive):
+    assert drive.run() == 0
+    narrated = len(drive.calls)
+    _real_wavs(drive, N.LEAD_IN_S)
+    drive.spec["scenes"][0]["lead_in_s"] = 0.52
+    assert drive.run() == 0
+    assert len(drive.calls) == narrated, "a lead-in-only change must not call the provider"
+    assert drive.meta(0)["lead_in_s"] == pytest.approx(0.52)
+    assert drive.meta(2)["lead_in_s"] == pytest.approx(N.LEAD_IN_S)
+    assert _first_nonzero_s(drive.out / "scene_00.wav") == pytest.approx(0.52, abs=1 / N.SR)
+    words = json.loads((drive.out / "scene_00.words.json").read_text())
+    assert words[0]["start"] == pytest.approx(0.3 + (0.52 - N.LEAD_IN_S), abs=1e-3)
+    assert drive.durations()["0"] == pytest.approx(drive.meta(0)["seconds"])
+    # and the next run is a plain hit at the new lead-in
+    assert drive.run() == 0 and len(drive.calls) == narrated
+
+
+def test_cache_only_stops_on_the_first_miss_and_bills_nothing(drive, capsys):
+    assert drive.run("--cache-only") == 2
+    assert drive.calls == []
+    assert "--cache-only" in capsys.readouterr().err
+
+
+def test_cache_only_succeeds_when_every_scene_is_a_hit_or_a_local_re_pad(drive):
+    assert drive.run() == 0
+    narrated = len(drive.calls)
+    _real_wavs(drive, N.LEAD_IN_S)
+    drive.spec["scenes"][2]["lead_in_s"] = 0.1
+    assert drive.run("--cache-only") == 0
+    assert len(drive.calls) == narrated
+    assert drive.meta(2)["lead_in_s"] == pytest.approx(0.1)
+
+
+def test_cache_only_never_reads_the_key(drive, monkeypatch):
+    def boom():
+        raise AssertionError("--cache-only must not look for a key")
+    drive.spec["tts"] = dict(EL)
+    monkeypatch.setattr(N, "api_key", boom)
+    assert drive.run("--cache-only") == 2      # nothing cached yet: a miss, not a key lookup
+
+
+def test_the_docstring_says_why_captioned_specs_keep_style_zero():
+    assert "style: 0" in N.__doc__ and "caption" in N.__doc__.lower()

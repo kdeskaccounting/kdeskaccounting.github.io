@@ -317,10 +317,28 @@ def validate_spec(spec: dict, spec_path) -> None:
     contract, and a scene that is broken today is broken for the variant that picks it up
     tomorrow.
     """
+    import crashzoom  # stdlib-only; owns `motion: crashzoom` and `still_of:`
     for index, scene in enumerate(spec.get("scenes") or []):
         if not is_media(scene or {}):
             continue
         where = f"scene {index} (kind: media)"
+        if crashzoom.generated(scene):
+            # The picture is drawn by crashzoom.py from the stills its block names, so there
+            # is no `src` to resolve -- and one would be a second, silently ignored picture.
+            try:
+                if scene.get("src"):
+                    raise ValueError("a crashzoom or `still_of:` scene draws its own picture, "
+                                     "so its `src:` would be ignored; name the stills in the "
+                                     "`crashzoom:` block instead")
+                crashzoom.validate_scene(scene, index, spec,
+                                         lambda src: resolve_src(spec_path, src))
+                check_credit("image", scene.get("credit"))
+                if not crashzoom.is_crashzoom(scene):
+                    check_motion("image", scene.get("motion") or default_motion("image"))
+                scene_fill(scene)
+            except (ValueError, FileNotFoundError) as exc:
+                raise type(exc)(f"{where}: {exc}") from exc
+            continue
         src = scene.get("src")
         if not src:
             raise ValueError(f"{where} has no `src:` — a media scene needs a file to show")

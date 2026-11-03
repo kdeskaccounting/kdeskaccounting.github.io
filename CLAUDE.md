@@ -253,6 +253,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # beat longer than make_short.MAX_PICTURE_S (6.0 s) — the estimate in the preflight, and then
 # the RESCALED span once the narration's real length is known, because two 3.0 s beats are
 # both legal and are two ten-second pictures against a 20 s narration.
+# CRASH ZOOM (2026-11-03): `motion: crashzoom` with a `crashzoom: {wide, wide_target, wide_width,
+# close, close_target, ...}` block draws the ParkSheet W45 opening (4.1x in 0.40 s, radial zoom
+# blur, pulse, shake, flash; optional badge/lander/ring/scan) in scripts/video/crashzoom.py, every
+# number a key with the old hand value as default; no `src:`. `crashzoom: {continue: N}` is the
+# turn line (picks up on the frame scene N's part ends, then punches 1.22x); `still_of: N` shows
+# that opening's settled frame as a still. A scene's own `lead_in_s:` overrides `tts.lead_in_s`
+# (narrate.py re-pads the cached WAV locally, nothing billed; `--cache-only` refuses requests).
+# `audio.sfx.opening: {impact, layers: [{src, at, start, end, fade_in, fade_out, fade_out_at,
+# gain_db}]}` mixes the frame-0 whoosh+hit inside the graph, records it in cuts.json as
+# `role: opening` with its `impact`, and refuses a first word before impact + 0.10 s. Every final
+# encode is `-ar 48000` (loudnorm had been handing the AAC encoder 192 kHz -> 96 kHz output).
 # ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
 # each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
 # footage scene is licensed on its own line — falling back to the scene's `credit:` when the

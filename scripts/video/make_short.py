@@ -42,6 +42,7 @@ HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
 import captions
 import cards
+import crashzoom
 import human_voice
 import illustrate
 import media
@@ -63,6 +64,13 @@ RUN_TIMEOUT = 600
 #: the finished Short inherited whichever tag the first part carried. This bitstream filter
 #: writes the flag unconditionally, and it survives the copy.
 RANGE_BSF = "h264_metadata=video_full_range_flag=0"
+
+#: The finished Short's audio rate. Spelled on every final encode because `loudnorm`
+#: resamples internally (to 192 kHz) and hands that rate on: with nothing after it the AAC
+#: encoder picked the nearest rate it supports, and every render since the mix landed came
+#: out at 96 kHz -- the renderer's own cut, not only the post-mixed one (measured 2026-11-03
+#: on fingerprint-scan's -nohit.mp4). Every per-scene part and the mix are already 48 kHz.
+OUT_SAMPLE_RATE = 48000
 
 #: Frames held after the narration finishes, in every scene part.
 #:
@@ -1537,6 +1545,47 @@ class SfxEvent:
     gain_db: float = EVENT_GAIN_DB
 
 
+#: How long after the opening sting's IMPACT the first word may start, at the earliest. The
+#: sting is allowed BEFORE speech (unlike every other sound, S16) on one condition: its
+#: transient has finished landing before the voice does, so the hook is never masked.
+OPENING_GUARD_S = 0.10
+#: The latest an opening sting may land. Past this the "opening" is dead air with a noise in
+#: it, and the first word (gate S2) has been pushed back further than any hook can afford.
+OPENING_MAX_IMPACT_S = 0.60
+
+
+@dataclasses.dataclass(frozen=True)
+class OpeningLayer:
+    """One file of the opening sting. `at` is where it starts on the finished timeline; a
+    NEGATIVE `at` starts it "before t=0", i.e. its first |at| seconds are trimmed off.
+    `start`/`end` are in/out points in the source file; fades are relative to the layer's
+    own start (after any trim), so the same layer reads the same at any `at`."""
+    src: str
+    at: float = 0.0
+    start: float = 0.0
+    end: float | None = None
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+    fade_out_at: float | None = None
+    gain_db: float = 0.0
+
+
+@dataclasses.dataclass(frozen=True)
+class OpeningSting:
+    """`audio.sfx.opening`: the frame-0 whoosh + hit, mixed INSIDE this graph (2026-11-03).
+
+    It used to be built by a per-Short script and `amix`ed onto the finished, already
+    loudness-normalised master afterwards -- outside this contract, and that pass is where
+    the posted cuts picked up their extra processing. Here it rides the music bus like any
+    other sound and goes through the one alimiter + loudnorm, and `cuts.json` records it so
+    the gate can see it. `impact` is the moment it lands (the crash zoom's hard stop);
+    the render refuses unless the first word starts at least `guard` after it."""
+    impact: float
+    layers: tuple
+    guard: float = OPENING_GUARD_S
+    gain_db: float = 0.0
+
+
 @dataclasses.dataclass(frozen=True)
 class Sfx:
     src: str
@@ -1558,6 +1607,8 @@ class Sfx:
     #: written before events existed — and on every spec with no illustration scene, which
     #: may configure them and simply never fire one.
     events: tuple[SfxEvent, ...] = ()
+    #: The opening sting, or None -- which every spec written before it existed is.
+    opening: OpeningSting | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1740,8 +1791,138 @@ def _sfx_events(raw, resolve) -> tuple:
     return tuple(events)
 
 
+OPENING_KEYS = ("impact", "guard", "gain_db", "layers")
+OPENING_LAYER_KEYS = ("src", "at", "start", "end", "fade_in", "fade_out", "fade_out_at",
+                      "gain_db")
+
+
+def _sfx_opening(raw, resolve):
+    """`audio.sfx.opening:` -> an OpeningSting, or None. Every file resolved and checked.
+
+        opening:
+          impact: 0.40                    # when the hit lands (the crash zoom's stop)
+          layers:
+          - {src: media/audio/whoosh.wav, at: 0.0, start: 0.65, end: 1.08,
+             fade_in: 0.03, fade_out: 0.04, fade_out_at: 0.39, gain_db: -1}
+          - {src: media/audio/hit.wav, at: 0.40, gain_db: 1}
+    """
+    if raw is None:
+        return None
+    block = _only(raw, OPENING_KEYS, "sfx.opening")
+    if block.get("impact") is None:
+        raise SystemExit("audio.sfx.opening needs `impact:` -- the second the sting lands. "
+                         "The render checks the first word against it.")
+    impact = float(block["impact"])
+    if not 0.0 <= impact <= OPENING_MAX_IMPACT_S:
+        raise SystemExit(f"audio.sfx.opening.impact is {impact:g}s; an opening sting lands "
+                         f"inside the first {OPENING_MAX_IMPACT_S:g}s or it is not an opening.")
+    guard = float(block.get("guard", OPENING_GUARD_S))
+    if guard < OPENING_GUARD_S:
+        raise SystemExit(f"audio.sfx.opening.guard is {guard:g}s; it may be longer than "
+                         f"{OPENING_GUARD_S:g}s but never shorter -- the hit must finish "
+                         f"landing before the first word.")
+    raw_layers = block.get("layers")
+    if not isinstance(raw_layers, list) or not raw_layers:
+        raise SystemExit("audio.sfx.opening needs `layers:`, a list of {src, at, ...}.")
+    layers = []
+    for index, entry in enumerate(raw_layers):
+        if isinstance(entry, str):
+            entry = {"src": entry}
+        entry = _only(entry, OPENING_LAYER_KEYS, f"sfx.opening.layers[{index}]")
+        at = float(entry.get("at", 0.0))
+        if at < -1.0 or at > impact + 1e-9:
+            raise SystemExit(f"audio.sfx.opening.layers[{index}] starts at {at:g}s; an "
+                             f"opening layer starts between -1.0s and the impact "
+                             f"({impact:g}s).")
+        start = float(entry.get("start", 0.0))
+        end = entry.get("end")
+        if end is not None and float(end) <= start + max(0.0, -at):
+            raise SystemExit(f"audio.sfx.opening.layers[{index}] has end {float(end):g} at or "
+                             f"before its start; nothing would play.")
+        layers.append(OpeningLayer(
+            src=resolve(f"sfx.opening.layers[{index}]", entry), at=at, start=start,
+            end=None if end is None else float(end),
+            fade_in=float(entry.get("fade_in", 0.0)), fade_out=float(entry.get("fade_out", 0.0)),
+            fade_out_at=(None if entry.get("fade_out_at") is None
+                         else float(entry["fade_out_at"])),
+            gain_db=float(entry.get("gain_db", 0.0))))
+    return OpeningSting(impact=impact, layers=tuple(layers), guard=guard,
+                        gain_db=float(block.get("gain_db", 0.0)))
+
+
+def opening_placements(mix) -> list:
+    """The sting's layers as cuts.json `sfx` rows: `{at, role: opening, impact}`."""
+    sting = mix.sfx.opening if mix is not None and mix.sfx is not None else None
+    if sting is None:
+        return []
+    return sorted(({"at": round(max(0.0, layer.at), 3), "role": "opening",
+                    "impact": round(sting.impact, 3)} for layer in sting.layers),
+                  key=lambda row: row["at"])
+
+
+def check_opening_guard(mix, first_speech_s) -> None:
+    """Refuse a render whose first word starts inside the sting (fail closed).
+
+    The renderer knows both numbers -- the sting's impact from the spec, the first word from
+    the narration it just read -- so this is where the opening-before-speech rule is held,
+    not in a waiver afterwards. Fix: a scene-0 `lead_in_s` that moves the first word past
+    `impact + guard`."""
+    sting = mix.sfx.opening if mix is not None and mix.sfx is not None else None
+    if sting is None:
+        return
+    floor = sting.impact + sting.guard
+    if first_speech_s is None:
+        raise SystemExit("audio.sfx.opening is set but no scene has word timings, so the "
+                         "sting cannot be checked against the first word. Re-run narrate.py.")
+    if first_speech_s + 1e-6 < floor:
+        raise SystemExit(
+            f"audio.sfx.opening lands at {sting.impact:g}s and the first word starts at "
+            f"{first_speech_s:.3f}s, inside its {sting.guard:g}s guard (first word must be "
+            f">= {floor:.3f}s). Set `lead_in_s:` on scene 0 so the voice starts after the "
+            f"hit, or move the impact earlier.")
+
+
+def opening_inputs(mix, next_index: int):
+    """The `-i` arguments for the sting's layers and the input indexes they take."""
+    args, indexes = [], []
+    sting = mix.sfx.opening if mix is not None and mix.sfx is not None else None
+    for count, layer in enumerate(sting.layers if sting else (), start=int(next_index)):
+        indexes.append(count)
+        args += ["-i", layer.src]
+    return args, indexes
+
+
+def opening_steps(sting, indexes, runtime: float) -> list:
+    """One clause per layer, each ending `[oN]` on the finished timeline."""
+    steps = []
+    for n, (index, layer) in enumerate(zip(indexes, sting.layers), start=1):
+        head = max(0.0, -layer.at)
+        trim = f"atrim=start={layer.start + head:.3f}"
+        if layer.end is not None:
+            trim += f":end={layer.end:.3f}"
+        fades = ""
+        if layer.fade_in > 0:
+            fades += f"afade=t=in:d={layer.fade_in:g},"
+        if layer.fade_out > 0:
+            length = None if layer.end is None else layer.end - layer.start
+            st = (layer.fade_out_at if layer.fade_out_at is not None
+                  else (None if length is None else length - layer.fade_out))
+            if st is None:
+                raise SystemExit("audio.sfx.opening: a layer with `fade_out` and no `end` "
+                                 "needs `fade_out_at`.")
+            fades += f"afade=t=out:st={max(0.0, st - head):.3f}:d={layer.fade_out:g},"
+        delay = max(0, round(max(0.0, layer.at) * 1000))
+        steps.append(f"[{index}:a]aformat=sample_rates=48000:channel_layouts=stereo,"
+                     f"{trim},asetpts=PTS-STARTPTS,{fades}"
+                     f"volume={layer.gain_db + sting.gain_db:g}dB,"
+                     f"adelay={delay}|{delay},atrim=0:{float(runtime):.3f},"
+                     f"apad=whole_dur={float(runtime):.3f}[o{n}]")
+    return steps
+
+
 def thin_events(events, first_speech_s, min_gap: float = EVENT_MIN_GAP_S,
-                window=(EVENT_WINDOW_S, EVENT_WINDOW_MAX), guard: float = EVENT_GUARD_S):
+                window=(EVENT_WINDOW_S, EVENT_WINDOW_MAX), guard: float = EVENT_GUARD_S,
+                seed=()):
     """(kept, dropped): an illustrated Short's element sounds, thinned to a mix.
 
     One illustration scene can ask for a sound on every element it has — that is what makes the
@@ -1761,6 +1942,10 @@ def thin_events(events, first_speech_s, min_gap: float = EVENT_MIN_GAP_S,
     """
     span, cap = float(window[0]), int(window[1])
     floor = float(first_speech_s or 0.0) + float(guard)
+    # Sounds already placed by the spec itself (the opening sting): never dropped here, but
+    # counted, so the gap and window rules see everything the mix will actually play.
+    seeds = sorted(({"at": round(float(row["at"]), 3), "role": str(row["role"])}
+                    for row in seed or ()), key=lambda row: (row["at"], row["role"]))
     rows = sorted(({"at": round(float(row["at"]), 3), "role": str(row["role"])}
                    for row in events or ()),
                   key=lambda row: (row["at"], row["role"]))
@@ -1771,12 +1956,14 @@ def thin_events(events, first_speech_s, min_gap: float = EVENT_MIN_GAP_S,
             dropped.append({**row, "why": f"inside the {float(guard):g}s guard after the first "
                                           f"word ({floor:.2f}s)"})
             continue
-        if kept and at - kept[-1]["at"] < float(min_gap):
-            dropped.append({**row, "why": f"{at - kept[-1]['at']:.2f}s after the "
-                                          f"{kept[-1]['role']} at {kept[-1]['at']:.2f}s, under "
-                                          f"the {float(min_gap):g}s floor"})
+        before = [earlier for earlier in sorted(kept + seeds, key=lambda r: r["at"])
+                  if earlier["at"] <= at]
+        if before and at - before[-1]["at"] < float(min_gap):
+            dropped.append({**row, "why": f"{at - before[-1]['at']:.2f}s after the "
+                                          f"{before[-1]['role']} at {before[-1]['at']:.2f}s, "
+                                          f"under the {float(min_gap):g}s floor"})
             continue
-        if sum(1 for earlier in kept if at - earlier["at"] < span) >= cap:
+        if sum(1 for earlier in before if at - earlier["at"] < span) >= cap:
             dropped.append({**row, "why": f"the {cap + 1}th sound inside {span:g}s"})
             continue
         kept.append(row)
@@ -1878,8 +2065,8 @@ def audio_settings(spec: dict, spec_path):
     # even when `audio.bed.src` also happens to be missing, rather than lose the word "cuez"
     # behind whichever block's file check runs first.
     if block.get("sfx"):
-        _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events"),
-              "sfx")
+        _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events",
+                             "opening"), "sfx")
     bed = None
     if block.get("bed"):
         raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
@@ -1914,7 +2101,8 @@ def audio_settings(spec: dict, spec_path):
         # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
         # accepted as the spelling every other block in this renderer uses.
         raw = _only(block["sfx"],
-                    ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events"), "sfx")
+                    ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events", "opening"),
+                    "sfx")
         beats = int(raw.get("beats", 3))
         if beats < 2:
             # `beats - 1` boundaries: one beat has none, and the whole sfx block would be
@@ -1926,10 +2114,11 @@ def audio_settings(spec: dict, spec_path):
                 f"whooshes), or drop `sfx:`.")
         cues = _sfx_cues(raw.get("cues"), resolved)
         events = _sfx_events(raw.get("events"), resolved)
+        opening = _sfx_opening(raw.get("opening"), resolved)
         whoosh_src = raw.get("on_cut") or raw.get("src")
         if whoosh_src:
             src = resolved("sfx", {"src": whoosh_src})
-        elif cues or events:
+        elif cues or events or opening:
             # A cue-only sfx block: ParkSheet's `cards.without_sfx`-exempt data days (and
             # any lore day rendered before a whoosh is vetted) write
             # `audio.sfx: {gain_db, lead, beats, cues: [...]}` with no `on_cut`/`src` at
@@ -1948,7 +2137,8 @@ def audio_settings(spec: dict, spec_path):
                   lead=float(raw.get("lead", 0.20)),
                   beats=beats,
                   cues=cues,
-                  events=events)
+                  events=events,
+                  opening=opening)
     duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
     master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
     return AudioMix(bed=bed,
@@ -1959,7 +2149,7 @@ def audio_settings(spec: dict, spec_path):
 
 def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_indexes,
                 cue_indexes=(), payoff_s=None, voice: str = "0:a",
-                events=(), event_indexes=()) -> list:
+                events=(), event_indexes=(), opening_indexes=()) -> list:
     """The audio half of the final filter graph. Verified end to end at full scale.
 
     `runtime` is the FINISHED Short's length, not the sum of the scene rows: a closing CTA
@@ -2028,6 +2218,9 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
                          f"atrim=0:{float(runtime):.3f},"
                          f"apad=whole_dur={float(runtime):.3f}[e{n}]")
             labels.append(f"e{n}")
+    if mix.sfx is not None and mix.sfx.opening is not None and opening_indexes:
+        steps.extend(opening_steps(mix.sfx.opening, opening_indexes, runtime))
+        labels.extend(f"o{n}" for n in range(1, len(opening_indexes) + 1))
     steps.append("".join(f"[{label}]" for label in labels)
                  + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
     steps.append(f"[vox][music]amix=inputs=2:normalize=0,alimiter=limit=0.97,"
@@ -2292,6 +2485,11 @@ def main():
             f"  scripts/video/.venv-tts/bin/python scripts/video/narrate.py "
             f"--spec {spec_path} --out {build / 'audio'}")
     durs = json.load(open(dj))
+    # The opening sting is checked against the first word NOW, before anything is encoded:
+    # the narration is already on disk, and the first selected scene starts at 0.0.
+    if mix is not None and mix.sfx is not None and mix.sfx.opening is not None and picked:
+        check_opening_guard(mix, first_speech_seconds([{"scene": picked[0], "start": 0.0}],
+                                                      build / "audio"))
     # `voice: human` renders only from a human_voice.py build of the recording and script the
     # spec names now; a TTS spec refuses audio a human build left behind.
     human_voice.check_audio(spec, spec_path, build / "audio")
@@ -2341,13 +2539,46 @@ def main():
     #: its elements ask for are placed on the finished timeline after the loop, when every
     #: part's `start` is known.
     illustrated = []
+    #: scene index -> crashzoom.Opening, drawn on first use (an opening, its turn, its still).
+    openings = {}
+    resolve = lambda src: media.resolve_src(spec_path, src)
+
+    def opening_for(target):
+        if target not in openings:
+            openings[target] = crashzoom.render_opening(spec["scenes"][target], work, resolve)
+        return openings[target]
+
+    def generated_picture(sc, idx):
+        """(src, kind, motion) for a crashzoom opening, its turn, or its loop still."""
+        if crashzoom.is_crashzoom(sc) and not crashzoom.is_continuation(sc):
+            return opening_for(idx).clip, "video", "clip"
+        if crashzoom.is_continuation(sc):
+            target = int(sc["crashzoom"]["continue"])
+            # The frame the opening's part ENDS on, read off the encoded part when it is in
+            # this Short (that is the number make_opening.py's `c2_start` was measured by
+            # hand to be), else its nominal length.
+            row = next((r for r in cut_rows if r["scene"] == target), None)
+            seconds = (row["seconds"] if row is not None
+                       else float(durs.get(str(target), 0) or 0) + pad)
+            clip = crashzoom.render_turn(sc, opening_for(target),
+                                         crashzoom.continuation_frame(seconds), work)
+            return clip, "video", "clip"
+        return (opening_for(crashzoom.still_of(sc)).last, "image",
+                sc.get("motion") or media.default_motion("image"))
+
     for k, idx in enumerate(sh["scenes"]):
         sc = spec["scenes"][idx]; mode = "cover"; fx = fy = 0.5; pan = None
         if media.is_media(sc):
             # Footage or a still as the whole frame, with the card (if any) as an overlay.
             # Already validated by media.validate_spec() before any rendering began.
-            src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
-            motion = sc.get("motion") or media.default_motion(kind)
+            if crashzoom.generated(sc):
+                # `motion: crashzoom` / `still_of:` -- the picture is drawn by crashzoom.py
+                # into this build's work dir, then encoded exactly like the hand-built clip
+                # and still it replaces (a `clip` scene, or a still with its own motion).
+                src, kind, motion = generated_picture(sc, idx)
+            else:
+                src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
+                motion = sc.get("motion") or media.default_motion(kind)
             ov_scene = media_overlay(sc)
             # A scene with a drawing composites its plates AFTER the final scale, so that they
             # land on top of it — which means they are rendered at the delivered size rather
@@ -2561,6 +2792,9 @@ def main():
         if mix.sfx is not None and mix.sfx.src:
             boundaries = beat_boundaries(cuts, runtime, mix.sfx.beats)
     placed = sfx_placements(mix if mixed else None, boundaries, payoff_s)
+    # The opening sting's layers, placed by the spec rather than by a cadence or an element.
+    sting_rows = opening_placements(mix) if mixed else []
+    placed = sorted(placed + sting_rows, key=lambda row: (row["at"], row["role"]))
     # The element sounds the illustration scenes asked for, on the finished timeline. The
     # PICTURE keeps all of them; the mix takes the subset thin_events leaves, and every drop is
     # printed. A role with no file configured fires nothing and is said out loud too — a
@@ -2579,7 +2813,7 @@ def main():
             print(f"audio: {silent} element sound(s) fire nothing — {why}", flush=True)
         kept_events, dropped_events = thin_events(
             [row for row in scene_sounds if row["role"] in playable],
-            first_speech_seconds(cut_rows, build / "audio"))
+            first_speech_seconds(cut_rows, build / "audio"), seed=sting_rows)
         if dropped_events:
             print("audio: sfx events thinned — "
                   + "; ".join(f"{row['at']:.2f}s {row['role']} ({row['why']})"
@@ -2633,16 +2867,20 @@ def main():
             e_args, event_indexes = event_inputs(
                 mix, kept_events, bed_index + 1 + len(sfx_indexes) + len(cue_indexes))
             args += e_args
+            o_args, opening_indexes = opening_inputs(
+                mix, bed_index + 1 + len(sfx_indexes) + len(cue_indexes) + len(event_indexes))
+            args += o_args
             steps.extend(audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                      sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
                                      payoff_s=payoff_s, events=kept_events,
-                                     event_indexes=event_indexes))
+                                     event_indexes=event_indexes,
+                                     opening_indexes=opening_indexes))
         else:
             steps.append(plain_audio_steps(mix.master if mix is not None else Master()))
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
              "-map", "[vout]", "-map", "[aout]", "-c:v", "libx264", "-preset", "medium",
              "-crf", str(a.crf), "-r", str(FPS), "-color_range", "tv", "-bsf:v", RANGE_BSF,
-             "-c:a", "aac", "-b:a", "160k" if mixed else "128k",
+             "-c:a", "aac", "-b:a", "160k" if mixed else "128k", "-ar", str(OUT_SAMPLE_RATE),
              "-movflags", "+faststart", str(final)])
         print(f"captions: {len(overlays)} word windows burned in "
               f"(accent {cap.accent}, band y={cap_box[1]}-{cap_box[3]})", flush=True)
@@ -2653,17 +2891,21 @@ def main():
             extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, 1)
             e_args, event_indexes = event_inputs(
                 mix, kept_events, bed_index + 1 + len(sfx_indexes) + len(cue_indexes))
+            o_args, opening_indexes = opening_inputs(
+                mix, bed_index + 1 + len(sfx_indexes) + len(cue_indexes) + len(event_indexes))
             run(["ffmpeg", "-y", "-loglevel", "error", *CONCAT_INPUT_ARGS,
-                 "-f", "concat", "-safe", "0", "-i", str(lst), *extra, *e_args,
+                 "-f", "concat", "-safe", "0", "-i", str(lst), *extra, *e_args, *o_args,
                  "-filter_complex", ";".join(
                      audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                  sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
                                  payoff_s=payoff_s, events=kept_events,
-                                 event_indexes=event_indexes)),
+                                 event_indexes=event_indexes,
+                                 opening_indexes=opening_indexes)),
                  "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
-                 "-b:a", "160k", "-movflags", "+faststart", str(final)])
+                 "-b:a", "160k", "-ar", str(OUT_SAMPLE_RATE), "-movflags", "+faststart",
+                 str(final)])
         else:
-            run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", loudnorm_filter(mix.master if mix is not None else Master()), "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(final)])
+            run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-af", loudnorm_filter(mix.master if mix is not None else Master()), "-c:a", "aac", "-b:a", "128k", "-ar", str(OUT_SAMPLE_RATE), "-movflags", "+faststart", str(final)])
     total = dur_of(final)
     # Beside captions.json, and written on every render: a `scdet` pass over a Short whose
     # joins dip to black finds nothing, so this file — not a pixel detector — is what a
