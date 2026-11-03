@@ -11,6 +11,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import render_sheets as R
 import media
+import specload
 from short_variants import needs_workbook, safe_slug
 
 SOFFICE = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
@@ -33,7 +34,7 @@ def main():
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
     a = ap.parse_args()
-    spec = yaml.safe_load(open(a.spec))
+    spec = specload.load(a.spec)   # resolves `extends:` (ParkSheet audit #5)
     # Preflight: every media scene is checked here, before a single frame is rendered.
     media.validate_spec(spec, a.spec)
     slug = safe_slug(spec["slug"])

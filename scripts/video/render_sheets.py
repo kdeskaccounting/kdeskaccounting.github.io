@@ -31,6 +31,12 @@ def _pw_page(html_path, w, h, transparent):
     page = _PW_PAGES.get(key)
     if page is not None:
         return page
+    page = _pw_browser().new_page(viewport={"width": w, "height": h})
+    page.goto(f"file://{pathlib.Path(html_path).resolve()}", wait_until="load")
+    _PW_PAGES[key] = page
+    return page
+
+def _pw_browser():
     if "browser" not in _PW_STATE:
         from playwright.sync_api import sync_playwright  # lazy: absent outside the render venv
         pw = sync_playwright().start()
@@ -38,26 +44,39 @@ def _pw_page(html_path, w, h, transparent):
         browser = (pw.chromium.launch(executable_path=hs, headless=True) if hs
                    else pw.chromium.launch(headless=True))
         _PW_STATE["pw"], _PW_STATE["browser"] = pw, browser
-    page = _PW_STATE["browser"].new_page(viewport={"width": w, "height": h})
-    page.goto(f"file://{pathlib.Path(html_path).resolve()}", wait_until="load")
-    _PW_PAGES[key] = page
+    return _PW_STATE["browser"]
+
+#: One reusable page per (w, h, transparent) for `screenshot(..., reuse=True)`: many
+#: DIFFERENT html files of one size (a Short's ~70 caption windows) shot through one page,
+#: navigating it to each file in turn, instead of one Chrome process per file.
+_PW_REUSE = {}
+
+def _reuse_page(w, h):
+    key = (w, h)
+    page = _PW_REUSE.get(key)
+    if page is None:
+        page = _pw_browser().new_page(viewport={"width": w, "height": h})
+        _PW_REUSE[key] = page
     return page
 
 def close_driver():
-    """Release every page/browser/driver opened by `screenshot(..., before_capture_js=...)`.
+    """Release every page/browser/driver opened by `screenshot(..., before_capture_js=...)`
+    or `screenshot(..., reuse=True)`.
 
     A caller that drives one page through many `seek()`+screenshot calls (illustrate.py's
     frame loop) should call this when it is done with a given spec, so a batch render does
     not leave Chrome processes behind. Harmless, and a no-op, if nothing was ever opened.
     """
-    for page in _PW_PAGES.values():
+    for page in [*_PW_PAGES.values(), *_PW_REUSE.values()]:
         page.close()
     _PW_PAGES.clear()
+    _PW_REUSE.clear()
     if "browser" in _PW_STATE:
         _PW_STATE.pop("browser").close()
         _PW_STATE.pop("pw").stop()
 
-def screenshot(html_path, out_png, w=W, h=H, transparent=False, before_capture_js=None):
+def screenshot(html_path, out_png, w=W, h=H, transparent=False, before_capture_js=None,
+               reuse=False):
     """HTML -> PNG. `transparent` keeps the page's alpha instead of painting it white.
 
     A `media` scene's credit plate and card overlay are screenshotted this way and then laid
@@ -77,7 +96,27 @@ def screenshot(html_path, out_png, w=W, h=H, transparent=False, before_capture_j
     times. Call `close_driver()` when a batch of renders is done. Every call that leaves
     `before_capture_js` unset (every existing caller) is untouched: same subprocess, same
     flags, same bytes out.
+
+    `reuse=True` (2026-11-03, ParkSheet audit #6) is the same idea for MANY files of one
+    size: make_short's caption windows (~70 a Short) used to cost one `--screenshot` process
+    each. With it, one Playwright page per (w, h) is navigated to each file in turn and
+    captured; `close_driver()` releases it. Same headless-shell binary, same viewport, same
+    transparent background, and the PNGs were checked byte-for-byte against the CLI path on
+    the fingerprint-scan benchmark (all 73 windows identical).
     """
+    page = None
+    if reuse and before_capture_js is None:
+        try:
+            page = _reuse_page(w, h)
+        except ImportError:
+            # No Playwright (the bare test environment): the one-process-per-file CLI path
+            # below draws the same bytes, only slower.
+            page = None
+    if page is not None:
+        page.goto(f"file://{pathlib.Path(html_path).resolve()}", wait_until="load")
+        page.evaluate("document.fonts.ready.then(() => true)")
+        page.screenshot(path=str(out_png), omit_background=transparent)
+        return
     if before_capture_js is not None:
         page = _pw_page(html_path, w, h, transparent)
         page.evaluate(before_capture_js)

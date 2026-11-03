@@ -834,9 +834,8 @@ def main(argv: list | None = None) -> int:
                          "billed. For re-renders that must not spend credits")
     a = ap.parse_args(argv)
 
-    import yaml  # lazy: absent outside the TTS venv
-    with open(a.spec) as fh:
-        spec = yaml.safe_load(fh)
+    import specload  # stdlib-only; imports yaml itself, lazily
+    spec = specload.load(a.spec)   # resolves `extends:` (ParkSheet audit #5)
     import human_voice  # stdlib-only; owns the `voice: human` switch
     if human_voice.is_human(spec):
         # Synthesising here would overwrite the person's read with TTS (and bill for it).

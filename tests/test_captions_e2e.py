@@ -342,3 +342,29 @@ def test_the_rendered_demo_captions_every_scene_including_the_card():
     for lo, hi in ((0, thirds), (thirds, 2 * thirds), (2 * thirds, 3 * thirds)):
         assert any(lo < end <= hi for end in ends), \
             f"no caption anywhere between {lo:.0f}s and {hi:.0f}s"
+
+
+@needs_chrome
+@pytest.mark.parametrize("bundle", ["", "carlito"])
+def test_the_reused_page_draws_the_same_bytes_as_one_process_per_window(tmp_path, bundle):
+    """Audit #6: `screenshot(..., reuse=True)` must be a pure speed change. Three different
+    caption windows through one persistent page, byte-compared with the CLI path."""
+    pytest.importorskip("playwright")
+    box = captions.caption_box(M.OUT_W, M.OUT_H, size="large")
+    brand = cards.brand_tokens({"font_bundle": bundle})
+    cue = _cue([captions.Word("Why", 0.0, 0.3), captions.Word("does", 0.3, 0.6),
+                captions.Word("Disney", 0.6, 1.0)])
+    try:
+        for lit in range(3):
+            hp = tmp_path / f"cap_{lit}.html"
+            hp.write_text(captions.caption_html(cue, lit, ACCENT, brand, M.OUT_W, box,
+                                                pop=1.14, size="large"), encoding="utf-8")
+            R.screenshot(hp, tmp_path / f"cli_{lit}.png", M.OUT_W, box[3] - box[1],
+                         transparent=True)
+            R.screenshot(hp, tmp_path / f"page_{lit}.png", M.OUT_W, box[3] - box[1],
+                         transparent=True, reuse=True)
+    finally:
+        R.close_driver()
+    for lit in range(3):
+        assert (tmp_path / f"cli_{lit}.png").read_bytes() == \
+            (tmp_path / f"page_{lit}.png").read_bytes(), f"window {lit} differs"

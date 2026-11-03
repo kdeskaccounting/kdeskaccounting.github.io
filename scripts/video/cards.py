@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import html as _html
 import math
+import pathlib
 import re
 
 TEMPLATES = ("ranked_list", "countdown", "changed", "calendar_heatmap", "wait_curve")
@@ -113,6 +114,20 @@ DEFAULT_BRAND: dict = {
     "accent": "#F2C14E",
     "accent_fg": "#101418",
     "font": "Carlito, Arial, Helvetica, sans-serif",
+    #: "" (the default: the page names `font` and Chrome finds what the system has -- for
+    #: Carlito, which is not installed on this Mac, that is Arial Bold) or "carlito": the
+    #: caption, hook-plate and credit-plate pages carry an @font-face for the Carlito files
+    #: in scripts/video/fonts/, so the type never depends on a system font. Opt-in so every
+    #: spec that does not ask renders the bytes it always did (ParkSheet audit #4, 2026-11-03).
+    "font_bundle": "",
+}
+
+#: The fonts shipped in-repo (scripts/video/fonts/, SIL OFL 1.1, see fonts/OFL.txt):
+#: bundle name -> (CSS family name, {weight: file}). The family name is distinct from the
+#: system name so a page can never silently pick an installed copy of a different version.
+FONT_DIR = pathlib.Path(__file__).resolve().parent / "fonts"
+BUNDLED_FONTS: dict = {
+    "carlito": ("Carlito Bundled", {400: "Carlito-Regular.ttf", 700: "Carlito-Bold.ttf"}),
 }
 
 _COLOUR_TOKENS = ("bg", "bg_alt", "fg", "muted", "accent", "accent_fg")
@@ -127,6 +142,9 @@ def _checked_token(key: str, value: object) -> str:
     text = str(value)
     if key in _COLOUR_TOKENS and not _HEX.match(text):
         raise ValueError(f"brand token {key!r} must be a hex colour like '#1F3864', got {text!r}")
+    if key == "font_bundle" and text not in ("", *BUNDLED_FONTS):
+        raise ValueError(f"brand token 'font_bundle' must be one of "
+                         f"{', '.join(repr(k) for k in ('', *BUNDLED_FONTS))}, got {text!r}")
     if key == "font" and not _FONT_STACK.match(text):
         raise ValueError(f"brand token 'font' must be a plain font stack "
                          f"(letters, digits, spaces, commas, hyphens), got {text!r}")
@@ -142,6 +160,31 @@ def brand_tokens(spec_brand: dict | None) -> dict:
                            f"known: {', '.join(sorted(DEFAULT_BRAND))}")
         tokens[key] = _checked_token(key, value)
     return tokens
+
+
+def font_face_css(brand: dict) -> str:
+    """The @font-face rules for `brand['font_bundle']`, or "" when no bundle is asked for.
+
+    A `file://` URL to the bundled file: every page that uses it is itself loaded from
+    `file://` by render_sheets.screenshot, so Chrome reads it with no server.
+    """
+    bundle = (brand or {}).get("font_bundle") or ""
+    if not bundle:
+        return ""
+    family, files = BUNDLED_FONTS[bundle]
+    return "".join(
+        f"@font-face{{font-family:'{family}';font-weight:{weight};"
+        f"src:url('{(FONT_DIR / name).as_uri()}') format('truetype')}}\n"
+        for weight, name in sorted(files.items()))
+
+
+def font_family(brand: dict) -> str:
+    """The CSS font-family a text page sets: the bundled family first when one is asked for,
+    then the brand's own stack as the fallback. Without a bundle, exactly `brand['font']`."""
+    bundle = (brand or {}).get("font_bundle") or ""
+    if not bundle:
+        return brand["font"]
+    return f"'{BUNDLED_FONTS[bundle][0]}', {brand['font']}"
 
 
 def is_card(scene: dict) -> bool:

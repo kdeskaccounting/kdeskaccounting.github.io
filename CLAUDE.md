@@ -264,6 +264,17 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # gain_db}]}` mixes the frame-0 whoosh+hit inside the graph, records it in cuts.json as
 # `role: opening` with its `impact`, and refuses a first word before impact + 0.10 s. Every final
 # encode is `-ar 48000` (loudnorm had been handing the AAC encoder 192 kHz -> 96 kHz output).
+# BRAND FONT (2026-11-03): `brand: {font_bundle: carlito}` makes the caption, hook-plate and
+# credit-plate pages load scripts/video/fonts/Carlito-Bold.ttf (SIL OFL, fonts/OFL.txt) by
+# @font-face instead of falling through to system Arial; the caption width model switches to
+# captions.CARLITO_ADVANCE_EM (Carlito is Calibri-metric, not Arial-metric). Default "" renders
+# the old bytes. Caption windows are shot through ONE persistent Playwright page
+# (render_sheets.screenshot(..., reuse=True)), byte-identical to one chrome process per window.
+# SPEC INHERITANCE (2026-11-03): a spec may say `extends: <base.yaml>` (relative to itself);
+# scripts/video/specload.py merges it in for make_short, narrate, build_video and illustrate:
+# mappings merge recursively (child wins), lists/scalars/null replace (so `scenes:` is whole),
+# chains allowed, cycles refused. No `extends:` = the exact object yaml.safe_load returns.
+# `specload.py <spec>` prints the resolved spec. ParkSheet's video/hand/_template/ uses it.
 # ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
 # each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
 # footage scene is licensed on its own line — falling back to the scene's `credit:` when the

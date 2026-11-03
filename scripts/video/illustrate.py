@@ -1408,9 +1408,8 @@ def render_scene_frames(scene, scene_dir, fps=FPS, transparent=False):
 
 
 def load_spec(spec_path):
-    import yaml  # lazy: absent in the stdlib-only test environment, present in .venv-tts
-    with open(spec_path, "r", encoding="utf-8") as f:
-        spec = yaml.safe_load(f)
+    import specload  # stdlib-only; resolves `extends:` (ParkSheet audit #5)
+    spec = specload.load(spec_path)
     validate_spec(spec)
     return spec
 

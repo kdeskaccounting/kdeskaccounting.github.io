@@ -557,9 +557,9 @@ def credit_plate_html(credit: str, brand: dict, width: int = 1296, height: int =
     unit = height / 100.0
     fs = CREDIT_FS_UNITS * unit
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-*{{box-sizing:border-box;margin:0;padding:0}}
+{cards.font_face_css(brand)}*{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{width:{width}px;height:{height}px;background:transparent;
-  font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+  font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
 .credit{{position:absolute;left:{left}px;bottom:{height - bottom}px;
   max-width:{right - left}px;padding:{0.55 * fs:.0f}px {0.85 * fs:.0f}px;
   border-radius:{0.45 * fs:.0f}px;color:{brand['fg']};font-size:{fs:.1f}px;line-height:1.24;

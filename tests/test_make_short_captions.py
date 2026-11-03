@@ -520,6 +520,14 @@ def test_the_caption_pngs_are_the_band_not_the_whole_frame(stub):
             assert kwargs["transparent"] is True
 
 
+def test_every_caption_window_goes_through_one_reused_page(stub):
+    """Audit #6 (2026-11-03): ~70 caption windows a Short used to be ~70 Chrome processes.
+    Every caption shot asks for the persistent page; nothing else changes about the call."""
+    stub.go()
+    caps = [kwargs for args, kwargs in stub.shots if "cap_" in pathlib.Path(args[1]).name]
+    assert caps and all(kwargs.get("reuse") is True for kwargs in caps)
+
+
 def test_the_caption_html_is_written_beside_its_png(stub):
     stub.go()
     doc = (stub.work / "cap_0000.html").read_text(encoding="utf-8")
