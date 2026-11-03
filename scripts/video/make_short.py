@@ -1345,8 +1345,10 @@ def render_captions(cues, cfg, brand, work, box):
                                     stroke=cfg.stroke)
         hp = work / f"cap_{n:04d}.html"; hp.write_text(doc, encoding="utf-8")
         png = work / f"cap_{n:04d}.png"
-        R.screenshot(hp, png, OUT_W, band_h, transparent=True)
+        # reuse: one persistent page for every window, not one Chrome process per window.
+        R.screenshot(hp, png, OUT_W, band_h, transparent=True, reuse=True)
         out.append((png, win.start, win.end))
+    R.close_driver()
     return out
 
 
