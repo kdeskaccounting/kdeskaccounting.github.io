@@ -1048,3 +1048,14 @@ def test_a_high_motion_on_footage_is_refused_by_name_in_the_preflight():
         text = str(e.value)
         assert motion in text and "video" in text
         assert "clip" in text and "hold" in text
+
+
+def test_the_credit_plate_loads_the_bundled_face_only_when_the_brand_asks():
+    """ParkSheet audit #4: a credit plate in Carlito beside captions in Carlito, never a
+    silent system fallback; and byte-for-byte the old page when no bundle is set."""
+    import cards
+    plain = media.credit_plate_html("Photo: X / CC BY 2.0", cards.brand_tokens(None))
+    bundled = media.credit_plate_html("Photo: X / CC BY 2.0",
+                                      cards.brand_tokens({"font_bundle": "carlito"}))
+    assert "@font-face" not in plain
+    assert (cards.FONT_DIR / "Carlito-Bold.ttf").as_uri() in bundled

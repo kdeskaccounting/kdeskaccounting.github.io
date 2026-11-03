@@ -20,6 +20,7 @@ import pathlib
 import pytest
 
 import captions as C
+import cards
 import media
 
 
@@ -976,3 +977,69 @@ def test_a_non_hex_colour_is_refused_at_the_html_too(key):
     with pytest.raises(ValueError, match=key):
         C.caption_html(_cue(), 0, "#ffe234", _tokens(), 1080, C.caption_box(1080, 1920),
                        **{key: "white"})
+
+
+# --- the bundled brand face (ParkSheet audit #4, 2026-11-03) -----------------------------
+
+CARLITO = cards.brand_tokens({"font_bundle": "carlito"})
+
+
+def _one_cue(text="Why does Disney"):
+    return C.Cue(text, 0.0, 1.0, tuple(C.Word(w, i * 0.3, i * 0.3 + 0.2)
+                                       for i, w in enumerate(text.split())))
+
+
+def test_without_a_bundle_the_band_page_carries_no_font_face():
+    box = C.caption_box(1080, 1920, size="large")
+    doc = C.caption_html(_one_cue(), 0, "#ffe234", cards.brand_tokens(None), 1080, box)
+    assert "@font-face" not in doc
+    assert f"font-family:{cards.DEFAULT_BRAND['font']};" in doc
+
+
+def test_with_the_carlito_bundle_every_text_page_loads_the_shipped_file():
+    box = C.caption_box(1080, 1920, size="large")
+    plate = C.plate_settings({"plate": {"text": "HIDDEN MICKEYS"}})
+    search = C.plate_settings({"plate": {"text": "why", "style": "search"}})
+    docs = [C.caption_html(_one_cue(), 0, "#ffe234", CARLITO, 1080, box, size="large"),
+            C.plate_html(plate, "#ffe234", CARLITO, 1080, 1920),
+            C.plate_html(search, "#ffe234", CARLITO, 1080, 1920)]
+    bold = (cards.FONT_DIR / "Carlito-Bold.ttf")
+    assert bold.is_file() and (cards.FONT_DIR / "OFL.txt").is_file()
+    for doc in docs:
+        assert bold.as_uri() in doc
+        assert "font-family:'Carlito Bundled', Carlito, Arial" in doc
+
+
+def test_the_carlito_table_is_the_bundled_file():
+    ImageFont = pytest.importorskip("PIL.ImageFont")
+    face = ImageFont.truetype(str(cards.FONT_DIR / "Carlito-Bold.ttf"), 1000)
+    for ch, em in C.CARLITO_ADVANCE_EM.items():
+        assert face.getlength(ch) / 1000 == pytest.approx(em, abs=0.001), ch
+    assert C.CARLITO_DEFAULT_ADVANCE_EM >= max(C.CARLITO_ADVANCE_EM.values())
+
+
+def test_carlito_is_not_arial_metric_compatible_so_the_model_switches_tables():
+    """Narrower on most capitals, wider on M and /: one table cannot serve both faces."""
+    assert C.word_em("MMM", face="carlito") > C.word_em("MMM")
+    assert C.word_em("STRESS", face="carlito") < C.word_em("STRESS")
+    box = C.caption_box(1080, 1920, size="large")
+    assert C.font_size("WHAT CHANGED THEIR", box, size="large", face="carlito") >= \
+        C.font_size("WHAT CHANGED THEIR", box, size="large")
+
+
+@pytest.mark.parametrize("text", CLIPPED_IN_W38)
+def test_a_carlito_cue_still_wraps_into_the_lines_the_band_holds(text):
+    box = C.caption_box(1080, 1920, position="center", size="large")
+    usable, band_h = box[2] - box[0], box[3] - box[1]
+    px = C.font_size(text, box, size="large", pop=1.14, face="carlito")
+    lines = C.wrap(text.split(), px, usable, pop=1.14, face="carlito")
+    assert len(lines) <= C.size_rules("large")[2]
+    assert len(lines) * 1.06 * px <= band_h
+    for line in lines:
+        assert C.line_em(line, pop=1.14, face="carlito") * round(px + 0.05, 1) <= usable
+
+
+def test_an_unknown_font_bundle_is_refused_by_name():
+    with pytest.raises(ValueError) as excinfo:
+        cards.brand_tokens({"font_bundle": "comic"})
+    assert "font_bundle" in str(excinfo.value)

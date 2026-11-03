@@ -104,8 +104,15 @@ def screenshot(html_path, out_png, w=W, h=H, transparent=False, before_capture_j
     transparent background, and the PNGs were checked byte-for-byte against the CLI path on
     the fingerprint-scan benchmark (all 73 windows identical).
     """
+    page = None
     if reuse and before_capture_js is None:
-        page = _reuse_page(w, h)
+        try:
+            page = _reuse_page(w, h)
+        except ImportError:
+            # No Playwright (the bare test environment): the one-process-per-file CLI path
+            # below draws the same bytes, only slower.
+            page = None
+    if page is not None:
         page.goto(f"file://{pathlib.Path(html_path).resolve()}", wait_until="load")
         page.evaluate("document.fonts.ready.then(() => true)")
         page.screenshot(path=str(out_png), omit_background=transparent)

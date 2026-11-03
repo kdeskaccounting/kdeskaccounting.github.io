@@ -345,12 +345,13 @@ def test_the_rendered_demo_captions_every_scene_including_the_card():
 
 
 @needs_chrome
-def test_the_reused_page_draws_the_same_bytes_as_one_process_per_window(tmp_path):
+@pytest.mark.parametrize("bundle", ["", "carlito"])
+def test_the_reused_page_draws_the_same_bytes_as_one_process_per_window(tmp_path, bundle):
     """Audit #6: `screenshot(..., reuse=True)` must be a pure speed change. Three different
     caption windows through one persistent page, byte-compared with the CLI path."""
     pytest.importorskip("playwright")
     box = captions.caption_box(M.OUT_W, M.OUT_H, size="large")
-    brand = cards.brand_tokens(None)
+    brand = cards.brand_tokens({"font_bundle": bundle})
     cue = _cue([captions.Word("Why", 0.0, 0.3), captions.Word("does", 0.3, 0.6),
                 captions.Word("Disney", 0.6, 1.0)])
     try:

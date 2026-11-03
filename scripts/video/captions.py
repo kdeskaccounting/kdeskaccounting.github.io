@@ -55,6 +55,8 @@ import os
 import pathlib
 import re
 
+import cards
+
 # --- the phrase rules -------------------------------------------------------------------
 
 #: A cue is a phrase, not a sentence. Both caps come from the reference implementation.
@@ -151,10 +153,11 @@ SIZES = tuple(SIZE_TABLE)
 #: wrapped to three lines in a two-line band, or ran a long word off the frame.
 FONT_EM_PER_CHAR = 0.58
 
-#: Advance widths, in em, of the face the captions ACTUALLY render in: system Arial Bold.
-#: The brand stack names Carlito first, but caption_html carries no @font-face (only
-#: render_sheets.BASE_CSS does, and the band page never includes it), so Chrome falls
-#: through to Arial. Measured with FreeType from /System/Library/Fonts/Supplemental/Arial
+#: Advance widths, in em, of the face the captions ACTUALLY render in WITHOUT a font bundle:
+#: system Arial Bold. The brand stack names Carlito first, but unless the brand sets
+#: `font_bundle: carlito` caption_html carries no @font-face (render_sheets.BASE_CSS does,
+#: and the band page never includes it), and Carlito is not installed, so Chrome falls
+#: through to Arial. With the bundle, CARLITO_ADVANCE_EM below is the table. Measured with FreeType from /System/Library/Fonts/Supplemental/Arial
 #: Bold.ttf; the suite re-measures it wherever Pillow and that file exist. The page is
 #: `text-transform: uppercase`, so only capitals, digits and punctuation are on screen.
 ADVANCE_EM = {
@@ -171,6 +174,40 @@ ADVANCE_EM = {
 #: A glyph the table does not list (a curly quote, an accented capital) is assumed as wide
 #: as an M: wrong only on the safe side.
 DEFAULT_ADVANCE_EM = 0.833
+
+#: The same table for the BUNDLED face (`brand.font_bundle: carlito`, audit #4, 2026-11-03):
+#: Carlito Bold, measured with FreeType from scripts/video/fonts/Carlito-Bold.ttf, which
+#: the band page then really renders in (cards.font_face_css). Carlito is metric-compatible
+#: with Calibri, NOT with Arial: most capitals are 5-30% narrower (median 0.90x), but M, /
+#: and a few others are WIDER, so it needs its own table rather than the Arial one. A cue
+#: that fits under the Arial model can therefore still be measured, not assumed.
+CARLITO_ADVANCE_EM = {
+    "A": 0.606, "B": 0.561, "C": 0.529, "D": 0.630, "E": 0.488, "F": 0.459, "G": 0.637,
+    "H": 0.631, "I": 0.267, "J": 0.331, "K": 0.547, "L": 0.423, "M": 0.874, "N": 0.659,
+    "O": 0.676, "P": 0.532, "Q": 0.686, "R": 0.563, "S": 0.473, "T": 0.495, "U": 0.653,
+    "V": 0.591, "W": 0.906, "X": 0.551, "Y": 0.520, "Z": 0.478,
+    "0": 0.507, "1": 0.507, "2": 0.507, "3": 0.507, "4": 0.507, "5": 0.507, "6": 0.507,
+    "7": 0.507, "8": 0.507, "9": 0.507,
+    ".": 0.267, ",": 0.258, ":": 0.276, ";": 0.276, "!": 0.326, "?": 0.463, "'": 0.233,
+    '"': 0.438, "-": 0.306, "(": 0.312, ")": 0.312, "$": 0.507, "%": 0.729, "&": 0.705,
+    "/": 0.430, " ": 0.226,
+}
+#: The widest capital in Carlito Bold (W): the unknown-glyph assumption, safe side again.
+CARLITO_DEFAULT_ADVANCE_EM = 0.906
+
+#: `brand.font_bundle` -> (advance table, unknown-glyph width). "" is the system-Arial page.
+ADVANCE_TABLES: dict = {
+    "": (ADVANCE_EM, DEFAULT_ADVANCE_EM),
+    "carlito": (CARLITO_ADVANCE_EM, CARLITO_DEFAULT_ADVANCE_EM),
+}
+
+
+def _advances(face: str = ""):
+    try:
+        return ADVANCE_TABLES[face or ""]
+    except KeyError:
+        raise ValueError(f"no advance table for font bundle {face!r}; "
+                         f"known: {', '.join(repr(k) for k in ADVANCE_TABLES)}") from None
 SPACE_EM = ADVANCE_EM[" "]
 #: Mirrors `letter-spacing:.01em` in caption_html.
 LETTER_SPACING_EM = 0.01
@@ -500,26 +537,28 @@ def caption_box(width: int, height: int, card_top: int | None = None,
 
 # --- type -------------------------------------------------------------------------------------
 
-def word_em(word: str, pop: float = DEFAULT_POP) -> float:
+def word_em(word: str, pop: float = DEFAULT_POP, face: str = "") -> float:
     """The layout width of one word, in em, as the band page sets it: its glyph advances in
     capitals, the letter-spacing on each, and — when the pop is on — the inline-block
     margin on both sides of its span."""
     text = str(word).upper()
-    em = sum(ADVANCE_EM.get(ch, DEFAULT_ADVANCE_EM) for ch in text)
+    table, unknown = _advances(face)
+    em = sum(table.get(ch, unknown) for ch in text)
     em += len(text) * LETTER_SPACING_EM
     if float(pop) > DEFAULT_POP:
         em += 2 * SPAN_MARGIN_EM
     return em
 
 
-def line_em(words, pop: float = DEFAULT_POP) -> float:
+def line_em(words, pop: float = DEFAULT_POP, face: str = "") -> float:
     """The layout width of one line of words, in em: the words and the spaces between."""
     words = list(words)
-    gaps = max(0, len(words) - 1) * (SPACE_EM + LETTER_SPACING_EM)
-    return sum(word_em(w, pop) for w in words) + gaps
+    space = _advances(face)[0][" "]
+    gaps = max(0, len(words) - 1) * (space + LETTER_SPACING_EM)
+    return sum(word_em(w, pop, face) for w in words) + gaps
 
 
-def tightest_lines_em(words, rows: int, pop: float = DEFAULT_POP) -> float:
+def tightest_lines_em(words, rows: int, pop: float = DEFAULT_POP, face: str = "") -> float:
     """The narrowest the WIDEST line can be, over every split of `words` into at most `rows`
     consecutive lines. Chrome wraps greedily, and greedy first-fit wraps into the fewest
     lines any split can, so type sized to this width wraps to `rows` lines or fewer — which
@@ -527,23 +566,24 @@ def tightest_lines_em(words, rows: int, pop: float = DEFAULT_POP) -> float:
     words = list(words)
     if not words:
         return 0.0
-    whole = line_em(words, pop)
+    whole = line_em(words, pop, face)
     if rows <= 1 or len(words) == 1:
         return whole
     best = whole
     for k in range(1, len(words)):
-        best = min(best, max(line_em(words[:k], pop), tightest_lines_em(words[k:], rows - 1, pop)))
+        best = min(best, max(line_em(words[:k], pop, face),
+                             tightest_lines_em(words[k:], rows - 1, pop, face)))
     return best
 
 
-def wrap(words, px: float, usable: float, pop: float = DEFAULT_POP) -> list:
+def wrap(words, px: float, usable: float, pop: float = DEFAULT_POP, face: str = "") -> list:
     """How the band page wraps `words` at `px` of type into `usable` px: greedy first-fit
     at word boundaries. (A hyphen is one more place Chrome MAY break, which can only pack a
     line fuller, never produce more lines than this.)"""
     lines, current = [], []
     for w in words:
         trial = current + [w]
-        if current and line_em(trial, pop) * px > usable:
+        if current and line_em(trial, pop, face) * px > usable:
             lines.append(current)
             current = [w]
         else:
@@ -554,7 +594,7 @@ def wrap(words, px: float, usable: float, pop: float = DEFAULT_POP) -> list:
 
 
 def font_size(text: str, box, lines: int | None = None, size: str = "default",
-              pop: float = DEFAULT_POP) -> float:
+              pop: float = DEFAULT_POP, face: str = "") -> float:
     """Type size for one cue: as big as the band allows, wrapped over at most `lines`.
 
     `size` picks the font fraction and the default line count out of SIZE_TABLE; `lines`
@@ -579,7 +619,7 @@ def font_size(text: str, box, lines: int | None = None, size: str = "default",
     band_frac, size_lines = size_rules(size)[1:]
     rows = max(1, int(size_lines if lines is None else lines))
     words = str(text or "").split()
-    widest = tightest_lines_em(words, rows, pop)
+    widest = tightest_lines_em(words, rows, pop, face)
     room = usable * (1 - FIT_SLACK_FRAC)
     fit = room / widest if widest > 0 else band_frac * band_h
     return max(MIN_FONT_PX, min(band_frac * band_h, fit))
@@ -630,7 +670,8 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
     stroke_colour = _checked_hex(stroke, "stroke")
     left, top, _right, bottom = box
     band_h = bottom - top
-    fs = font_size(cue.text, box, size=size, pop=pop)
+    face = brand.get("font_bundle") or ""
+    fs = font_size(cue.text, box, size=size, pop=pop, face=face)
     pop_css = "" if float(pop) <= DEFAULT_POP else (
         f"\n.line span{{display:inline-block;margin:0 {SPAN_MARGIN_EM}em}}"
         f"\n.lit{{transform:scale({float(pop):.2f});transform-origin:{POP_ORIGIN};"
@@ -641,9 +682,9 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
         text = _html.escape(word.text, quote=True)
         spans.append(f'<span class="lit">{text}</span>' if i == lit else f"<span>{text}</span>")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-*{{box-sizing:border-box;margin:0;padding:0}}
+{cards.font_face_css(brand)}*{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{width:{int(width)}px;height:{band_h}px;overflow:hidden;background:transparent;
-  font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+  font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
 .band{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   padding:0 {left}px}}
 .line{{text-align:center;font-weight:700;font-size:{fs:.1f}px;line-height:1.06;
@@ -787,9 +828,9 @@ def search_plate_html(plate: Plate, brand: dict, width: int, height: int) -> str
     pad_x = round(width * SAFE_X_FRAC * 0.6)
     icon = head_px * 0.95
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-*{{box-sizing:border-box;margin:0;padding:0}}
+{cards.font_face_css(brand)}*{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
-  background:transparent;font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+  background:transparent;font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
 .wrap{{position:absolute;left:{pad_x}px;right:{pad_x}px;top:{round(height * centre)}px;
   transform:translateY(-50%)}}
 .bar{{display:flex;align-items:center;gap:{0.45 * head_px:.0f}px;background:#FFFFFF;
@@ -825,9 +866,9 @@ def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) 
     kicker = (f'<div class="kicker">{_html.escape(plate.kicker, quote=True)}</div>'
               if plate.kicker else "")
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
-*{{box-sizing:border-box;margin:0;padding:0}}
+{cards.font_face_css(brand)}*{{box-sizing:border-box;margin:0;padding:0}}
 html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
-  background:transparent;font-family:{brand['font']};-webkit-font-smoothing:antialiased}}
+  background:transparent;font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
 .plate{{position:absolute;left:0;top:{round(height * centre)}px;width:{int(width)}px;
   transform:translateY(-50%);text-align:center;padding:0 {round(width * SAFE_X_FRAC)}px}}
 .kicker{{font-size:{kicker_px:.0f}px;font-weight:700;letter-spacing:.22em;
