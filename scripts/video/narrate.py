@@ -12,6 +12,18 @@ Synthesize per-scene narration WAVs. Two providers, selected by the spec's `tts:
 A legacy top-level `voice: am_michael` (what every marketing/video/*/scenes.yaml carries)
 still means Kokoro, unchanged.
 
+Keep `style: 0` on any captioned spec. ElevenLabs documents that a `style` above zero
+makes the delivery speed unstable, and caption word timings come from the same request's
+character alignment, so an unstable rate shows up as captions drifting off the voice. Set
+the rate with `speed` (inside voice_settings, honoured by eleven_multilingual_v2 and ignored
+by eleven_v3), never with an ffmpeg `atempo` afterwards, which would move the audio away
+from the timings.
+
+Lead-in: `tts.lead_in_s` is the silence before every scene's first word; a scene may set its
+own `lead_in_s:` (e.g. scene 0 of a Short whose opening sting lands before the first word).
+Neither is in the cache key. A lead-in-only change re-pads the cached WAV locally
+(`relead_cached`), so it costs nothing. `--cache-only` turns any real miss into exit 2.
+
   scripts/video/.venv-tts/bin/python scripts/video/narrate.py --spec … --out …
   …/narrate.py --spec … --tts-check          # GET /v1/voices, prove the voice_id, exit 0/2
   …/narrate.py --spec … --dry-run            # character counts + credit estimate, no network
@@ -160,6 +172,63 @@ def _lead_in(block: dict) -> float:
         raise SystemExit(f"tts.lead_in_s must be in [0, 1.0]; got {lead!r}. It is the "
                          f"silence prepended to every scene, and the word timings carry it.")
     return lead
+
+
+def scene_lead_in(scene: dict, cfg: TTSConfig) -> float:
+    """The lead-in ONE scene gets: its own `lead_in_s:` if it sets one, else the spec's.
+
+    A per-scene key (2026-11-03) so a Short whose opening sting has to land before the first
+    word -- a whoosh into a hit at 0.40 s, say -- can push scene 0's speech back without
+    touching every other scene, and without anyone padding a WAV by hand. Same bounds as
+    `tts.lead_in_s`; same rule that it is NOT in the cache key (see `relead_cached`).
+    """
+    value = (scene or {}).get("lead_in_s")
+    if value is None:
+        return cfg.lead_in_s
+    lead = float(value)
+    if not 0.0 <= lead <= 1.0:
+        raise SystemExit(f"scene lead_in_s must be in [0, 1.0]; got {lead!r}. It is the "
+                         f"silence prepended to this scene's narration.")
+    return lead
+
+
+def relead_cached(wav_path: pathlib.Path, old_lead_s: float,
+                  new_lead_s: float) -> float | None:
+    """Re-pad a cached scene WAV from one lead-in to another, locally. Seconds, or None.
+
+    The lead-in is digital silence finish() PREPENDS after the provider's audio was trimmed,
+    so a cached WAV is exactly `int(old_lead_s * SR)` zero samples followed by the billed
+    audio. Changing the lead-in therefore changes no byte the provider generated, and this
+    swaps the silence instead of re-synthesizing (which on ElevenLabs is a billed request).
+
+    It refuses -- returns None, and the caller falls back to the old miss -- unless the file
+    proves the premise: a 16-bit mono PCM WAV at SR whose first `int(old_lead_s * SR)`
+    samples are all zero. Anything else (a stub, a human read, a WAV someone edited) is not
+    known to be silence + audio, and guessing would cut speech.
+
+    Standard library only (`wave`), so the test environment can drive it.
+    """
+    import wave
+    wav_path = pathlib.Path(wav_path)
+    try:
+        with wave.open(str(wav_path), "rb") as src:
+            if (src.getnchannels(), src.getsampwidth(), src.getframerate()) != (1, 2, SR):
+                return None
+            frames = src.readframes(src.getnframes())
+    except (OSError, EOFError, wave.Error):
+        return None
+    old_n, new_n = int(old_lead_s * SR), int(new_lead_s * SR)
+    if old_n * 2 > len(frames) or any(frames[:old_n * 2]):
+        return None
+    body = frames[old_n * 2:]
+    tmp = wav_path.with_suffix(".part.wav")
+    with wave.open(str(tmp), "wb") as dst:
+        dst.setnchannels(1)
+        dst.setsampwidth(2)
+        dst.setframerate(SR)
+        dst.writeframes(b"\x00\x00" * new_n + body)
+    os.replace(tmp, wav_path)
+    return (new_n + len(body) // 2) / SR
 
 
 def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSConfig:
@@ -758,6 +827,11 @@ def main(argv: list | None = None) -> int:
                     help="refuse to synthesize anything unless narration resolves to this "
                          "provider. Turns the silent no-key fallback into a failed build, "
                          "which is what a paid batch wants")
+    ap.add_argument("--cache-only", action="store_true",
+                    help="never synthesize: every scene must be a cache hit (a lead-in-only "
+                         "change is re-padded locally and counts as one). The first scene "
+                         "that would need a request stops the run with exit 2 and nothing "
+                         "billed. For re-renders that must not spend credits")
     a = ap.parse_args(argv)
 
     import yaml  # lazy: absent outside the TTS venv
@@ -782,8 +856,11 @@ def main(argv: list | None = None) -> int:
     if not a.out:
         ap.error("--out is required unless --dry-run or --tts-check")
 
-    key = api_key() if cfg.provider == ELEVENLABS else None
-    if cfg.provider == ELEVENLABS and not key:
+    # --cache-only never sends a request, so it never needs (or reads) the key, and it must
+    # not take the no-key Kokoro fallback either: that changes the cache key and would turn
+    # every hit into a miss.
+    key = api_key() if cfg.provider == ELEVENLABS and not a.cache_only else None
+    if cfg.provider == ELEVENLABS and not key and not a.cache_only:
         # One loud line, then carry on locally: every dry run, test and CI path in this repo
         # must keep working on a machine that has no ElevenLabs key.
         print(f"!!! ELEVENLABS FALLBACK: {no_key_message()}. Narrating with Kokoro "
@@ -819,6 +896,8 @@ def main(argv: list | None = None) -> int:
         if not text:
             durations[i] = 0.0
             continue
+        # This scene's own lead-in: `scenes[i].lead_in_s` if set, else `tts.lead_in_s`.
+        lead = scene_lead_in(scene, cfg)
         # The words file is part of the cache: a hit that yielded no timings would make the
         # first captioned render of an old build come out silently uncaptioned. A scene
         # cached before captions existed therefore re-synthesizes once — free on Kokoro,
@@ -834,20 +913,42 @@ def main(argv: list | None = None) -> int:
             # It is compared here instead, defaulting to LEAD_IN_S so those older metas stay
             # hits.
             #
-            # A CHANGED lead-in is a MISS, and a miss re-synthesizes — it is NOT free. There
-            # is no local re-decode path: decode_to_wav unlinks the provider's mp3 in its
-            # finally block, so nothing is kept to prepend different silence to. On ElevenLabs
-            # that is a real billed request per scene (free on Kokoro).
-            if (hash_matches(stored.get("hash"), cfg, text)
-                    and float(stored.get("lead_in_s", LEAD_IN_S)) == cfg.lead_in_s):
+            # A CHANGED lead-in used to be a MISS, re-synthesized and (on ElevenLabs) billed:
+            # decode_to_wav unlinks the provider's mp3, so nothing was kept to prepend
+            # different silence to. But the cached WAV IS that silence + the billed audio, so
+            # `relead_cached` swaps the silence locally when the file proves it (2026-11-03).
+            # A WAV it cannot verify still falls through to the old miss below.
+            stored_lead = float(stored.get("lead_in_s", LEAD_IN_S))
+            if hash_matches(stored.get("hash"), cfg, text) and stored_lead == lead:
                 durations[i] = stored["seconds"]
                 print(f"scene {i:02d}: cached {durations[i]:.1f}s "
                       f"[{stored.get('provider_used', KOKORO)}]")
                 continue
+            if hash_matches(stored.get("hash"), cfg, text):
+                seconds = relead_cached(wav, stored_lead, lead)
+                if seconds is not None:
+                    words_file = captions.words_path(wav)
+                    try:
+                        old_words = json.loads(words_file.read_text())
+                    except (OSError, ValueError):
+                        old_words = None
+                    captions.write_words(wav, shift_words(old_words, lead - stored_lead))
+                    meta.write_text(json.dumps({**stored, "seconds": seconds,
+                                                "lead_in_s": lead}))
+                    durations[i] = seconds
+                    print(f"scene {i:02d}: cached {seconds:.1f}s "
+                          f"[{stored.get('provider_used', KOKORO)}], lead-in "
+                          f"{stored_lead:g} -> {lead:g} s re-padded locally (nothing billed)")
+                    continue
+        if a.cache_only:
+            print(f"scene {i:02d}: not in the cache ({wav}) and --cache-only is set. "
+                  f"Nothing was synthesized and nothing was billed; scenes before this one "
+                  f"are unchanged.", file=sys.stderr, flush=True)
+            return 2
         # Drop the meta BEFORE synthesizing: a crash then leaves a scene with no meta, which
         # re-synthesizes next run. Leaving a stale meta beside a new WAV would instead cache a
         # wrong duration, and assemble.py would cut the audio against the wrong frame length.
-        scene_cfg = cfg
+        scene_cfg = dataclasses.replace(cfg, lead_in_s=lead)
         try:
             meta.unlink()
         except OSError:
