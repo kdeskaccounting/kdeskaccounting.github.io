@@ -1089,16 +1089,31 @@ def test_the_elevenlabs_path_hands_its_lead_in_down_to_the_decode(tmp_path, monk
     assert seen["lead_in_s"] == pytest.approx(0.05)
 
 
-def test_a_changed_lead_in_re_renders_the_wav_even_though_the_cache_key_did_not_move(drive):
-    """The bill does not move, so the hash cannot — the meta carries the lead-in instead."""
+def test_a_changed_spec_lead_in_is_re_padded_locally_from_the_cache_with_no_request(drive):
+    """The bill does not move, so the hash cannot -- the meta carries the lead-in instead, and
+    a cached WAV that proves it is silence-then-audio is re-padded locally (2026-11-03): no
+    provider call, no credits, the new silence in front of the same billed samples."""
     assert drive.run() == 0
     narrated = len(drive.calls)
     assert narrated
     assert drive.meta(0)["lead_in_s"] == pytest.approx(N.LEAD_IN_S)
     assert drive.run() == 0 and len(drive.calls) == narrated, "an unchanged spec is a hit"
+    _real_wavs(drive, N.LEAD_IN_S)
     drive.spec["tts"] = {"lead_in_s": 0.05}
     assert drive.run() == 0
-    assert len(drive.calls) == 2 * narrated, "a shortened lead-in must re-render every scene"
+    assert len(drive.calls) == narrated, "a lead-in-only change must not call the provider"
+    assert drive.meta(0)["lead_in_s"] == pytest.approx(0.05)
+    assert _first_nonzero_s(drive.out / "scene_00.wav") == pytest.approx(0.05, abs=1 / N.SR)
+
+
+def test_a_changed_lead_in_on_a_wav_that_cannot_be_proven_re_synthesizes(drive):
+    """The fallback: a cached file relead_cached cannot prove is silence-then-audio (here the
+    fixture's stub bytes) is never cut into -- the scene is narrated again instead."""
+    assert drive.run() == 0
+    narrated = len(drive.calls)
+    drive.spec["tts"] = {"lead_in_s": 0.05}
+    assert drive.run() == 0
+    assert len(drive.calls) == 2 * narrated
     assert drive.meta(0)["lead_in_s"] == pytest.approx(0.05)
 
 
