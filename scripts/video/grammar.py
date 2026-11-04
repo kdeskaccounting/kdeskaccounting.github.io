@@ -75,7 +75,19 @@ BLUR_SIGMA_MAX = 30.0
 RAMP_MS_MAX = 2000.0
 
 VERDICTS = ("good", "bad")
-FX_KEYS = ("verdict", "from", "to", "strength", "ramp_ms")
+FX_KEYS = ("verdict", "from", "to", "strength", "ramp_ms", "style", "at", "hold")
+FX_STYLES = ("grade", "wash")
+
+#: `fx: {style: wash}` (2026-11-04): the measured verdict WASH of the grammar study (SPEC
+#: section 4) -- a normal-blend colour layer, not a channel grade. Red at alpha 0.24 with darker
+#: corners, ramping 200 ms from 80 ms before the word, held 330 ms, out 200 ms; green at alpha
+#: 0.44, 170 ms in, held to the cut. `hold: cut` / milliseconds overrides the hold.
+WASH = {
+    "bad": {"color": "0xFF0000", "alpha": 0.24, "vignette": True, "lead_ms": 80.0,
+            "in_ms": 200.0, "hold": 330.0, "out_ms": 200.0},
+    "good": {"color": "0x009600", "alpha": 0.44, "vignette": False, "lead_ms": 80.0,
+             "in_ms": 170.0, "hold": "cut", "out_ms": 200.0},
+}
 FX_DEFAULT_RAMP_MS = 100.0
 
 #: The verdict grades, at strength 1: an RGB colour WASH (`colorchannelmixer`), each channel
@@ -275,6 +287,27 @@ def parse_fx(scene, where="scene"):
     if fx.get("verdict") not in VERDICTS:
         raise ValueError(f"{where}: fx.verdict must be one of {', '.join(VERDICTS)}, "
                          f"got {fx.get('verdict')!r}")
+    style = fx.get("style", "grade")
+    if style not in FX_STYLES:
+        raise ValueError(f"{where}: fx.style must be one of {', '.join(FX_STYLES)}")
+    if style == "wash":
+        bad = sorted(k for k in ("strength", "ramp_ms", "to") if k in fx)
+        if bad:
+            raise ValueError(f"{where}: fx.style wash takes `at` (or `from`) and `hold`, not "
+                             f"{', '.join(bad)}; its colour, alpha and ramps are the measured ones")
+        if "at" not in fx and "from" not in fx:
+            raise ValueError(f"{where}: fx.style wash needs `at:` -- the verdict word")
+        hold = fx.get("hold", WASH[fx["verdict"]]["hold"])
+        if hold != "cut":
+            _num(hold, "fx.hold", where, 1.0, 60000.0)
+        out = {"verdict": fx["verdict"], "style": "wash", "hold": hold}
+        for key in ("at", "from"):
+            if key in fx:
+                illustrate._check_time(fx[key], where, f"fx.{key}")
+                out[key] = fx[key]
+        return out
+    if "at" in fx or "hold" in fx:
+        raise ValueError(f"{where}: fx `at`/`hold` belong to `style: wash`")
     out = {"verdict": fx["verdict"],
            "strength": _num(fx.get("strength", 1.0), "fx.strength", where, 0.0, 1.0,
                             lo_open=True),
@@ -311,7 +344,37 @@ def verdict_span(fx, words, dur, where="scene") -> tuple:
     return round(t0, 4), round(t1, 4)
 
 
+def wash_filter(verdict: str) -> str:
+    w = WASH[verdict]
+    f = f"drawbox=x=0:y=0:w=iw:h=ih:color={w['color']}@{w['alpha']:.2f}:t=fill"
+    return f + (",vignette=angle=0.8" if w["vignette"] else "")
+
+
+def wash_window(fx, words, dur, where="scene") -> Window:
+    """The measured verdict wash: ramps in `lead_ms` before the word so it peaks on it."""
+    w = WASH[fx["verdict"]]
+    rows = illustrate.word_rows(words or [])
+    key = "at" if "at" in fx else "from"
+    word_t = float(illustrate.resolve_time(fx[key], rows, where, f"fx.{key}"))
+    t0 = max(0.0, word_t - (w["lead_ms"] / 1000.0 if key == "at" else 0.0))
+    ramp_in = w["in_ms"] / 1000.0
+    if fx["hold"] == "cut":
+        t1, ramp_out = float(dur), 0.0
+    else:
+        ramp_out = w["out_ms"] / 1000.0
+        t1 = t0 + ramp_in + float(fx["hold"]) / 1000.0 + ramp_out
+        if t1 >= float(dur) - 1e-6:
+            t1, ramp_out = float(dur), 0.0
+    if t0 >= float(dur) - 1.0 / 30:
+        raise ValueError(f"{where}: fx wash starts at {t0:.3f}s, at its scene's end")
+    ramp_in = min(ramp_in, t1 - t0)
+    return Window("tint", round(t0, 4), round(t1, 4), 0.0 if t0 <= 1e-6 else round(ramp_in, 4),
+                  round(min(ramp_out, max(0.0, t1 - t0 - ramp_in)), 4), wash_filter(fx["verdict"]))
+
+
 def verdict_window(fx, words, dur, where="scene") -> Window:
+    if fx.get("style") == "wash":
+        return wash_window(fx, words, dur, where)
     t0, t1 = verdict_span(fx, words, dur, where)
     ramp = min(fx["ramp_ms"] / 1000.0, (t1 - t0) / 2)
     ends_at_cut = t1 >= float(dur) - 1e-6
