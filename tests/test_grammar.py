@@ -430,3 +430,28 @@ def test_fx_on_a_card_scene_is_refused(stub, tmp_path):
     with pytest.raises(SystemExit) as exc:
         stub.go()
     assert "fx" in str(exc.value)
+
+
+def test_fx_list_splits_a_line_into_spans():
+    spans = G.parse_fx_list({"fx": [{"verdict": "bad", "to": {"word": "that"}},
+                                    {"verdict": "good", "from": {"word": "with"}}]}, "scene 5")
+    assert [s["verdict"] for s in spans] == ["bad", "good"]
+    assert G.parse_fx_list({}) == []
+    assert G.parse_fx_list({"fx": {"verdict": "bad"}})[0]["verdict"] == "bad"
+    with pytest.raises(ValueError, match="empty list"):
+        G.parse_fx_list({"fx": []})
+    with pytest.raises(ValueError, match=r"fx\[1\]"):
+        G.parse_fx_list({"fx": [{"verdict": "bad"}, {"verdict": "meh"}]}, "scene 5")
+    with pytest.raises(ValueError, match="at most"):
+        G.parse_fx_list({"fx": [{"verdict": "bad"}] * 5})
+
+
+def test_fx_list_spans_may_not_overlap():
+    G.check_no_overlap([(0.0, 1.0), (1.0, 2.0)])
+    with pytest.raises(ValueError, match="overlap"):
+        G.check_no_overlap([(0.0, 1.5), (1.0, 2.0)], "scene 5")
+
+
+def test_verdict_events_take_a_list_per_scene():
+    assert G.verdict_events(ROWS, {2: [("bad", 0.0), ("good", 1.5)]}) == [
+        {"at": 9.0, "role": "verdict_bad"}, {"at": 10.5, "role": "verdict_good"}]

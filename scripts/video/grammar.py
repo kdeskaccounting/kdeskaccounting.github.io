@@ -24,6 +24,10 @@ keep their own colours):
         Colour wash (colorchannelmixer) for the span (default: the whole scene), plus the matching sound
         (`audio.sfx.on_verdict`) at the span start. `from`/`to` take the same word references
         an overlay element's `enter.when` does.
+  fx: [{verdict: bad, to: <word>}, {verdict: good, from: <word>}]
+        A LIST of up to 4 such spans (2026-11-04, PoC v3): the line can turn from bad to good
+        mid-sentence. Each span is checked as above, each gets its own sound, and the spans
+        may not overlap once their words resolve (refused by scene).
 
   `sigma` is in DELIVERED pixels (scaled to the 1.2x render size here, as `blur:` is). A blur
   window that runs to the end of its scene has no out-ramp: the cut is the snap back.
@@ -226,6 +230,35 @@ def check_overlay(overlay_block, where="overlay") -> None:
     for index, el in enumerate(block.get("elements") or []):
         if isinstance(el, dict):
             parse_blur_bg(el.get("blur_bg"), f"{where} element {index}")
+
+
+#: The most verdict spans one scene's `fx:` list may carry.
+FX_MAX_SPANS = 4
+
+
+def parse_fx_list(scene, where="scene") -> list:
+    """A scene's `fx:` as a list of checked spans: [] when absent, one for a mapping (the
+    original form, unchanged), several for a list. Pure; raises ValueError."""
+    fx = (scene or {}).get("fx")
+    if fx is None:
+        return []
+    if isinstance(fx, list):
+        if not fx:
+            raise ValueError(f"{where}: `fx:` is an empty list; drop it or give a span")
+        if len(fx) > FX_MAX_SPANS:
+            raise ValueError(f"{where}: `fx:` has {len(fx)} spans; at most {FX_MAX_SPANS}")
+        return [parse_fx({"fx": item}, f"{where} fx[{i}]") for i, item in enumerate(fx)]
+    return [parse_fx(scene, where)]
+
+
+def check_no_overlap(spans, where="scene") -> None:
+    """Refuse verdict spans [(t0, t1), ...] that overlap on the scene clock."""
+    ordered = sorted(spans)
+    for (a0, a1), (b0, b1) in zip(ordered, ordered[1:]):
+        if b0 < a1 - 1e-6:
+            raise ValueError(f"{where}: fx verdict spans overlap ({a0:.3f}-{a1:.3f}s and "
+                             f"{b0:.3f}-{b1:.3f}s); give the first a `to:` before the "
+                             f"second's `from:`")
 
 
 def parse_fx(scene, where="scene"):
@@ -496,12 +529,16 @@ def move_events(rows, moves, lead: float) -> list:
 
 def verdict_events(rows, verdicts) -> list:
     """`{at, role: verdict_good|bad}` at each verdict span start. `verdicts` is
-    {scene index: (verdict, local t0)}."""
+    {scene index: (verdict, local t0)} or, for a scene with an `fx:` list,
+    {scene index: [(verdict, local t0), ...]}."""
     starts = {row["scene"]: float(row["start"]) for row in rows or ()}
     out = []
-    for index, (verdict, t0) in (verdicts or {}).items():
+    for index, value in (verdicts or {}).items():
+        pairs = value if isinstance(value, list) else [value]
         if index in starts:
-            out.append({"at": round(starts[index] + float(t0), 3), "role": f"verdict_{verdict}"})
+            for verdict, t0 in pairs:
+                out.append({"at": round(starts[index] + float(t0), 3),
+                            "role": f"verdict_{verdict}"})
     return sorted(out, key=lambda r: r["at"])
 
 

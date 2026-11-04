@@ -281,6 +281,9 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # element; or `crashzoom.badge.blur_bg`), ramped by an alpha dissolve; to the cut unless `hold`.
 # `fx: {verdict: good|bad, from, to, strength, ramp_ms}` on a media scene grades the footage
 # green/red (colorchannelmixer wash) for the span (words allowed in from/to). Sounds, under
+# `fx:` may also be a LIST of up to 4 such spans (2026-11-04, PoC v3: red on "Taller than that",
+# green on "with a child" in one line); each gets its own on_verdict sound; overlapping spans are refused.
+# Sounds, continued:
 # `audio.sfx`: `on_cut: {src, gain_db}` (MAPPING form; the legacy string `on_cut:` is still the
 # beat-boundary whoosh) on every picture cut, `on_tag` on every element entry without its own
 # `sfx:`, `on_move: {src, lead, motions}` before every punch/burst/pan beat and crashzoom turn,

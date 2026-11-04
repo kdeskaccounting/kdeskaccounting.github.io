@@ -500,7 +500,7 @@ def media_overlay_preflight(scene, index: int, spec_path) -> None:
     media_grade(scene, index)
     where = f"scene {index} (kind: media)"
     try:
-        grammar.parse_fx(scene, where)
+        grammar.parse_fx_list(scene, where)
         if isinstance(block, dict):
             grammar.check_overlay(block, f"{where} overlay")
     except ValueError as exc:
@@ -2722,14 +2722,18 @@ def main():
             # the overlay (blur_bg:). Empty for a scene with neither key, which is every scene
             # written before the layer existed -- and then nothing below changes.
             windows = []
-            vfx = grammar.parse_fx(sc, f"scene {idx:02d}")
-            if vfx is not None:
+            vfxs = grammar.parse_fx_list(sc, f"scene {idx:02d}")
+            if vfxs:
                 try:
-                    windows.append(grammar.verdict_window(vfx, captions.read_words(wav), dur,
-                                                          f"scene {idx:02d}"))
+                    tints = [grammar.verdict_window(vfx, captions.read_words(wav), dur,
+                                                    f"scene {idx:02d}") for vfx in vfxs]
+                    grammar.check_no_overlap([(w.t0, w.t1) for w in tints], f"scene {idx:02d}")
                 except ValueError as exc:
                     raise SystemExit(str(exc)) from None
-                verdicts[idx] = (vfx["verdict"], windows[-1].t0)
+                windows += tints
+                pairs = [(vfx["verdict"], w.t0) for vfx, w in zip(vfxs, tints)]
+                # One span keeps the original (verdict, t0) shape cuts.json has always seen.
+                verdicts[idx] = pairs[0] if len(pairs) == 1 else pairs
             windows += grammar.blur_windows(sc.get("overlay"), ov_scene, dur, RW / OUT_W,
                                             f"scene {idx:02d} overlay")
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
