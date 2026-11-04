@@ -275,6 +275,24 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # mappings merge recursively (child wins), lists/scalars/null replace (so `scenes:` is whole),
 # chains allowed, cycles refused. No `extends:` = the exact object yaml.safe_load returns.
 # `specload.py <spec>` prints the resolved spec. ParkSheet's video/hand/_template/ uses it.
+# EDIT GRAMMAR (2026-11-04, ParkSheet route C; scripts/video/grammar.py; all opt-in, absent =
+# the old bytes). `overlay: {blur_bg: true|{sigma: 10, in_ms: 150, out_ms: 150, hold}}` blurs the
+# FOOTAGE behind an overlay from its first element's entry (or per element: `blur_bg` on the
+# element; or `crashzoom.badge.blur_bg`), ramped by an alpha dissolve; to the cut unless `hold`.
+# `fx: {verdict: good|bad, from, to, strength, ramp_ms}` on a media scene grades the footage
+# green/red (colorbalance, pl=1) for the span (words allowed in from/to). Sounds, under
+# `audio.sfx`: `on_cut: {src, gain_db}` (MAPPING form; the legacy string `on_cut:` is still the
+# beat-boundary whoosh) on every picture cut, `on_tag` on every element entry without its own
+# `sfx:`, `on_move: {src, lead, motions}` before every punch/burst/pan beat and crashzoom turn,
+# `on_verdict: {good, bad}` at each verdict start, `min_gap` (0.12 s); each may take start/end.
+# Thinned after the first word + 0.5 s, verdict > tag > cut > move; recorded in cuts.json `sfx`
+# as cut/tag/move/verdict_good/verdict_bad. `src: bundle:<hit|pop|whoosh|ding|buzzer>` = the
+# renderer's Mixkit set, scripts/video/sfx/manifest.json (URL, licence, sha256); the .wav files
+# are gitignored and fetched by hand with `sfx/fetch.py`. Note ParkSheet gate S17 (<= 4 sfx per
+# 10 s) fails by design with on_cut/on_tag on; that threshold is ParkSheet's call.
+# CREDIT PLATES OFF BY DEFAULT (Stephen, 2026-11-04): a scene's `credit:` is no longer burned
+# in unless `brand: {credit_plate: on}` (which renders the old plate byte for byte). Attribution
+# goes in the description's Credits block, CC BY only.
 # ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
 # each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
 # footage scene is licensed on its own line — falling back to the scene's `credit:` when the
