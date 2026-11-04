@@ -1329,8 +1329,26 @@ def render_element(el, idx, sticker=True):
     `sticker` is the SCENE's default (see `scene_html`); the element's own `sticker:` key, when
     it has one, wins. Defaulted here as well as there so a caller testing one element type gets
     the treatment every element really renders with.
+
+    `exit: {t: <seconds>}` (2026-11-04) is set by make_short (`tags.clear: next_cue`) on a
+    RESOLVED element, never written in a spec: the element's root carries `data-t1` and
+    `seek()` hides it from that instant on (a snap, no animation). Absent, the HTML is
+    byte-identical to what it was.
     """
-    return _BUILDERS[el["type"]](el, idx, sticker)
+    html, css = _BUILDERS[el["type"]](el, idx, sticker)
+    exit_ = el.get("exit")
+    if isinstance(exit_, dict) and "t" in exit_:
+        root = f'id="{_el_id(idx)}"'
+        html = html.replace(root, f'{root} data-t1="{float(exit_["t"]):.4f}"', 1)
+    return html, css
+
+
+#: Appended to `seek()` only when an element carries `exit` (see `render_element`).
+EXIT_JS = """
+  var outs = document.querySelectorAll('[data-t1]');
+  for (var j = 0; j < outs.length; j++) {
+    outs[j].style.visibility = t >= parseFloat(outs[j].getAttribute('data-t1')) ? 'hidden' : '';
+  }"""
 
 
 def scene_html(scene, transparent=False):
@@ -1365,7 +1383,7 @@ window.seek = function(t) {{
     var node = nodes[i];
     var t0 = parseFloat(node.getAttribute('data-t0'));
     node.style.animationDelay = (t0 - t) + 's';
-  }}
+  }}{EXIT_JS if any(isinstance(el.get("exit"), dict) for el in scene["elements"]) else ""}
 }};
 window.seek(0);
 </script>

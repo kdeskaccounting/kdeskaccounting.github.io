@@ -1310,6 +1310,79 @@ def scene_card_top(scene, width=OUT_W, height=OUT_H):
     return 0
 
 
+TAG_CLEARS = ("next_scene", "next_cue")
+#: The least time a tag stays up under `tags.clear: next_cue` before the next phrase may clear
+#: it: long enough to read a two- or three-word tag once.
+TAG_MIN_S = 0.75
+
+
+def tag_settings(spec) -> dict:
+    """Top-level `tags: {clear: next_scene|next_cue, min_s: 0.75}` (2026-11-04).
+
+    `next_scene` (the default, and every render before this) keeps a `type: tag` overlay
+    element up until its scene cuts. `next_cue` clears it at the start of the first PHRASE
+    cue (captions.build_cues on the scene's own words, the default phrase rules whatever the
+    caption style draws) that begins at least `min_s` after the tag entered -- so a tag
+    leaves with the line it labels instead of sitting over the next picture. A tag with no
+    such cue before the cut stays to the cut, as before.
+    """
+    block = (spec or {}).get("tags")
+    if block is None:
+        return {"clear": "next_scene", "min_s": TAG_MIN_S}
+    if not isinstance(block, dict) or set(block) - {"clear", "min_s"}:
+        raise SystemExit("`tags:` must be a mapping with `clear:` (next_scene|next_cue) "
+                         "and optionally `min_s:`")
+    clear = str(block.get("clear", "next_scene"))
+    if clear not in TAG_CLEARS:
+        raise SystemExit(f"tags.clear must be one of {', '.join(TAG_CLEARS)}; got {clear!r}")
+    min_s = float(block.get("min_s", TAG_MIN_S))
+    if not 0.0 <= min_s <= 5.0:
+        raise SystemExit(f"tags.min_s must be in [0, 5]; got {min_s!r}")
+    return {"clear": clear, "min_s": min_s}
+
+
+def clear_tags_at_next_cue(ov_scene, words, dur, min_s=TAG_MIN_S) -> list:
+    """Set `exit: {t}` on each entering `type: tag` element of a RESOLVED overlay. Returns
+    [(element index, entry, exit)] for the ones that got one. Pure."""
+    starts = [c.start for c in captions.build_cues(words or [], 0.0)]
+    done = []
+    for index, el in enumerate(ov_scene.get("elements") or []):
+        enter = el.get("enter") if isinstance(el, dict) else None
+        if el.get("type") != "tag" or not isinstance(enter, dict) or "t" not in enter:
+            continue
+        t0 = float(enter["t"])
+        later = [t for t in starts if t >= t0 + min_s - 1e-6 and t < float(dur) - 1e-6]
+        if later:
+            el["exit"] = {"t": round(later[0], 4)}
+            done.append((index, t0, later[0]))
+    return done
+
+
+END_KEYS = ("loop_to_start", "tail_s")
+MAX_END_TAIL_S = 2.0
+
+
+def end_settings(spec) -> dict | None:
+    """Top-level `end: {loop_to_start: true, tail_s: 0.6}` (2026-11-04), or None.
+
+    With `loop_to_start`, the Short ends on a `tail_s` hold of its OWN frame 0 -- the first
+    frame of the first encoded part, with the hook plate (if any) drawn over it again -- so
+    the last frame is the first frame and a replay is seamless (gate S14). The hold is a
+    picture change with no scene row (like the CTA plate) and no cut sound.
+    """
+    block = (spec or {}).get("end")
+    if block is None:
+        return None
+    if not isinstance(block, dict) or set(block) - set(END_KEYS):
+        raise SystemExit(f"`end:` must be a mapping of {', '.join(END_KEYS)}")
+    if not block.get("loop_to_start"):
+        return None
+    tail = float(block.get("tail_s", 0.6))
+    if not 0.0 < tail <= MAX_END_TAIL_S:
+        raise SystemExit(f"end.tail_s must be in (0, {MAX_END_TAIL_S}]; got {tail!r}")
+    return {"loop_to_start": True, "tail_s": tail}
+
+
 def caption_plan(spec, short, width=OUT_W, height=OUT_H, position="top", size="default"):
     """(the band, the scene indexes it cannot cover) for one Short.
 
@@ -1414,7 +1487,8 @@ def caption_plan_json(cues, overlays, box, cfg):
                      "lit": cue.words[win.word].text, "png": pathlib.Path(png).name})
     return {"band": list(box), "accent": cfg.accent, "ink": cfg.ink, "stroke": cfg.stroke,
             "position": cfg.position, "size": cfg.size, "pop": cfg.pop,
-            "hook_seconds": cfg.hook_seconds, "windows": rows}
+            "hook_seconds": cfg.hook_seconds,
+            **({"style": cfg.style} if cfg.style != "default" else {}), "windows": rows}
 
 
 def cut_plan_json(rows, join: str, total: float, extra_cuts=(), sfx=()) -> dict:
@@ -1472,7 +1546,7 @@ def cut_plan_json(rows, join: str, total: float, extra_cuts=(), sfx=()) -> dict:
             "scenes": list(rows)}
 
 
-def caption_filter(overlays, y, plate_seconds=None):
+def caption_filter(overlays, y, plate_seconds=None, plate_spans=None, snap=None):
     """The filter graph that burns the word PNGs into the concatenated video.
 
     One `overlay` per word, each gated by `enable='between(t,a,b)'` — this ffmpeg build has
@@ -1481,9 +1555,20 @@ def caption_filter(overlays, y, plate_seconds=None):
     (0, 0) and gated to its own opening window — and the captions start at 2.
     """
     steps, stage, first = [], "0:v", 1
+    if snap is not None:
+        # The strip plate's exit (captions.STRIP_SNAP_S): the picture UNDER the plate blurs
+        # for the last moments it is up, and both snap back together on `plate_seconds`.
+        t0, t1, sigma = snap
+        w = grammar.Window("blur", round(t0, 4), round(t1, 4), round(min(0.05, t1 - t0), 4),
+                           0.0, f"gblur=sigma={sigma:.4f}")
+        wsteps, stage = grammar.window_steps("0:v", [w], tag="snap")
+        steps += wsteps
     if plate_seconds is not None:
-        steps.append(f"[0:v][1:v]overlay=x=0:y=0:format=auto:"
-                     f"enable='between(t,0,{plate_seconds:.2f})'[p0]")
+        spans = plate_spans or [(0.0, plate_seconds)]
+        enable = "+".join(f"between(t,0,{b:.2f})" if a == 0 else
+                          f"between(t,{a:.3f},{b:.3f})" for a, b in spans)
+        steps.append(f"[{stage}][1:v]overlay=x=0:y=0:format=auto:"
+                     f"enable='{enable}'[p0]")
         stage, first = "p0", 2
     for n, (_png, start, end) in enumerate(overlays, start=first):
         steps.append(f"[{stage}][{n}:v]overlay=x=0:y={y}:format=auto:"
@@ -2527,6 +2612,24 @@ def main():
     # and with the end-plate preflight below: a malformed `short.plate:` block must fail
     # before anything is rendered, not after six scenes have been narrated and encoded.
     plate = captions.plate_settings(sh)
+    tags_cfg = tag_settings(spec)
+    end_cfg = end_settings(spec)
+    if end_cfg is not None and end_card_wanted(sh, a.end_card):
+        raise SystemExit("end.loop_to_start ends the Short on its own frame 0, and a closing "
+                         "CTA plate would end it on the plate instead. Pick one "
+                         "(--no-end-card, or drop `end:`).")
+    if plate is not None and plate.style == "strip":
+        try:
+            _strip = captions.strip_box(plate, cards.brand_tokens(spec.get("brand")),
+                                        OUT_W, OUT_H)
+        except ValueError as exc:
+            raise SystemExit(f"short.plate: {exc}") from None
+        if cap.enabled:
+            _band = captions.caption_box(OUT_W, OUT_H, None, cap.position, cap.size)
+            if _band[1] < _strip[3] and _strip[1] < _band[3]:
+                raise SystemExit(f"short.plate strip (y {_strip[1]}-{_strip[3]}) overlaps the "
+                                 f"caption band (y {_band[1]}-{_band[3]}); captions never "
+                                 f"run over the strip. Use captions.style: light.")
     if plate is not None and not cap.enabled:
         raise SystemExit(
             "short.plate rides the caption pass, and this spec renders with captions off — "
@@ -2711,6 +2814,11 @@ def main():
                 except ValueError as exc:
                     raise SystemExit(f"scene {idx:02d} (kind: media) overlay: {exc}") from None
                 ov_scene["seconds"] = dur
+                if tags_cfg["clear"] == "next_cue":
+                    for _i, _t0, _t1 in clear_tags_at_next_cue(
+                            ov_scene, captions.read_words(wav), dur, tags_cfg["min_s"]):
+                        print(f"scene {idx:02d}: tag {_i} up {_t0:.2f}-{_t1:.2f}s "
+                              f"(tags.clear: next_cue)", flush=True)
                 overlay_frames = work / f"scene_{k}_overlay"
                 illustrate.render_scene_frames(ov_scene, overlay_frames, transparent=True)
                 # Both lists of picture changes, merged: the beats cut the footage, the
@@ -2867,6 +2975,24 @@ def main():
     # leaves nothing open, so this is a no-op on a Short that has no illustration scene.
     R.close_driver()
     brand = cards.brand_tokens(spec["brand"]) if spec.get("brand") else None
+    loop_tail_at = None
+    if end_cfg is not None and parts:
+        # The loop hold: the first encoded part's own frame 0, at the delivered size, held
+        # for tail_s and encoded exactly as the CTA plate is (so the concat stays a copy).
+        png = work / "loop_frame0.png"
+        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(parts[0]), "-frames:v", "1",
+             str(png)])
+        out = work / "loop_tail.mp4"; tail = end_cfg["tail_s"]
+        n = max(1, round(tail * FPS))
+        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i",
+             "anullsrc=r=48000:cl=stereo", "-filter_complex",
+             f"[0:v]scale={RW}:{RH},zoompan=z='1':d={n}:s={OUT_W}x{OUT_H}:fps={FPS},"
+             f"format=yuv420p[v]", "-map", "[v]", "-map", "1:a", "-t", f"{n / FPS:.4f}",
+             "-c:v", "libx264", "-preset", "medium", "-crf", str(a.crf), "-r", str(FPS),
+             "-c:a", "aac", "-b:a", "128k", str(out)])
+        loop_tail_at = timeline[0]
+        add_part(out)
+        print(f"end: loop hold of frame 0, {n / FPS:.2f}s at {loop_tail_at:.2f}s", flush=True)
     if end_card_wanted(sh, a.end_card):
         hp = work / "end.html"; hp.write_text(end_html(sh.get("cta"), brand)); png = work / "end.png"; R.screenshot(hp, png, RW, RH)
         out = work / "end.mp4"; n = int(1.5 * FPS)
@@ -2888,6 +3014,8 @@ def main():
     # Short ever gets, loudnorm and all. With captions off it stays the stream copy it was.
     cap_cues = (caption_cues(cap_scenes, build / "audio", cap_skip, cap.hook_seconds)
                 if cap.enabled else [])
+    if cap.style == "light":
+        cap_cues = captions.split_light(cap_cues)
     if plate is not None:
         # The plate IS the hook text. A word-by-word caption running underneath it puts two
         # texts on one frame, which is more than the opening second can be read at.
@@ -2953,6 +3081,10 @@ def main():
             candidates += grammar.tag_events(illustrated, cut_rows)
         if gram.move is not None:
             candidates += grammar.move_events(cut_rows, moves, gram.move_lead)
+        if gram.tag is not None and plate is not None and plate.style == "strip":
+            # The strip snaps away with a pop (role `tag`, the on_tag sound): it outranks
+            # the cut hit when the snap lands on the first cut.
+            candidates.append({"at": round(plate.seconds, 3), "role": "tag"})
         verdict_rows = grammar.verdict_events(cut_rows, verdicts)
         candidates += [row for row in verdict_rows if gram.sound(row["role"]) is not None]
         silent = [row for row in verdict_rows if gram.sound(row["role"]) is None]
@@ -2998,6 +3130,7 @@ def main():
         # in front of its own `-i` and throws any arithmetic on the argument list off by one.
         inputs = 1
         plate_seconds = None
+        plate_spans = snap = None
         if plate is not None:
             hp = work / "plate.html"
             hp.write_text(captions.plate_html(plate, cap.accent, btokens, OUT_W, OUT_H),
@@ -3007,10 +3140,15 @@ def main():
             args += ["-i", str(png)]
             inputs += 1
             plate_seconds = plate.seconds
+            if loop_tail_at is not None:
+                plate_spans = [(0.0, plate.seconds), (loop_tail_at, runtime + 1.0)]
+            if plate.style == "strip":
+                snap = (max(0.0, plate.seconds - captions.STRIP_SNAP_S), plate.seconds,
+                        captions.STRIP_SNAP_SIGMA)
         for png, _s, _e in overlays:
             args += ["-i", str(png)]
             inputs += 1
-        steps = caption_filter(overlays, cap_box[1], plate_seconds)
+        steps = caption_filter(overlays, cap_box[1], plate_seconds, plate_spans, snap)
         if mixed:
             extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, inputs)
             args += extra
