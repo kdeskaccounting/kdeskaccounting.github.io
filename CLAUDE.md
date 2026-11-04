@@ -280,7 +280,7 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # FOOTAGE behind an overlay from its first element's entry (or per element: `blur_bg` on the
 # element; or `crashzoom.badge.blur_bg`), ramped by an alpha dissolve; to the cut unless `hold`.
 # `fx: {verdict: good|bad, from, to, strength, ramp_ms}` on a media scene grades the footage
-# green/red (colorbalance, pl=1) for the span (words allowed in from/to). Sounds, under
+# green/red (colorchannelmixer wash) for the span (words allowed in from/to). Sounds, under
 # `audio.sfx`: `on_cut: {src, gain_db}` (MAPPING form; the legacy string `on_cut:` is still the
 # beat-boundary whoosh) on every picture cut, `on_tag` on every element entry without its own
 # `sfx:`, `on_move: {src, lead, motions}` before every punch/burst/pan beat and crashzoom turn,

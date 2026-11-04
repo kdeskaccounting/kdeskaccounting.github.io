@@ -21,7 +21,7 @@ keep their own colours):
   crashzoom: {badge: {..., blur_bg: {...}}}         # blur behind the crash-zoom badge
 
   fx: {verdict: good|bad, from: <t|word>, to: <t|word>, strength: 1.0, ramp_ms: 100}
-        Colour grade for the span (default: the whole scene), plus the matching sound
+        Colour wash (colorchannelmixer) for the span (default: the whole scene), plus the matching sound
         (`audio.sfx.on_verdict`) at the span start. `from`/`to` take the same word references
         an overlay element's `enter.when` does.
 
@@ -74,15 +74,20 @@ VERDICTS = ("good", "bad")
 FX_KEYS = ("verdict", "from", "to", "strength", "ramp_ms")
 FX_DEFAULT_RAMP_MS = 100.0
 
-#: The verdict grades, at strength 1. `colorbalance` with `pl=1` (preserve lightness) moves
-#: hue, not brightness, so a face under the red is still a face; the shadow/midtone split
-#: keeps the highlights (skin, signs, sky) close to their own colour.
-VERDICT_BALANCE = {
-    "good": {"rs": -0.06, "gs": 0.10, "bs": -0.04, "rm": -0.08, "gm": 0.14, "bm": -0.06,
-             "rh": -0.02, "gh": 0.04, "bh": -0.02},
-    "bad": {"rs": 0.14, "gs": -0.06, "bs": -0.06, "rm": 0.16, "gm": -0.08, "bm": -0.08,
-            "rh": 0.04, "gh": -0.02, "bh": -0.02},
+#: The verdict grades, at strength 1: an RGB colour WASH (`colorchannelmixer`), each channel
+#: pulled toward green (good) or red (bad) from the other two. Chosen over `colorbalance` after
+#: looking at real frames (2026-11-04): colorbalance with preserve-lightness posterised a
+#: saturated blue sky into grey bands on the green grade and barely moved it at all at a gentler
+#: setting, while the wash reads as an unmistakable tint, stays smooth on skies, and keeps faces
+#: and sign text legible (each output channel keeps most of its own input). Linear in
+#: `strength`: every coefficient moves from the identity toward these.
+VERDICT_MIX = {
+    "good": {"rr": 0.72, "rg": 0.0, "rb": 0.0, "gr": 0.18, "gg": 0.92, "gb": 0.18,
+             "br": 0.0, "bg": 0.0, "bb": 0.66},
+    "bad": {"rr": 0.92, "rg": 0.22, "rb": 0.12, "gr": 0.0, "gg": 0.72, "gb": 0.0,
+            "br": 0.0, "bg": 0.0, "bb": 0.70},
 }
+_IDENTITY = {"rr": 1.0, "gg": 1.0, "bb": 1.0}
 
 GRAMMAR_KEYS = ("on_tag", "on_move", "on_verdict", "min_gap")
 SOUND_KEYS = ("src", "gain_db", "start", "end")
@@ -250,10 +255,13 @@ def parse_fx(scene, where="scene"):
 
 
 def verdict_filter(verdict: str, strength: float = 1.0) -> str:
-    """The colour grade for a verdict, at `strength` (0, 1]."""
-    bal = VERDICT_BALANCE[verdict]
-    parts = ":".join(f"{k}={v * float(strength):.4f}" for k, v in bal.items())
-    return f"colorbalance={parts}:pl=1"
+    """The colour wash for a verdict, at `strength` (0, 1]."""
+    k = float(strength)
+    parts = []
+    for key, target in VERDICT_MIX[verdict].items():
+        ident = _IDENTITY.get(key, 0.0)
+        parts.append(f"{key}={ident + k * (target - ident):.4f}")
+    return "colorchannelmixer=" + ":".join(parts)
 
 
 def verdict_span(fx, words, dur, where="scene") -> tuple:

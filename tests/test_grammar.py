@@ -115,21 +115,20 @@ def test_a_whole_scene_verdict_starts_and_ends_on_the_cuts_with_no_ramps():
     fx = G.parse_fx({"fx": {"verdict": "bad"}})
     w = G.verdict_window(fx, WORDS_S5, dur=3.0)
     assert (w.kind, w.t0, w.t1, w.ramp_in, w.ramp_out) == ("tint", 0.0, 3.0, 0.0, 0.0)
-    assert w.filter.startswith("colorbalance=rs=0.1400:") and w.filter.endswith(":pl=1")
+    assert w.filter.startswith("colorchannelmixer=rr=0.9200:rg=0.2200:")
 
 
 def test_a_sub_span_verdict_resolves_its_words_and_ramps_in():
     fx = G.parse_fx({"fx": {"verdict": "good", "from": {"word": "child"}, "strength": 0.5}})
     w = G.verdict_window(fx, WORDS_S5, dur=3.0)
     assert (w.t0, w.t1, w.ramp_in, w.ramp_out) == (2.1, 3.0, 0.1, 0.0)
-    assert "gm=0.0700" in w.filter                       # 0.14 at half strength
+    assert "rr=0.8600" in w.filter and "gr=0.0900" in w.filter     # halfway from identity
 
 
-def test_good_is_green_and_bad_is_red_and_both_preserve_lightness():
+def test_good_pulls_toward_green_and_bad_toward_red():
     good, bad = G.verdict_filter("good"), G.verdict_filter("bad")
-    assert "gm=0.1400" in good and "rm=-0.0800" in good
-    assert "rm=0.1600" in bad and "gm=-0.0800" in bad
-    assert good.endswith("pl=1") and bad.endswith("pl=1")
+    assert "gr=0.1800" in good and "gg=0.9200" in good and "rr=0.7200" in good
+    assert "rg=0.2200" in bad and "gg=0.7200" in bad and "rr=0.9200" in bad
 
 
 def test_a_verdict_span_shorter_than_a_frame_is_refused():
@@ -156,7 +155,7 @@ def test_no_windows_is_the_same_ffmpeg_command_as_before_the_layer(monkeypatch, 
 def test_windows_go_on_the_footage_before_the_scale(monkeypatch, tmp_path):
     w = G.Window("tint", 0.0, 3.0, 0.0, 0.0, G.verdict_filter("bad"))
     graph = _graph(_encode(monkeypatch, tmp_path, windows=[w]))
-    assert graph.index("colorbalance") < graph.index("scale=1080:1920")
+    assert graph.index("colorchannelmixer") < graph.index("scale=1080:1920")
     assert "[m0]split=2[wb0][ws0]" in graph
 
 
@@ -420,9 +419,9 @@ def test_a_verdict_tints_its_scene_and_its_buzzer_beats_the_cut_hit(stub, tmp_pa
     assert (PART_SECONDS, "verdict_bad") in roles
     assert (PART_SECONDS, "cut") not in roles               # same instant: the verdict wins
     scene1 = [c for c in stub.cmds if str(c[-1]).endswith("scene_1.mp4")][0]
-    assert "colorbalance=rs=0.1400" in _graph(scene1)
+    assert "colorchannelmixer=rr=0.9200" in _graph(scene1)
     scene0 = [c for c in stub.cmds if str(c[-1]).endswith("scene_0.mp4")][0]
-    assert "colorbalance" not in _graph(scene0)
+    assert "colorchannelmixer=rr=0.9200" not in _graph(scene0)
 
 
 def test_fx_on_a_card_scene_is_refused(stub, tmp_path):
