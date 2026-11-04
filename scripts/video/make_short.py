@@ -182,6 +182,31 @@ def scene_pad(short: dict) -> float:
     return pad
 
 
+#: The longest hold a scene may ask for after its last word (`tail_s:`). Past this the
+#: "payoff hold" is a dead picture, which is the defect S5 and S7 exist to catch.
+MAX_TAIL_S = 1.5
+
+
+def scene_tail(scene: dict) -> float:
+    """Extra seconds ONE media scene holds after its narration, on top of the scene pad.
+
+    `tail_s:` (footage PoC v2, 2026-11-03) is for the LAST scene of a Short that cuts on the
+    payoff: the picture stays up for ~0.7 s after the final word and then the Short hard-cuts.
+    `short.scene_pad` cannot do this -- it lengthens every join, and every join's silence is
+    S6's to police -- so the hold is per scene and absent means 0.0, i.e. every existing spec
+    encodes exactly the lengths it always did. Beats rescale over the longer `dur` like any
+    other, so a spec that wants the hold on its last beat gives that beat the extra seconds.
+    """
+    value = (scene or {}).get("tail_s")
+    if value is None:
+        return 0.0
+    tail = float(value)
+    if not 0.0 < tail <= MAX_TAIL_S:
+        raise SystemExit(f"scene tail_s must be in (0, {MAX_TAIL_S}]; got {value!r}. It is "
+                         f"the hold after the last word; drop the key for none.")
+    return tail
+
+
 def scene_beats(scene: dict) -> list:
     """One media scene's `beats:`, validated and normalised. `[]` when it has none.
 
@@ -2491,6 +2516,13 @@ def main():
     # than silently render the silence this block exists to end.
     mix = audio_settings(spec, spec_path)
     pad = scene_pad(sh)
+    # `tail_s:` preflight: a bad value, or one on a scene kind that would never read it,
+    # refuses here rather than after the scenes before it were narrated and encoded.
+    for _index in sh.get("scenes") or []:
+        _scene = spec["scenes"][_index]
+        if scene_tail(_scene) and not media.is_media(_scene):
+            raise SystemExit(f"scene {_index:02d} sets `tail_s:`, which only a `kind: media` "
+                             f"scene reads. Nothing would have held.")
     # The hook plate rides the caption pass, so it is read HERE, beside the caption settings
     # and with the end-plate preflight below: a malformed `short.plate:` block must fail
     # before anything is rendered, not after six scenes have been narrated and encoded.
@@ -2636,7 +2668,7 @@ def main():
             layers = media_layers(sc, btokens, work, k,
                                   *((OUT_W, OUT_H) if ov_scene is not None else (RW, RH)))
             wav = build / "audio" / f"scene_{idx:02d}.wav"
-            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad
+            adur = float(durs.get(str(idx), 0) or dur_of(wav)); dur = adur + pad + scene_tail(sc)
             # `scene_focus`, not `focus`: the name at this scope is the sheet pipeline's
             # frames/focus.json dict, which a later legacy scene still reads.
             fill, scene_focus = media.scene_fill(sc)

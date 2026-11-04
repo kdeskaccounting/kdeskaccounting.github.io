@@ -125,6 +125,12 @@ DEFAULT_BRAND: dict = {
     #: Credits block only) or "on" (the plate as it always rendered, byte for byte). The
     #: scene's `credit:` text is still read either way; only the picture changes.
     "credit_plate": "",
+    #: Where a media scene's credit plate sits: "" (the default: bottom-left, clear of the
+    #: Earth Studio watermark, byte for byte what every existing spec renders) or "safe":
+    #: bottom-left INSIDE the conservative platform-UI-free box (x 120-880, bottom edge at
+    #: y 1220 of 1920), above Meta's 35% bottom zone, so the attribution is not under the
+    #: Reels/Shorts UI. Opt-in (ParkSheet footage PoC, 2026-11-03). See media.credit_box.
+    "credit_position": "",
 }
 
 #: brand['credit_plate'] values.
@@ -137,6 +143,9 @@ FONT_DIR = pathlib.Path(__file__).resolve().parent / "fonts"
 BUNDLED_FONTS: dict = {
     "carlito": ("Carlito Bundled", {400: "Carlito-Regular.ttf", 700: "Carlito-Bold.ttf"}),
 }
+
+#: brand['credit_position'] values: "" is the historical bottom plate, "safe" the UI-safe one.
+CREDIT_POSITIONS = ("", "safe")
 
 _COLOUR_TOKENS = ("bg", "bg_alt", "fg", "muted", "accent", "accent_fg")
 _HEX = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
@@ -156,6 +165,9 @@ def _checked_token(key: str, value: object) -> str:
     if key == "credit_plate" and text not in CREDIT_PLATES:
         raise ValueError(f"brand token 'credit_plate' must be one of "
                          f"{', '.join(repr(k) for k in CREDIT_PLATES)}, got {text!r}")
+    if key == "credit_position" and text not in CREDIT_POSITIONS:
+        raise ValueError(f"brand token 'credit_position' must be one of "
+                         f"{', '.join(repr(k) for k in CREDIT_POSITIONS)}, got {text!r}")
     if key == "font" and not _FONT_STACK.match(text):
         raise ValueError(f"brand token 'font' must be a plain font stack "
                          f"(letters, digits, spaces, commas, hyphens), got {text!r}")

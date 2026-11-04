@@ -1174,3 +1174,31 @@ def test_a_negative_in_point_is_refused(stub_main):
         M.scene_beats({"beats": [{"src": "a.mp4", "seconds": 1.0, "start": -1},
                                  {"src": "b.png", "seconds": 1.0}]})
     assert "negative" in str(excinfo.value)
+
+
+# --- tail_s: the payoff hold (footage PoC v2) --------------------------------------------
+
+def test_scene_tail_defaults_to_nothing_and_refuses_nonsense():
+    assert M.scene_tail({}) == 0.0
+    assert M.scene_tail({"tail_s": 0.7}) == pytest.approx(0.7)
+    for bad in (0.0, -0.2, 2.0):
+        with pytest.raises(SystemExit):
+            M.scene_tail({"tail_s": bad})
+
+
+def test_tail_s_lengthens_only_its_own_scenes_encode(stub_main):
+    stub_main.spec["short"]["scene_pad"] = 0.10
+    last = stub_main.spec["short"]["scenes"][-1]
+    stub_main.spec["scenes"][last]["tail_s"] = 0.7
+    M.main()
+    cmds = _media_cmds(stub_main)
+    for k, idx in enumerate(stub_main.spec["short"]["scenes"]):
+        dur = DURATIONS[str(idx)] + 0.10 + (0.7 if idx == last else 0.0)
+        assert cmds[k][cmds[k].index("-t") + 1] == f"{dur:.3f}"
+
+
+def test_a_bad_tail_s_is_refused_before_a_single_frame_is_rendered(stub_main):
+    stub_main.spec["scenes"][0]["tail_s"] = 5.0
+    with pytest.raises(SystemExit):
+        M.main()
+    assert not stub_main.cmds and not stub_main.shots
