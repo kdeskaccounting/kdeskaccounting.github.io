@@ -40,6 +40,7 @@ import argparse, dataclasses, html, json, math, pathlib, subprocess, sys
 # imports with the standard library alone (see tests/test_make_short_cards.py).
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
+import callouts
 import captions
 import cards
 import crashzoom
@@ -499,6 +500,7 @@ def media_overlay_preflight(scene, index: int, spec_path) -> None:
     block = (scene or {}).get("overlay")
     media_grade(scene, index)
     where = f"scene {index} (kind: media)"
+    callout_preflight(scene, where, spec_path)
     try:
         grammar.parse_fx_list(scene, where)
         if isinstance(block, dict):
@@ -558,6 +560,27 @@ def media_overlay_preflight(scene, index: int, spec_path) -> None:
                   f"stay out of. If this source is NOT an Earth Studio export, take "
                   f"'Google Earth' out of its `credit:` and move it out of an `earth/` "
                   f"directory, which are the two things that identify one.")
+
+
+def callout_preflight(scene, where: str, spec_path) -> None:
+    """A media scene's `callouts:` (callouts.py), checked, and every sticker's `src` resolved to
+    an absolute path IN PLACE, exactly as an overlay `image` element's is. Absent: nothing."""
+    raw = (scene or {}).get("callouts")
+    if raw is None:
+        return
+    try:
+        callouts.check(raw, f"{where} callouts")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    for i, c in enumerate(raw):
+        if c.get("type") == "sticker":
+            try:
+                c["src"] = str(media.resolve_src(spec_path, c["src"]))
+            except (FileNotFoundError, ValueError) as exc:
+                raise SystemExit(f"{where} callouts[{i}] (sticker): {exc}") from None
+            if illustrate.png_size(c["src"]) is None:
+                raise SystemExit(f"{where} callouts[{i}] (sticker): {c['src']} is not a PNG; a "
+                                 f"sticker is a transparent PNG cut-out")
 
 
 def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
@@ -1088,6 +1111,51 @@ def focus_notice(idx: int, fill, focus, sources) -> str | None:
             f"that point instead.")
 
 
+def zoom_stack(img, strength: float, center=(0.5, 0.5), samples: int = 12):
+    """A radial zoom-blur of a PIL image: the mean of `samples` copies zoomed 1.0x to
+    (1 + strength)x about `center`. Strength 0 returns the image unchanged."""
+    if strength <= 0:
+        return img
+    import numpy as np
+    from PIL import Image
+    w, h = img.size
+    cx, cy = center[0] * w, center[1] * h
+    acc = np.zeros((h, w, 3), dtype=np.float64)
+    for j in range(samples):
+        f = 1.0 + strength * j / max(1, samples - 1)
+        bw, bh = w / f, h / f
+        box = (cx - bw * center[0], cy - bh * center[1], cx + bw * (1 - center[0]),
+               cy + bh * (1 - center[1]))
+        acc += np.asarray(img.resize((w, h), Image.BILINEAR, box=box), dtype=np.float64)
+    return Image.fromarray(np.clip(acc / samples, 0, 255).astype("uint8"))
+
+
+def apply_open(part, cfg, work, crf):
+    """The `open:` frame-0 radial zoom-blur, drawn over the first frames of the first part.
+
+    The part is already encoded (picture, overlays, narration); its first n frames are read
+    back, each zoom-blurred at `callouts.open_strengths` (heavy on frame 0, sharp by `ms`), and
+    laid over the part with `eof_action=pass`, so every later frame is the part's own. Returns
+    the new part; the sharp original stays for the loop hold."""
+    from PIL import Image
+    strengths = callouts.open_strengths(cfg, FPS)
+    d = pathlib.Path(work) / "open_frames"
+    d.mkdir(parents=True, exist_ok=True)
+    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(part), "-frames:v", str(len(strengths)),
+         str(d / "src_%03d.png")])
+    for i, k in enumerate(strengths):
+        img = Image.open(d / f"src_{i + 1:03d}.png").convert("RGB")
+        zoom_stack(img, k, cfg["center"], cfg["samples"]).save(d / f"zb_{i:03d}.png")
+    out = pathlib.Path(part).with_name(pathlib.Path(part).stem + "_open.mp4")
+    run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(part), "-framerate", str(FPS),
+         "-i", str(d / "zb_%03d.png"), "-filter_complex",
+         "[1:v]format=yuv420p,setsar=1[z];[0:v][z]overlay=x=0:y=0:eof_action=pass:format=auto,"
+         "format=yuv420p[v]", "-map", "[v]", "-map", "0:a", "-c:v", "libx264",
+         "-preset", "medium", "-crf", str(crf), "-r", str(FPS), "-color_range", "tv",
+         "-bsf:v", RANGE_BSF, "-c:a", "copy", str(out)])
+    return out
+
+
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
                        fill=None, focus=(0.5, 0.5), beats=(), scrim=0.0, blur=0.0,
                        overlay_frames=None, windows=()):
@@ -1465,6 +1533,57 @@ def render_captions(cues, cfg, brand, work, box):
     return out
 
 
+def render_word_captions(cues, cfg, brand, work, box, runtime):
+    """`captions.style: word`: one band PNG per one-word cue (cap_NNNN.png, as every style
+    writes, so the safe-zone lint and captions.json read them as before), then ONE transparent
+    caption track (qtrle .mov, band-sized) compositing them frame by frame with the measured
+    pop. Returns ([(png, start, end)], track path)."""
+    from PIL import Image
+    band_h = box[3] - box[1]
+    colours = captions.keyword_colours(cues, cfg.keywords, cfg.keyword_every)
+    font_css = callouts.font_face_css()
+    pngs = []
+    for n, cue in enumerate(cues):
+        hp = work / f"cap_{n:04d}.html"
+        hp.write_text(captions.word_caption_html(cue, colours[n], OUT_W, box, OUT_H, font_css,
+                                                 callouts.ROUNDED_FAMILY), encoding="utf-8")
+        png = work / f"cap_{n:04d}.png"
+        R.screenshot(hp, png, OUT_W, band_h, transparent=True, reuse=True)
+        pngs.append((png, cue.start, cue.end))
+    R.close_driver()
+    coloured = sum(1 for c in colours if c)
+    print(f"captions: {len(cues)} one-word cues, {coloured} keyword-coloured "
+          f"(1 in {len(cues) / max(1, coloured):.1f})", flush=True)
+    ims = [Image.open(p).convert("RGBA") for p, _s, _e in pngs]
+    cx, cy = (box[0] + box[2]) / 2.0, band_h * 0.55
+    blank = Image.new("RGBA", (OUT_W, band_h), (0, 0, 0, 0))
+    cache = {}
+    track = work / "captions_track.mov"
+    proc = subprocess.Popen(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgba", "-s",
+         f"{OUT_W}x{band_h}", "-r", str(FPS), "-i", "-", "-c:v", "qtrle", str(track)],
+        stdin=subprocess.PIPE)
+    for ci, k in captions.word_track_plan(cues, runtime, callouts.EASING["pop_caption"], FPS):
+        key = (ci, k)
+        if key not in cache:
+            if ci is None:
+                frame = blank
+            elif k == 1.0:
+                frame = ims[ci]
+            else:
+                im = ims[ci]
+                w, h = round(OUT_W * k), round(band_h * k)
+                scaled = im.resize((w, h), Image.LANCZOS)
+                frame = blank.copy()
+                frame.paste(scaled, (round(cx - cx * k), round(cy - cy * k)), scaled)
+            cache[key] = frame.tobytes()
+        proc.stdin.write(cache[key])
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise SystemExit("captions: the word track encode failed")
+    return pngs, track
+
+
 def caption_plan_json(cues, overlays, box, cfg):
     """What was actually burned in, as a dict: the band, the accent, one row per word window.
 
@@ -1481,7 +1600,12 @@ def caption_plan_json(cues, overlays, box, cfg):
     (a full-frame card overrides `position` back to the top); `position` is what was asked.
     """
     rows = []
-    for (png, start, end), win in zip(overlays, captions.word_windows(cues)):
+    if cfg.style == "word":
+        for (png, start, end), cue in zip(overlays, cues):
+            rows.append({"start": round(start, 3), "end": round(end, 3), "text": cue.text,
+                         "lit": cue.text, "png": pathlib.Path(png).name})
+    for (png, start, end), win in ([] if cfg.style == "word" else
+                                   zip(overlays, captions.word_windows(cues))):
         cue = cues[win.cue]
         rows.append({"start": round(start, 3), "end": round(end, 3), "text": cue.text,
                      "lit": cue.words[win.word].text, "png": pathlib.Path(png).name})
@@ -2130,9 +2254,32 @@ def illustration_events(illustrated, rows) -> list:
     for index, scene in illustrated or ():
         if index not in starts:
             continue
+        scene = callout_free(scene)
         for event in illustrate.scene_events(scene):
             out.append({"at": round(starts[index] + float(event["t"]), 3),
                         "role": str(event["sfx"])})
+    return sorted(out, key=lambda row: (row["at"], row["role"]))
+
+
+def callout_free(scene) -> dict:
+    """The scene without its compiled callouts (their sounds are `callout_events`)."""
+    els = [el for el in (scene or {}).get("elements") or () if el.get("type") != "callout"]
+    return {**scene, "elements": els}
+
+
+def callout_events(illustrated, rows) -> list:
+    """`{at, role}` for every compiled callout's sound, on the finished timeline. They are
+    thinned with the grammar sounds (min_gap, priority over a cut hit), not by thin_events'
+    strict 4-per-10 s element cadence: a callout's sound IS the grammar (SPEC section 2)."""
+    starts = {row["scene"]: float(row["start"]) for row in rows or ()}
+    out = []
+    for index, scene in illustrated or ():
+        if index not in starts:
+            continue
+        for el in (scene or {}).get("elements") or ():
+            if el.get("type") == "callout" and el.get("sfx"):
+                out.append({"at": round(starts[index] + float(el["enter"]["t"]), 3),
+                            "role": str(el["sfx"])})
     return sorted(out, key=lambda row: (row["at"], row["role"]))
 
 
@@ -2550,6 +2697,22 @@ def main():
     slug = safe_slug(a.slug) if a.slug else None
     spec_path = pathlib.Path(a.spec).expanduser() if a.spec else REPO / "marketing/video" / slug / "scenes.yaml"
     spec = specload.load(spec_path)   # resolves `extends:` (ParkSheet audit #5)
+    # `open:` (callouts.py): the frame-0 radial zoom-blur, and the ding it pairs with as the
+    # opening sting. Absent, nothing below changes.
+    try:
+        open_cfg = callouts.parse_open(spec)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+    _sting = callouts.open_sting(open_cfg)
+    if _sting is not None:
+        _sfx_block = ((spec.get("audio") or {}).get("sfx") or {})
+        if _sfx_block.get("opening") is not None:
+            raise SystemExit("open.sfx and audio.sfx.opening both set an opening sound; keep "
+                             "one (`audio: {sfx: {opening: null}}` keeps the open's ding).")
+        spec.setdefault("audio", {})
+        if spec["audio"].get("sfx") is None:
+            spec["audio"]["sfx"] = {}
+        spec["audio"]["sfx"]["opening"] = _sting
     # Preflight: every media scene is checked here, before a single frame is rendered. The
     # shape of a scene's `beats:` belongs to this module (it is the render that consumes it),
     # so it is checked in the same pass rather than when the loop below reaches that scene.
@@ -2678,6 +2841,8 @@ def main():
         print(f"narration: human read ({', '.join(p.name for p in human_voice.human_sources(spec, spec_path))})",
               flush=True)
     parts = []
+    #: The first part WITHOUT the opening blur, when `open:` drew one: the loop hold's frame.
+    loop_source = None
     # Where each scene lands in the finished Short. Measured from the ENCODED part rather than
     # from the `dur` asked for: `-t 4.633` at 30 fps lands on a frame boundary, and one frame
     # of drift per scene is visible on a caption that is meant to light up on a syllable.
@@ -2765,6 +2930,9 @@ def main():
                 src = media.resolve_src(spec_path, sc["src"]); kind = media.media_kind(src)
                 motion = sc.get("motion") or media.default_motion(kind)
             ov_scene = media_overlay(sc)
+            callout_raw = sc.get("callouts")
+            if ov_scene is None and callout_raw:
+                ov_scene = {"kind": "illustration", "elements": [], "sticker": False}
             # A scene with a drawing composites its plates AFTER the final scale, so that they
             # land on top of it — which means they are rendered at the delivered size rather
             # than at the 1.2x one. Every other scene's plates are exactly the PNGs they were.
@@ -2819,6 +2987,23 @@ def main():
                             ov_scene, captions.read_words(wav), dur, tags_cfg["min_s"]):
                         print(f"scene {idx:02d}: tag {_i} up {_t0:.2f}-{_t1:.2f}s "
                               f"(tags.clear: next_cue)", flush=True)
+                if callout_raw:
+                    # The callouts (callouts.py) join the same drawing: their words resolve on
+                    # this scene's clock, and `hold: next_cut` reads this scene's beat cuts.
+                    _rows = illustrate.word_rows(captions.read_words(wav))
+                    _where = f"scene {idx:02d} callouts"
+                    try:
+                        compiled = callouts.compile_callouts(
+                            callout_raw,
+                            lambda v: illustrate.resolve_time(v, _rows, _where, "when"),
+                            picture_cuts.get(idx, []), dur, _where)
+                    except ValueError as exc:
+                        raise SystemExit(str(exc)) from None
+                    ov_scene["elements"] = list(ov_scene["elements"]) + compiled
+                    print(f"scene {idx:02d}: callouts "
+                          + ", ".join(f"{el['callout']} {el['enter']['t']:.2f}s"
+                                      + (f"-{el['exit']['t']:.2f}s" if el.get("exit") else "")
+                                      for el in compiled), flush=True)
                 overlay_frames = work / f"scene_{k}_overlay"
                 illustrate.render_scene_frames(ov_scene, overlay_frames, transparent=True)
                 # Both lists of picture changes, merged: the beats cut the footage, the
@@ -2849,6 +3034,11 @@ def main():
                                      fill=fill, focus=scene_focus, beats=beats,
                                      scrim=scrim, blur=blur, overlay_frames=overlay_frames,
                                      windows=windows)
+            if open_cfg is not None and k == 0:
+                loop_source = out
+                out = apply_open(out, open_cfg, work, a.crf)
+                print(f"open: radial zoom-blur over the first "
+                      f"{len(callouts.open_strengths(open_cfg, FPS))} frames", flush=True)
             add_part(out, idx, spans)
             if ov_scene is not None:
                 # Its elements' `sfx:` join the mix exactly as an illustration scene's do —
@@ -2980,8 +3170,8 @@ def main():
         # The loop hold: the first encoded part's own frame 0, at the delivered size, held
         # for tail_s and encoded exactly as the CTA plate is (so the concat stays a copy).
         png = work / "loop_frame0.png"
-        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(parts[0]), "-frames:v", "1",
-             str(png)])
+        run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(loop_source or parts[0]),
+             "-frames:v", "1", str(png)])
         out = work / "loop_tail.mp4"; tail = end_cfg["tail_s"]
         n = max(1, round(tail * FPS))
         run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(png), "-f", "lavfi", "-i",
@@ -3016,11 +3206,20 @@ def main():
                 if cap.enabled else [])
     if cap.style == "light":
         cap_cues = captions.split_light(cap_cues)
+    elif cap.style == "word":
+        cap_cues = captions.split_words(cap_cues)
     if plate is not None:
         # The plate IS the hook text. A word-by-word caption running underneath it puts two
         # texts on one frame, which is more than the opening second can be read at.
         cap_cues = captions.drop_inside(cap_cues, plate.seconds)
-    overlays = render_captions(cap_cues, cap, btokens, work, cap_box) if cap.enabled else []
+    word_track = None
+    if cap.enabled and cap.style == "word":
+        overlays, word_track = render_word_captions(cap_cues, cap, btokens, work, cap_box,
+                                                    timeline[0])
+    else:
+        overlays = render_captions(cap_cues, cap, btokens, work, cap_box) if cap.enabled else []
+    #: What the final pass overlays: one PNG per window, or the word style's single track.
+    burn = [(word_track, 0.0, timeline[0] + 1.0)] if word_track is not None else overlays
     # The mix's clock. The finished Short is the sum of the parts just encoded — INCLUDING
     # the closing plate, which is a part with no scene row — so the bed's length is the
     # timeline, never `sum(row["seconds"])`, which is short by the plate's 1.5 s and would
@@ -3067,6 +3266,26 @@ def main():
                   + "; ".join(f"{row['at']:.2f}s {row['role']} ({row['why']})"
                               for row in dropped_events), flush=True)
         placed = sorted(placed + kept_events, key=lambda row: (row["at"], row["role"]))
+    callout_sounds = callout_events(illustrated, cut_rows)
+    if callout_sounds:
+        playable = {event.role for event in (mix.sfx.events if mixed and mix.sfx else ())}
+        silent = [row for row in callout_sounds if row["role"] not in playable]
+        if silent:
+            print(f"audio: {len(silent)} callout sound(s) fire nothing -- audio.sfx.events has "
+                  f"no {', '.join(sorted({r['role'] for r in silent}))}", flush=True)
+        gap = (mix.sfx.grammar.min_gap if mixed and mix.sfx and mix.sfx.grammar
+               else grammar.DEFAULT_MIN_GAP)
+        c_kept, c_dropped = grammar.thin(
+            [dict(row, role="tag", sound=row["role"]) for row in callout_sounds
+             if row["role"] in playable],
+            first_speech_s=first_speech_seconds(cut_rows, build / "audio"),
+            guard=EVENT_GUARD_S, min_gap=gap, seed=placed)
+        c_kept = [{"at": row["at"], "role": row["sound"]} for row in c_kept]
+        if c_dropped:
+            print("audio: callout sfx dropped -- " + "; ".join(
+                f"{row['at']:.2f}s {row['sound']} ({row['why']})" for row in c_dropped), flush=True)
+        kept_events = sorted(kept_events + c_kept, key=lambda row: (row["at"], row["role"]))
+        placed = sorted(placed + c_kept, key=lambda row: (row["at"], row["role"]))
     # The edit-grammar sounds (grammar.py): a hit on each cut, a pop on each tag, a whoosh
     # before each camera move, a ding/buzzer on each verdict -- thinned against everything
     # placed above, and recorded in cuts.json beside it. Nothing here runs for a spec that
@@ -3145,10 +3364,10 @@ def main():
             if plate.style == "strip":
                 snap = (max(0.0, plate.seconds - captions.STRIP_SNAP_S), plate.seconds,
                         captions.STRIP_SNAP_SIGMA)
-        for png, _s, _e in overlays:
+        for png, _s, _e in burn:
             args += ["-i", str(png)]
             inputs += 1
-        steps = caption_filter(overlays, cap_box[1], plate_seconds, plate_spans, snap)
+        steps = caption_filter(burn, cap_box[1], plate_seconds, plate_spans, snap)
         if mixed:
             extra, bed_index, sfx_indexes, cue_indexes = audio_inputs(mix, boundaries, inputs)
             args += extra
