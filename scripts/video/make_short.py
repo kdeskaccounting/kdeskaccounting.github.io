@@ -43,6 +43,7 @@ sys.path.insert(0, str(HERE)); import render_sheets as R
 import captions
 import cards
 import crashzoom
+import grammar
 import human_voice
 import illustrate
 import media
@@ -472,9 +473,15 @@ def media_overlay_preflight(scene, index: int, spec_path) -> None:
     """
     block = (scene or {}).get("overlay")
     media_grade(scene, index)
+    where = f"scene {index} (kind: media)"
+    try:
+        grammar.parse_fx(scene, where)
+        if isinstance(block, dict):
+            grammar.check_overlay(block, f"{where} overlay")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     if block is None:
         return
-    where = f"scene {index} (kind: media)"
     if not isinstance(block, dict):
         raise SystemExit(f"{where}: `overlay:` must be a mapping, got "
                          f"{type(block).__name__}")
@@ -1058,7 +1065,7 @@ def focus_notice(idx: int, fill, focus, sources) -> str | None:
 
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
                        fill=None, focus=(0.5, 0.5), beats=(), scrim=0.0, blur=0.0,
-                       overlay_frames=None):
+                       overlay_frames=None, windows=()):
     """One media file — or several beat sources — + layer PNGs + one WAV -> an mp4.
 
     The composite is three things stacked: the footage or still, put through the motion's
@@ -1151,6 +1158,11 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
     if grade:
         steps.append(f"[m0]{grade}[g0]")
         stage = "g0"
+    # The grammar layer's verdict tint and overlay blur (grammar.py): on the FOOTAGE, before
+    # the plates and the drawing, so the graphics stay sharp and keep their colours. No
+    # windows -> no steps, and the graph is the one it always was.
+    w_steps, stage = grammar.window_steps(stage, windows)
+    steps.extend(w_steps)
 
     def plates(stage):
         """The layer PNGs over `stage`, in media_layers() order. Credit is last, so it is on
@@ -1612,6 +1624,9 @@ class Sfx:
     events: tuple[SfxEvent, ...] = ()
     #: The opening sting, or None -- which every spec written before it existed is.
     opening: OpeningSting | None = None
+    #: The edit-grammar sounds (`on_cut:` as a mapping, `on_tag`, `on_move`, `on_verdict`),
+    #: or None -- which every spec written before the layer existed is (grammar.py).
+    grammar: "grammar.Grammar | None" = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -2030,6 +2045,12 @@ def audio_settings(spec: dict, spec_path):
         src = raw.get("src")
         if not src:
             raise SystemExit(f"audio.{name} has no `src:`, so there is no file to mix.")
+        if str(src).startswith(grammar.BUNDLE_PREFIX):
+            # A sound from the renderer's own licence-recorded set (sfx/manifest.json).
+            try:
+                return grammar.resolve_bundle(src)
+            except (FileNotFoundError, ValueError) as exc:
+                raise SystemExit(f"audio.{name}.src: {exc}") from None
         # media.resolve_src raises (FileNotFoundError, or ValueError for a src that climbs
         # out of the spec's repo) — the render has to stop either way, but with the hint
         # about where these two files come from, because nothing downloads them.
@@ -2069,7 +2090,7 @@ def audio_settings(spec: dict, spec_path):
     # behind whichever block's file check runs first.
     if block.get("sfx"):
         _only(block["sfx"], ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events",
-                             "opening"), "sfx")
+                             "opening", *grammar.GRAMMAR_KEYS), "sfx")
     bed = None
     if block.get("bed"):
         raw = _only(block["bed"], ("src", "lufs", "target_lufs", "fade_in", "fade_out"), "bed")
@@ -2104,7 +2125,8 @@ def audio_settings(spec: dict, spec_path):
         # `on_cut:` is the spec's own name for the file (research section 5); `src:` is
         # accepted as the spelling every other block in this renderer uses.
         raw = _only(block["sfx"],
-                    ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events", "opening"),
+                    ("on_cut", "src", "gain_db", "lead", "beats", "cues", "events", "opening",
+                     *grammar.GRAMMAR_KEYS),
                     "sfx")
         beats = int(raw.get("beats", 3))
         if beats < 2:
@@ -2118,10 +2140,18 @@ def audio_settings(spec: dict, spec_path):
         cues = _sfx_cues(raw.get("cues"), resolved)
         events = _sfx_events(raw.get("events"), resolved)
         opening = _sfx_opening(raw.get("opening"), resolved)
-        whoosh_src = raw.get("on_cut") or raw.get("src")
+        try:
+            gram = grammar.parse_grammar(raw, lambda name, entry: resolved(
+                name.removeprefix("audio."), entry))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        # `on_cut:` as a STRING is the legacy whoosh-at-the-beat-boundaries file; as a
+        # MAPPING it is the grammar layer's sound on every cut, and no whoosh file at all.
+        legacy_cut = raw.get("on_cut") if not isinstance(raw.get("on_cut"), dict) else None
+        whoosh_src = legacy_cut or raw.get("src")
         if whoosh_src:
             src = resolved("sfx", {"src": whoosh_src})
-        elif cues or events or opening:
+        elif cues or events or opening or gram:
             # A cue-only sfx block: ParkSheet's `cards.without_sfx`-exempt data days (and
             # any lore day rendered before a whoosh is vetted) write
             # `audio.sfx: {gain_db, lead, beats, cues: [...]}` with no `on_cut`/`src` at
@@ -2141,7 +2171,8 @@ def audio_settings(spec: dict, spec_path):
                   beats=beats,
                   cues=cues,
                   events=events,
-                  opening=opening)
+                  opening=opening,
+                  grammar=gram)
     duck = _only(block.get("duck"), ("threshold", "ratio", "attack", "release"), "duck")
     master = _only(block.get("master"), ("lufs", "tp", "lra"), "master")
     return AudioMix(bed=bed,
@@ -2152,7 +2183,8 @@ def audio_settings(spec: dict, spec_path):
 
 def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_indexes,
                 cue_indexes=(), payoff_s=None, voice: str = "0:a",
-                events=(), event_indexes=(), opening_indexes=()) -> list:
+                events=(), event_indexes=(), opening_indexes=(), grammar_rows=(),
+                grammar_indexes=()) -> list:
     """The audio half of the final filter graph. Verified end to end at full scale.
 
     `runtime` is the FINISHED Short's length, not the sum of the scene rows: a closing CTA
@@ -2224,6 +2256,11 @@ def audio_steps(mix: AudioMix, *, runtime: float, cuts, bed_index: int, sfx_inde
     if mix.sfx is not None and mix.sfx.opening is not None and opening_indexes:
         steps.extend(opening_steps(mix.sfx.opening, opening_indexes, runtime))
         labels.extend(f"o{n}" for n in range(1, len(opening_indexes) + 1))
+    if mix.sfx is not None and mix.sfx.grammar is not None and grammar_indexes:
+        g_steps, g_labels = grammar.sound_steps(mix.sfx.grammar, grammar_rows, grammar_indexes,
+                                                runtime)
+        steps.extend(g_steps)
+        labels.extend(g_labels)
     steps.append("".join(f"[{label}]" for label in labels)
                  + f"amix=inputs={len(labels)}:normalize=0:dropout_transition=0[music]")
     steps.append(f"[vox][music]amix=inputs=2:normalize=0,alimiter=limit=0.97,"
@@ -2416,6 +2453,10 @@ def main():
                     "`beats:` to cut a media scene's picture.")
         elif cards.is_card(_scene or {}):
             scene_steps(_scene)
+            if (_scene or {}).get("fx") is not None:
+                raise SystemExit(
+                    f"scene {_index}: `fx:` (the verdict tint) is read on `kind: media` scenes "
+                    f"only -- it grades FOOTAGE, and a card scene has none.")
             if (_scene or {}).get("beats"):
                 raise SystemExit(
                     "a `card` scene carries `beats:`, which only a `media` scene renders — "
@@ -2544,6 +2585,10 @@ def main():
     illustrated = []
     #: scene index -> crashzoom.Opening, drawn on first use (an opening, its turn, its still).
     openings = {}
+    #: The grammar layer's event sources (grammar.py), all scene-local seconds: real picture
+    #: cuts inside a scene (beat/step boundaries), camera-move starts, and verdict starts.
+    #: Filled on every render, read only when the spec turns a grammar sound on.
+    picture_cuts, moves, verdicts = {}, {}, {}
     resolve = lambda src: media.resolve_src(spec_path, src)
 
     def opening_for(target):
@@ -2605,6 +2650,19 @@ def main():
             # backstop against a length nothing rendered).
             spans = beat_spans(beats, dur)
             scrim, blur = media_grade(sc, idx)
+            local, at = [], 0.0
+            for span in spans[:-1]:
+                at += float(span); local.append(round(at, 3))
+            picture_cuts[idx] = local
+            move_motions = (mix.sfx.grammar.move_motions
+                            if mix is not None and mix.sfx is not None and mix.sfx.grammar
+                            else grammar.DEFAULT_MOVE_MOTIONS)
+            if beats:
+                starts = [0.0, *local]
+                moves[idx] = [t for t, beat in zip(starts, beats)
+                              if beat.get("motion") in move_motions]
+            elif crashzoom.is_continuation(sc) or motion in move_motions:
+                moves[idx] = [0.0]
             # The illustration layer, if this scene carries one. Its `when:` times resolve
             # against THIS scene's own words, on this scene's own WAV clock (frame 0 of the
             # overlay is t=0 of the WAV), exactly as an illustration scene's do — nothing is
@@ -2626,10 +2684,25 @@ def main():
                 # only record either one leaves. `[dur]` stands in for a scene with no beats —
                 # one picture, no cut of its own — so the merge has a span list to work from.
                 spans = merge_spans(spans or [dur], illustration_spans(ov_scene, dur), dur)
+            # The grammar layer's picture windows: the verdict tint (fx:) and the blur behind
+            # the overlay (blur_bg:). Empty for a scene with neither key, which is every scene
+            # written before the layer existed -- and then nothing below changes.
+            windows = []
+            vfx = grammar.parse_fx(sc, f"scene {idx:02d}")
+            if vfx is not None:
+                try:
+                    windows.append(grammar.verdict_window(vfx, captions.read_words(wav), dur,
+                                                          f"scene {idx:02d}"))
+                except ValueError as exc:
+                    raise SystemExit(str(exc)) from None
+                verdicts[idx] = (vfx["verdict"], windows[-1].t0)
+            windows += grammar.blur_windows(sc.get("overlay"), ov_scene, dur, RW / OUT_W,
+                                            f"scene {idx:02d} overlay")
             out = encode_media_scene(src, motion, layers, wav, dur, a.crf,
                                      work / f"scene_{k}.mp4", join=tr.join,
                                      fill=fill, focus=scene_focus, beats=beats,
-                                     scrim=scrim, blur=blur, overlay_frames=overlay_frames)
+                                     scrim=scrim, blur=blur, overlay_frames=overlay_frames,
+                                     windows=windows)
             add_part(out, idx, spans)
             if ov_scene is not None:
                 # Its elements' `sfx:` join the mix exactly as an illustration scene's do —
@@ -2640,8 +2713,10 @@ def main():
                     if ov_scene is not None else "")
             graded = ", ".join(filter(None, [f"scrim {scrim:g}" if scrim else "",
                                              f"blur {blur:g}px" if blur else ""]))
+            wnote = "".join(f", {w.kind} {w.t0:.2f}-{w.t1:.2f}s" for w in windows)
             print(f"scene {idx:02d}: media {shot}{over}"
-                  f"{f' ({graded})' if graded else ''} {dur:.1f}s -> {out.name}", flush=True)
+                  f"{f' ({graded})' if graded else ''}{wnote} {dur:.1f}s -> {out.name}",
+                  flush=True)
             continue
         if cards.is_card(sc):
             # A card is already 9:16 — use it as the whole frame, no top/bottom banding.
@@ -2655,6 +2730,10 @@ def main():
                 # The SAME spans encode_card_steps trims each step to — rescaled against
                 # the `dur` this part is encoded with, exactly as a media scene's beats are.
                 spans = beat_spans(steps, dur)
+                local, at = [], 0.0
+                for span in spans[:-1]:
+                    at += float(span); local.append(round(at, 3))
+                picture_cuts[idx] = local
                 pngs = []
                 for s, step in enumerate(steps):
                     png = work / f"scene_{k}_step{s}.png"
@@ -2822,6 +2901,38 @@ def main():
                   + "; ".join(f"{row['at']:.2f}s {row['role']} ({row['why']})"
                               for row in dropped_events), flush=True)
         placed = sorted(placed + kept_events, key=lambda row: (row["at"], row["role"]))
+    # The edit-grammar sounds (grammar.py): a hit on each cut, a pop on each tag, a whoosh
+    # before each camera move, a ding/buzzer on each verdict -- thinned against everything
+    # placed above, and recorded in cuts.json beside it. Nothing here runs for a spec that
+    # turns none of them on.
+    grammar_rows = []
+    gram = mix.sfx.grammar if mixed and mix.sfx is not None else None
+    if gram is not None:
+        candidates = []
+        if gram.cut is not None:
+            candidates += grammar.cut_events(cut_rows, picture_cuts)
+        if gram.tag is not None:
+            candidates += grammar.tag_events(illustrated, cut_rows)
+        if gram.move is not None:
+            candidates += grammar.move_events(cut_rows, moves, gram.move_lead)
+        verdict_rows = grammar.verdict_events(cut_rows, verdicts)
+        candidates += [row for row in verdict_rows if gram.sound(row["role"]) is not None]
+        silent = [row for row in verdict_rows if gram.sound(row["role"]) is None]
+        if silent:
+            print(f"audio: {len(silent)} verdict(s) tinted with no sound -- "
+                  f"audio.sfx.on_verdict has no file for "
+                  f"{', '.join(sorted({r['role'] for r in silent}))}", flush=True)
+        grammar_rows, dropped_grammar = grammar.thin(
+            candidates, first_speech_s=first_speech_seconds(cut_rows, build / "audio"),
+            guard=EVENT_GUARD_S, min_gap=gram.min_gap, seed=placed)
+        if dropped_grammar:
+            print("audio: grammar sfx dropped -- "
+                  + "; ".join(f"{row['at']:.2f}s {row['role']} ({row['why']})"
+                              for row in dropped_grammar), flush=True)
+        placed = sorted(placed + grammar_rows, key=lambda row: (row["at"], row["role"]))
+    elif verdicts:
+        print(f"audio: {len(verdicts)} verdict(s) tinted with no sound -- the spec sets no "
+              f"audio.sfx.on_verdict", flush=True)
     if cap.enabled and not overlays:
         # A spec that asked for captions and got none is almost always a narration problem,
         # not a caption one — and an uncaptioned Short that nobody was warned about is how a
@@ -2873,11 +2984,17 @@ def main():
             o_args, opening_indexes = opening_inputs(
                 mix, bed_index + 1 + len(sfx_indexes) + len(cue_indexes) + len(event_indexes))
             args += o_args
+            g_args, grammar_indexes = (grammar.sound_inputs(
+                gram, grammar_rows, bed_index + 1 + len(sfx_indexes) + len(cue_indexes)
+                + len(event_indexes) + len(opening_indexes)) if gram is not None else ([], []))
+            args += g_args
             steps.extend(audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                      sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
                                      payoff_s=payoff_s, events=kept_events,
                                      event_indexes=event_indexes,
-                                     opening_indexes=opening_indexes))
+                                     opening_indexes=opening_indexes,
+                                     grammar_rows=grammar_rows,
+                                     grammar_indexes=grammar_indexes))
         else:
             steps.append(plain_audio_steps(mix.master if mix is not None else Master()))
         run(["ffmpeg", "-y", "-loglevel", "error", *args, "-filter_complex", ";".join(steps),
@@ -2896,14 +3013,20 @@ def main():
                 mix, kept_events, bed_index + 1 + len(sfx_indexes) + len(cue_indexes))
             o_args, opening_indexes = opening_inputs(
                 mix, bed_index + 1 + len(sfx_indexes) + len(cue_indexes) + len(event_indexes))
+            g_args, grammar_indexes = (grammar.sound_inputs(
+                gram, grammar_rows, bed_index + 1 + len(sfx_indexes) + len(cue_indexes)
+                + len(event_indexes) + len(opening_indexes)) if gram is not None else ([], []))
             run(["ffmpeg", "-y", "-loglevel", "error", *CONCAT_INPUT_ARGS,
                  "-f", "concat", "-safe", "0", "-i", str(lst), *extra, *e_args, *o_args,
+                 *g_args,
                  "-filter_complex", ";".join(
                      audio_steps(mix, runtime=runtime, cuts=cuts, bed_index=bed_index,
                                  sfx_indexes=sfx_indexes, cue_indexes=cue_indexes,
                                  payoff_s=payoff_s, events=kept_events,
                                  event_indexes=event_indexes,
-                                 opening_indexes=opening_indexes)),
+                                 opening_indexes=opening_indexes,
+                                 grammar_rows=grammar_rows,
+                                 grammar_indexes=grammar_indexes)),
                  "-map", "0:v", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac",
                  "-b:a", "160k", "-ar", str(OUT_SAMPLE_RATE), "-movflags", "+faststart",
                  str(final)])
