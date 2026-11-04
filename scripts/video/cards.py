@@ -120,7 +120,15 @@ DEFAULT_BRAND: dict = {
     #: in scripts/video/fonts/, so the type never depends on a system font. Opt-in so every
     #: spec that does not ask renders the bytes it always did (ParkSheet audit #4, 2026-11-03).
     "font_bundle": "",
+    #: Whether a media scene's `credit:` is BURNED IN as a plate: "" (the default since
+    #: 2026-11-04: no plate -- Stephen's rule, attribution lives in the description's
+    #: Credits block only) or "on" (the plate as it always rendered, byte for byte). The
+    #: scene's `credit:` text is still read either way; only the picture changes.
+    "credit_plate": "",
 }
+
+#: brand['credit_plate'] values.
+CREDIT_PLATES = ("", "on")
 
 #: The fonts shipped in-repo (scripts/video/fonts/, SIL OFL 1.1, see fonts/OFL.txt):
 #: bundle name -> (CSS family name, {weight: file}). The family name is distinct from the
@@ -145,6 +153,9 @@ def _checked_token(key: str, value: object) -> str:
     if key == "font_bundle" and text not in ("", *BUNDLED_FONTS):
         raise ValueError(f"brand token 'font_bundle' must be one of "
                          f"{', '.join(repr(k) for k in ('', *BUNDLED_FONTS))}, got {text!r}")
+    if key == "credit_plate" and text not in CREDIT_PLATES:
+        raise ValueError(f"brand token 'credit_plate' must be one of "
+                         f"{', '.join(repr(k) for k in CREDIT_PLATES)}, got {text!r}")
     if key == "font" and not _FONT_STACK.match(text):
         raise ValueError(f"brand token 'font' must be a plain font stack "
                          f"(letters, digits, spaces, commas, hyphens), got {text!r}")

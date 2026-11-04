@@ -1219,7 +1219,9 @@ def media_layers(scene, brand, work, k, width=RW, height=RH):
     (`overlay: {elements: ...}`) is not a layer PNG at all: it is a PNG per FRAME, drawn by
     illustrate.py and composited after the final scale, so it never reaches here.
     """
-    credit = media.credit_text(scene)
+    # Burned in only on `brand.credit_plate: on` (off by default from 2026-11-04: credits go in
+    # the description). `brand` may be a bare dict in tests; a missing token reads as off.
+    credit = media.credit_text(scene) if (brand or {}).get("credit_plate") == "on" else ""
     plate = (scene.get("overlay") or {}).get("template")
     layers = []
     for name, doc in (("overlay", media.overlay_html(scene["overlay"], brand, width, height)

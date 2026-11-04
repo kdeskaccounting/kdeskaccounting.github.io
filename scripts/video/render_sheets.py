@@ -382,8 +382,9 @@ def render_media_scene(out_png, scene, spec_path, brand, width=W, height=H, html
     layers = []
     for name, doc in (("overlay", media.overlay_html(scene["overlay"], tokens, width, height)
                        if scene.get("overlay") else None),
+                      # Burned in only on brand.credit_plate: on (off by default, 2026-11-04).
                       ("credit", media.credit_plate_html(scene["credit"], tokens, width, height)
-                       if scene.get("credit") else None)):
+                       if scene.get("credit") and tokens.get("credit_plate") == "on" else None)):
         if doc is None: continue
         hp = where / f"{stem}-{name}.html"; hp.write_text(doc, encoding="utf-8")
         png = where / f"{stem}-{name}.png"; screenshot(hp, png, width, height, transparent=True)
