@@ -104,13 +104,17 @@ SAFE_BOTTOM_FRAC = 0.75
 #: on a letterboxed media scene put the words on the blurred bar rather than on the picture;
 #: 11 of the 13 reference Shorts measured in the 2026-09-19 teardown use centre or lower
 #: third. `top` is unchanged, so every spec that does not ask for a position is unmoved.
-BAND_CENTER_FRAC: dict = {"top": 0.22, "center": 0.46, "lower": 0.62, "lower_middle": 0.58}
+BAND_CENTER_FRAC: dict = {"top": 0.22, "center": 0.46, "lower": 0.62, "lower_middle": 0.58,
+                          "word": 0.57}
 
 #: Side bounds of the band per position, as fractions of the width, where they differ from
 #: the symmetric SAFE_X_FRAC margin. `lower_middle` (the `light` caption style, ParkSheet PoC
 #: v4, 2026-11-04) sits inside the CONSERVATIVE Shorts safe zone, x 120-880 at 1080 wide,
 #: which is shifted left of centre because the platform's like/comment rail owns the right.
-BAND_X_FRAC: dict = {"lower_middle": (120 / 1080, 880 / 1080)}
+BAND_X_FRAC: dict = {"lower_middle": (120 / 1080, 880 / 1080),
+                     # `word` (2026-11-04): centred on the frame (the grammar study measured
+                     # x = 0.5) and still inside the conservative safe zone's right edge.
+                     "word": (200 / 1080, 880 / 1080)}
 
 #: Nominal band height, per `captions.size`. `default` is the day-3 geometry and is what a
 #: spec that does not ask for a size still gets, byte for byte. `large` grew it because at
@@ -155,6 +159,10 @@ SIZE_TABLE = {
     # (bottom <= 1248 px) at the `lower_middle` centre. Two lines, so one long word wraps
     # rather than shrinking.
     "light": (0.12, 0.375, 2),
+    # `word` (2026-11-04): one word a cue at ~84 px (0.044 of the height; the study measured an
+    # ascender of 0.040-0.045 H, a 9-letter word ~0.37 W). The band is a little taller than the
+    # type so the 1.05 pop never clips. Sized by word_font_px, not by the band fraction.
+    "word": (0.11, 0.40, 1),
 }
 SIZES = tuple(SIZE_TABLE)
 
@@ -243,7 +251,7 @@ DEFAULT_ACCENT = "#ffe234"
 DEFAULT_INK = "#FFFFFF"
 DEFAULT_STROKE = "#0A0E14"
 
-POSITIONS = ("top", "center", "lower", "lower_middle")
+POSITIONS = ("top", "center", "lower", "lower_middle", "word")
 
 #: Caption STYLES (2026-11-04). `default` is every caption rendered before this: phrase cues of
 #: up to MAX_WORDS / MAX_CHARS, wherever `position`/`size` put them. `light` is the
@@ -252,7 +260,26 @@ POSITIONS = ("top", "center", "lower", "lower_middle")
 #: LIGHT_MAX_CHARS characters (`split_light`), drawn at `position: lower_middle`,
 #: `size: light` whatever the spec's position/size say. The lit word, the accent, the pop and
 #: the word timings are unchanged, so caption sync is exactly what it was.
-CAPTION_STYLES = ("default", "light")
+CAPTION_STYLES = ("default", "light", "word")
+
+#: `word` (2026-11-04, the grammar study's caption rules): ONE word a cue (two only when a word
+#: is too short to read alone), switched on the spoken word and held to the next, popped
+#: 0.94 -> 1.05 -> 1.0 in 150 ms, white heavy rounded type in sentence case as spoken with a
+#: thin dark outline and a soft shadow, on a fixed band at y 0.57; about one cue in seven in a
+#: keyword colour (the whole cue). Rendered as one transparent caption TRACK (word_track_frames)
+#: so the pop animates frame by frame; captions.json and the cap_*.png files are still written.
+WORD_FONT_FRAC = 0.044
+WORD_MIN_S = 0.12
+WORD_EM = 0.66                       # Nunito Black's average advance, safe side
+WORD_STROKE = "#111111"
+WORD_TRIM = ".,;:\"'”’“‘"
+KEYWORD_PALETTE = {"positive": "#3FFC5E", "topic": "#F7E63C", "place": "#3BF7FA",
+                   "warning": "#F94646"}
+KEYWORD_EVERY = 7
+#: Lowercase words never auto-picked as keywords.
+STOPWORDS = frozenset("""a an and are as at be but by for from had has have he her his i in is it
+its it's of on or our she so than that the their them then there they this to was we were what
+when which who will with you your""".split())
 LIGHT_MAX_WORDS = 2
 LIGHT_MAX_CHARS = 12
 
@@ -330,6 +357,10 @@ class CaptionConfig:
     ink: str = DEFAULT_INK
     stroke: str = DEFAULT_STROKE
     style: str = "default"
+    #: `word` style only: ((normalised word, #hex), ...) from `captions.keywords`, and the
+    #: auto cadence (pick one cue in N) used when no keywords are named.
+    keywords: tuple = ()
+    keyword_every: int = 0
 
 
 # --- the words file -----------------------------------------------------------------------
@@ -1110,9 +1141,151 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
         raise ValueError(f"unknown captions.style {style!r}; known: {', '.join(CAPTION_STYLES)}")
     if style == "light":
         position, size = "lower_middle", "light"
-    return CaptionConfig(style=style, enabled=enabled,
+    keywords, every = (), 0
+    if style == "word":
+        position, size = "word", "word"
+        keywords = parse_keywords(block.get("keywords"))
+        every = int(block.get("keyword_every", KEYWORD_EVERY))
+        if not 0 <= every <= 50:
+            raise ValueError(f"captions.keyword_every must be in [0, 50]; got {every!r}")
+    elif "keywords" in block or "keyword_every" in block:
+        raise ValueError("captions.keywords / keyword_every are read by `style: word` only")
+    return CaptionConfig(style=style, enabled=enabled, keywords=keywords, keyword_every=every,
                          accent=_checked_accent(block.get("accent", DEFAULT_ACCENT)),
                          position=position, size=size, pop=pop,
                          hook_seconds=hook_seconds,
                          ink=_checked_hex(block.get("ink", DEFAULT_INK), "ink"),
                          stroke=_checked_hex(block.get("stroke", DEFAULT_STROKE), "stroke"))
+
+
+# --- `style: word` ---------------------------------------------------------------------------
+
+def norm_word(text: str) -> str:
+    return str(text).strip().strip(WORD_TRIM + "?!").lower()
+
+
+def parse_keywords(raw) -> tuple:
+    """`captions.keywords: {word: positive|topic|place|warning|#hex}` -> ((word, hex), ...)."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, dict):
+        raise ValueError("captions.keywords must be a mapping {word: category or #hex}")
+    out = []
+    for word, colour in raw.items():
+        hexv = KEYWORD_PALETTE.get(str(colour), str(colour))
+        out.append((norm_word(word), _checked_hex(hexv, f"keyword {word!r}")))
+    return tuple(sorted(out))
+
+
+def split_words(cues, min_s: float = WORD_MIN_S) -> list:
+    """Phrase cues -> one-word cues on the spoken word, each held to the next word's onset.
+
+    Pure. The first word starts on the phrase's own start, the last keeps its end (the hold to
+    the next phrase), so the caption never blanks while speech continues. A word on screen for
+    less than `min_s` is joined to the word after it (two at most), never dropped."""
+    out = []
+    for cue in cues:
+        words = list(cue.words)
+        groups, i = [], 0
+        while i < len(words):
+            start = cue.start if i == 0 else words[i].start
+            nxt = words[i + 1].start if i + 1 < len(words) else cue.end
+            if nxt - start < min_s and i + 1 < len(words):
+                groups.append(words[i:i + 2])
+                i += 2
+            else:
+                groups.append(words[i:i + 1])
+                i += 1
+        for n, g in enumerate(groups):
+            start = cue.start if n == 0 else g[0].start
+            end = cue.end if n + 1 == len(groups) else groups[n + 1][0].start - GAP_S
+            out.append(Cue(text=_cue_text(g), start=start, end=max(start + 0.001, end),
+                           words=tuple(g)))
+    return out
+
+
+def keyword_colours(cues, keywords=(), every: int = KEYWORD_EVERY) -> list:
+    """One colour (or None = white) per cue. Named keywords win; with none named, one cue in
+    `every` is coloured: in each run of `every` cues, the longest non-stopword (digits count
+    as long), in the topic yellow."""
+    named = dict(keywords or ())
+    if named:
+        return [next((named[norm_word(w.text)] for w in c.words if norm_word(w.text) in named),
+                     None) for c in cues]
+    out = [None] * len(cues)
+    if not every:
+        return out
+    for block in range(0, len(cues), every):
+        best, score = None, 0
+        for i in range(block, min(block + every, len(cues))):
+            word = norm_word(cues[i].text)
+            if word in STOPWORDS:
+                continue
+            sc = len(word) + (10 if any(ch.isdigit() for ch in word) else 0)
+            if sc > score and sc >= 5:
+                best, score = i, sc
+        if best is not None:
+            out[best] = KEYWORD_PALETTE["topic"]
+    return out
+
+
+def word_text(cue) -> str:
+    """The cue as shown: sentence case as spoken, trailing commas/periods dropped."""
+    return " ".join(w.text.strip().strip(WORD_TRIM) or w.text for w in cue.words)
+
+
+def word_font_px(text: str, box, height: int) -> float:
+    usable = (box[2] - box[0]) * (1 - FIT_SLACK_FRAC)
+    fit = usable / max(1.0, len(text) * WORD_EM)
+    return max(MIN_FONT_PX, min(WORD_FONT_FRAC * height, fit))
+
+
+def word_caption_html(cue, colour, width: int, box, height: int, font_css: str,
+                      family: str) -> str:
+    """One `word` cue as a band-sized transparent page: centred, as spoken, no box."""
+    left, top, right, bottom = box
+    text = word_text(cue)
+    fs = word_font_px(text, box, height)
+    fill = _checked_hex(colour or DEFAULT_INK, "word colour")
+    pad = f"0 {int(width) - right}px 0 {left}px"
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+{font_css}*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{width:{int(width)}px;height:{bottom - top}px;overflow:hidden;background:transparent}}
+.band{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  padding:{pad}}}
+.w{{font-family:'{family}','Arial Rounded MT Bold',sans-serif;font-weight:900;
+  font-size:{fs:.1f}px;line-height:1.1;white-space:nowrap;color:{fill};
+  -webkit-text-stroke:{0.075 * fs:.1f}px {WORD_STROKE};paint-order:stroke fill;
+  text-shadow:0 {3 * fs / 84:.1f}px {6 * fs / 84:.1f}px rgba(0,0,0,.6)}}
+</style></head><body><div class="band"><div class="w">{_html.escape(text)}</div></div>
+</body></html>"""
+
+
+def pop_scale(dt: float, ease: dict) -> float:
+    """The caption pop at `dt` seconds after the cue starts: from -> peak -> 1.0, each leg
+    eased out (cubic), times in ms from the easing table (callouts.EASING['pop_caption'])."""
+    t = dt * 1000.0
+    if t <= 0:
+        return float(ease["from"])
+    peak, settle = float(ease["peak_ms"]), float(ease["settle_ms"])
+    out_cubic = lambda u: 1 - (1 - u) ** 3
+    if t < peak:
+        return ease["from"] + (ease["peak"] - ease["from"]) * out_cubic(t / peak)
+    if t < settle:
+        return ease["peak"] + (1.0 - ease["peak"]) * out_cubic((t - peak) / (settle - peak))
+    return 1.0
+
+
+def word_track_plan(cues, runtime: float, ease: dict, fps: int = 30) -> list:
+    """Per frame: (cue index or None, scale). Pure; the track renderer composites from it."""
+    n = int(round(float(runtime) * fps))
+    plan, ci = [], 0
+    for f in range(n):
+        t = f / float(fps)
+        while ci < len(cues) and cues[ci].end <= t:
+            ci += 1
+        if ci < len(cues) and cues[ci].start <= t < cues[ci].end:
+            plan.append((ci, round(pop_scale(t - cues[ci].start, ease), 4)))
+        else:
+            plan.append((None, 1.0))
+    return plan
