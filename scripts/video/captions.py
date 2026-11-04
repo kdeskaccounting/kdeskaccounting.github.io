@@ -104,7 +104,13 @@ SAFE_BOTTOM_FRAC = 0.75
 #: on a letterboxed media scene put the words on the blurred bar rather than on the picture;
 #: 11 of the 13 reference Shorts measured in the 2026-09-19 teardown use centre or lower
 #: third. `top` is unchanged, so every spec that does not ask for a position is unmoved.
-BAND_CENTER_FRAC: dict = {"top": 0.22, "center": 0.46, "lower": 0.62}
+BAND_CENTER_FRAC: dict = {"top": 0.22, "center": 0.46, "lower": 0.62, "lower_middle": 0.58}
+
+#: Side bounds of the band per position, as fractions of the width, where they differ from
+#: the symmetric SAFE_X_FRAC margin. `lower_middle` (the `light` caption style, ParkSheet PoC
+#: v4, 2026-11-04) sits inside the CONSERVATIVE Shorts safe zone, x 120-880 at 1080 wide,
+#: which is shifted left of centre because the platform's like/comment rail owns the right.
+BAND_X_FRAC: dict = {"lower_middle": (120 / 1080, 880 / 1080)}
 
 #: Nominal band height, per `captions.size`. `default` is the day-3 geometry and is what a
 #: spec that does not ask for a size still gets, byte for byte. `large` grew it because at
@@ -144,6 +150,11 @@ MAX_CUE_LINES = 2
 SIZE_TABLE = {
     "default": (BAND_H_FRAC_DEFAULT, FONT_BAND_FRAC_DEFAULT, MAX_CUE_LINES_DEFAULT),
     "large": (BAND_H_FRAC, FONT_BAND_FRAC, MAX_CUE_LINES),
+    # `light` (2026-11-04): ~70% of `large`'s type (0.12 x 0.375 = 86 px at 1920 high, against
+    # 0.185 x 0.347 = 123 px), in a band low enough to stay inside the conservative safe zone
+    # (bottom <= 1248 px) at the `lower_middle` centre. Two lines, so one long word wraps
+    # rather than shrinking.
+    "light": (0.12, 0.375, 2),
 }
 SIZES = tuple(SIZE_TABLE)
 
@@ -232,7 +243,18 @@ DEFAULT_ACCENT = "#ffe234"
 DEFAULT_INK = "#FFFFFF"
 DEFAULT_STROKE = "#0A0E14"
 
-POSITIONS = ("top", "center", "lower")
+POSITIONS = ("top", "center", "lower", "lower_middle")
+
+#: Caption STYLES (2026-11-04). `default` is every caption rendered before this: phrase cues of
+#: up to MAX_WORDS / MAX_CHARS, wherever `position`/`size` put them. `light` is the
+#: million-view reference look (one or two small words at a time, lower-middle): the SAME
+#: phrase cues, split by their own word timings into cues of at most LIGHT_MAX_WORDS words and
+#: LIGHT_MAX_CHARS characters (`split_light`), drawn at `position: lower_middle`,
+#: `size: light` whatever the spec's position/size say. The lit word, the accent, the pop and
+#: the word timings are unchanged, so caption sync is exactly what it was.
+CAPTION_STYLES = ("default", "light")
+LIGHT_MAX_WORDS = 2
+LIGHT_MAX_CHARS = 12
 
 #: The first seconds of a Short read faster than the rest of it, so the cue caps tighten
 #: there: 1-2 words a card instead of 3. Off (0.0) unless a spec asks — HOOK_S is the v4
@@ -307,6 +329,7 @@ class CaptionConfig:
     hook_seconds: float = 0.0
     ink: str = DEFAULT_INK
     stroke: str = DEFAULT_STROKE
+    style: str = "default"
 
 
 # --- the words file -----------------------------------------------------------------------
@@ -489,6 +512,59 @@ def word_windows(cues, min_window: float = MIN_WINDOW_S) -> list:
     return out
 
 
+def split_light(cues, max_words: int = LIGHT_MAX_WORDS, max_chars: int = LIGHT_MAX_CHARS) -> list:
+    """Phrase cues -> `light` cues of at most `max_words` words and `max_chars` characters.
+
+    Pure, and driven by the words the cues already carry: each piece starts on its first
+    word's own start (the first piece on the phrase's start, which is the same instant) and
+    holds until the next piece's first word, less GAP_S; the last piece keeps the phrase's
+    end. A piece also ends after a word carrying a comma or a hard break, so "Taller than
+    that," never glues "that," to what follows. A piece too short to read (MIN_VISIBLE_S) is
+    folded into its neighbour rather than dropped, so every spoken word is still captioned.
+    """
+    out = []
+    for cue in cues:
+        pieces, current = [], []
+        for word in cue.words:
+            trial = current + [word]
+            if current and (len(trial) > max_words or len(_cue_text(trial)) > max_chars):
+                pieces.append(current)
+                current = [word]
+            else:
+                current = trial
+            if word.text.rstrip(_TRAILING).endswith(_HARD_BREAK + (",",)):
+                pieces.append(current)
+                current = []
+        if current:
+            pieces.append(current)
+        def span(i):
+            start = cue.start if i == 0 else pieces[i][0].start
+            end = cue.end if i + 1 == len(pieces) else pieces[i + 1][0].start - GAP_S
+            return start, max(start, end)
+
+        i = 0
+        while len(pieces) > 1 and i < len(pieces):
+            a, b = span(i)
+            if b - a > MIN_VISIBLE_S:
+                i += 1
+                continue
+            if i > 0 and len(pieces[i - 1]) >= 2:
+                # Rebalance first: hand the short piece its neighbour's last word, so
+                # "Riders have" / "to" becomes "Riders" / "have to", not a three-word cue.
+                pieces[i] = [pieces[i - 1].pop()] + pieces[i]
+                if span(i)[1] - span(i)[0] > MIN_VISIBLE_S:
+                    i += 1
+                    continue
+            if i > 0:
+                pieces[i - 1] = pieces[i - 1] + pieces.pop(i)
+            else:
+                pieces[0] = pieces[0] + pieces.pop(1)
+        merged = [[piece, *span(n)] for n, piece in enumerate(pieces)]
+        out.extend(Cue(text=_cue_text(p), start=a, end=b, words=tuple(p))
+                   for p, a, b in merged)
+    return out
+
+
 # --- geometry -------------------------------------------------------------------------------
 
 def caption_box(width: int, height: int, card_top: int | None = None,
@@ -511,6 +587,9 @@ def caption_box(width: int, height: int, card_top: int | None = None,
     centre = BAND_CENTER_FRAC[position]
     band_h_frac = size_rules(size)[0]
     x = round(width * SAFE_X_FRAC)
+    x_left, x_right = x, int(width) - x
+    if position in BAND_X_FRAC:
+        x_left, x_right = (round(width * f) for f in BAND_X_FRAC[position])
     top = round(height * (centre - band_h_frac / 2))
     bottom = round(height * (centre + band_h_frac / 2))
     floor = round(height * SAFE_BOTTOM_FRAC)
@@ -532,7 +611,7 @@ def caption_box(width: int, height: int, card_top: int | None = None,
             f"is at y={card_top} leaves {max(0, bottom - top)}px, under the {min_h}px a "
             f"caption needs to stay readable on a phone. Move the card down, or turn "
             f"captions off for this spec.")
-    return (x, top, int(width) - x, bottom)
+    return (x_left, top, x_right, bottom)
 
 
 # --- type -------------------------------------------------------------------------------------
@@ -668,8 +747,12 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
     colour = _checked_accent(accent)
     ink_colour = _checked_hex(ink, "ink")
     stroke_colour = _checked_hex(stroke, "stroke")
-    left, top, _right, bottom = box
+    left, top, right, bottom = box
     band_h = bottom - top
+    # Symmetric bands (every position but `lower_middle`) keep the one-value padding they
+    # always had, byte for byte; an off-centre band pads each side to its own edge.
+    pad = (f"0 {left}px" if int(width) - right == left
+           else f"0 {int(width) - right}px 0 {left}px")
     face = brand.get("font_bundle") or ""
     fs = font_size(cue.text, box, size=size, pop=pop, face=face)
     pop_css = "" if float(pop) <= DEFAULT_POP else (
@@ -686,7 +769,7 @@ def caption_html(cue: Cue, lit: int, accent: str, brand: dict, width: int, box,
 html,body{{width:{int(width)}px;height:{band_h}px;overflow:hidden;background:transparent;
   font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
 .band{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  padding:0 {left}px}}
+  padding:{pad}}}
 .line{{text-align:center;font-weight:700;font-size:{fs:.1f}px;line-height:1.06;
   letter-spacing:.01em;text-transform:uppercase;color:{ink_colour};
   -webkit-text-stroke:{0.085 * fs:.1f}px {stroke_colour};paint-order:stroke fill;
@@ -765,7 +848,82 @@ class Plate:
     style: str = "house"
 
 
-PLATE_STYLES: tuple[str, ...] = ("house", "search")
+PLATE_STYLES: tuple[str, ...] = ("house", "search", "strip")
+
+#: The `style: strip` plate (2026-11-04, ParkSheet PoC v4): a compact claim box like the
+#: million-view references' frame-0 text (Disney Cicerone, DFB Guide) instead of a full-width
+#: bar. Mid-frame, inside the conservative safe zone (x 120-880 at 1080 wide), at most
+#: STRIP_MAX_LINES lines of at most STRIP_MAX_WORDS words, bold caps in the brand face on a
+#: white rounded box that is as wide as its text and never full-bleed. No icon, no caret.
+#: `position` is not read for a strip (it always sits at STRIP_CENTER_FRAC); `headline_frac`
+#: is its type size. Lines are the text's own newlines, or a balanced split of a one-line
+#: text. It leaves on `seconds` with a STRIP_SNAP_S background blur ending on the snap
+#: (make_short.caption_filter) and the grammar's on_tag pop at the same instant.
+STRIP_CENTER_FRAC = 0.42
+STRIP_HEADLINE_FRAC_MIN = 0.03
+STRIP_X_FRAC = (120 / 1080, 880 / 1080)
+STRIP_MAX_LINES = 2
+STRIP_MAX_WORDS = 4
+STRIP_PAD_X_EM = 0.5
+STRIP_PAD_Y_EM = 0.28
+STRIP_SNAP_S = 0.15
+STRIP_SNAP_SIGMA = 10.0
+
+
+def strip_lines(text: str) -> list:
+    """The strip's lines: its own newlines, else one line, else a balanced two-way split."""
+    lines = [" ".join(line.split()) for line in str(text).splitlines() if line.strip()]
+    if len(lines) == 1 and len(lines[0].split()) > STRIP_MAX_WORDS:
+        words = lines[0].split()
+        best = min(range(1, len(words)),
+                   key=lambda k: abs(len(" ".join(words[:k])) - len(" ".join(words[k:]))))
+        lines = [" ".join(words[:best]), " ".join(words[best:])]
+    if not lines or len(lines) > STRIP_MAX_LINES:
+        raise ValueError(f"a strip plate carries 1-{STRIP_MAX_LINES} lines; got {len(lines)}")
+    long = [line for line in lines if len(line.split()) > STRIP_MAX_WORDS]
+    if long:
+        raise ValueError(f"a strip plate line carries at most {STRIP_MAX_WORDS} words; "
+                         f"too long: {', '.join(repr(x) for x in long)}")
+    return lines
+
+
+def strip_box(plate, brand: dict, width: int, height: int) -> tuple:
+    """(left, top, right, bottom) of the strip's white box, from the face's own advances.
+    Refuses a strip wider than the safe zone (it would be clipped, not shrunk)."""
+    head_px = height * plate.headline_frac
+    face = (brand or {}).get("font_bundle") or ""
+    lines = strip_lines(plate.text)
+    text_w = max(line_em(line.split(), face=face) for line in lines) * head_px
+    box_w = text_w + 2 * STRIP_PAD_X_EM * head_px
+    lo, hi = (width * f for f in STRIP_X_FRAC)
+    if box_w > hi - lo:
+        raise ValueError(f"strip plate is {box_w:.0f}px wide, wider than the {hi - lo:.0f}px "
+                         f"safe zone; shorten a line or lower short.plate.headline_frac")
+    box_h = len(lines) * 1.08 * head_px + 2 * STRIP_PAD_Y_EM * head_px
+    cx, cy = (lo + hi) / 2, height * STRIP_CENTER_FRAC
+    return (round(cx - box_w / 2), round(cy - box_h / 2), round(cx + box_w / 2),
+            round(cy + box_h / 2))
+
+
+def strip_plate_html(plate, brand: dict, width: int, height: int) -> str:
+    """The `style: strip` plate as a full-frame transparent page (see STRIP_CENTER_FRAC)."""
+    head_px = height * plate.headline_frac
+    lines = strip_lines(plate.text)
+    strip_box(plate, brand, width, height)          # refuses an over-wide strip
+    lo, hi = (round(width * f) for f in STRIP_X_FRAC)
+    body = "<br>".join(_html.escape(line, quote=True) for line in lines)
+    return f"""<!doctype html><html><head><meta charset="utf-8"><style>
+{cards.font_face_css(brand)}*{{box-sizing:border-box;margin:0;padding:0}}
+html,body{{width:{int(width)}px;height:{int(height)}px;overflow:hidden;
+  background:transparent;font-family:{cards.font_family(brand)};-webkit-font-smoothing:antialiased}}
+.wrap{{position:absolute;left:{lo}px;width:{hi - lo}px;top:{round(height * STRIP_CENTER_FRAC)}px;
+  transform:translateY(-50%);display:flex;justify-content:center}}
+.strip{{display:inline-block;background:#FFFFFF;color:#121418;font-weight:700;
+  font-size:{head_px:.0f}px;line-height:1.08;letter-spacing:.01em;text-transform:uppercase;
+  text-align:center;white-space:nowrap;padding:{STRIP_PAD_Y_EM}em {STRIP_PAD_X_EM}em;
+  border-radius:{0.32 * head_px:.0f}px;
+  box-shadow:0 {0.10 * head_px:.0f}px {0.30 * head_px:.0f}px rgba(0,0,0,.38)}}
+</style></head><body><div class="wrap"><div class="strip">{body}</div></div></body></html>"""
 
 
 def plate_settings(short: dict):
@@ -785,11 +943,13 @@ def plate_settings(short: dict):
         raise ValueError("short.plate.text is empty; a plate with no text is a blank frame "
                          "over the hook. Drop the block, or name the subject.")
     headline_frac = float(block.get("headline_frac", PLATE_HEADLINE_PX_FRAC))
-    if not PLATE_HEADLINE_FRAC_MIN <= headline_frac <= PLATE_HEADLINE_PX_FRAC:
+    # A strip is a compact claim box, not the biggest type in the Short: its floor is lower.
+    lo = STRIP_HEADLINE_FRAC_MIN if block.get("style") == "strip" else PLATE_HEADLINE_FRAC_MIN
+    if not lo <= headline_frac <= PLATE_HEADLINE_PX_FRAC:
         raise ValueError(
             f"short.plate.headline_frac must be in "
-            f"[{PLATE_HEADLINE_FRAC_MIN}, {PLATE_HEADLINE_PX_FRAC}]; got {headline_frac!r}. "
-            f"Smaller than {PLATE_HEADLINE_FRAC_MIN} of the frame is not a headline, and "
+            f"[{lo}, {PLATE_HEADLINE_PX_FRAC}]; got {headline_frac!r}. "
+            f"Smaller than {lo} of the frame is not a headline, and "
             f"larger than {PLATE_HEADLINE_PX_FRAC} overflows the layout that was verified.")
     max_chars = plate_max_word_chars(headline_frac)
     wide = [word for word in text.split() if len(word) > max_chars]
@@ -812,6 +972,8 @@ def plate_settings(short: dict):
     if style not in PLATE_STYLES:
         raise ValueError(f"short.plate.style must be one of {', '.join(PLATE_STYLES)}; "
                          f"got {style!r}")
+    if style == "strip":
+        strip_lines(text)
     return Plate(text=text, kicker=str(block.get("kicker") or "").strip(),
                  seconds=seconds, position=position, headline_frac=headline_frac,
                  style=style)
@@ -860,6 +1022,8 @@ def plate_html(plate: Plate, accent: str, brand: dict, width: int, height: int) 
     colour = _checked_accent(accent)
     if plate.style == "search":
         return search_plate_html(plate, brand, width, height)
+    if plate.style == "strip":
+        return strip_plate_html(plate, brand, width, height)
     kicker_px = height * PLATE_KICKER_PX_FRAC
     head_px = height * plate.headline_frac
     centre = BAND_CENTER_FRAC[plate.position]
@@ -913,6 +1077,8 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
         size: large           # default (the day-3 band and type) | large
         pop: 1.14             # scale the lit word; 1.0 emits no extra CSS at all
         hook_seconds: 3.0     # cues starting before this take the tighter hook caps
+        style: light          # default | light (1-2 words a cue, ~70% type, lower-middle;
+                              # overrides position and size)
     """
     block = (spec or {}).get("captions")
     if block is None:
@@ -939,7 +1105,12 @@ def settings(spec: dict, override: bool | None = None) -> CaptionConfig:
     hook_seconds = float(block.get("hook_seconds", 0.0))
     if not 0.0 <= hook_seconds <= 10.0:
         raise ValueError(f"captions.hook_seconds must be in [0, 10]; got {hook_seconds!r}")
-    return CaptionConfig(enabled=enabled,
+    style = str(block.get("style", "default"))
+    if style not in CAPTION_STYLES:
+        raise ValueError(f"unknown captions.style {style!r}; known: {', '.join(CAPTION_STYLES)}")
+    if style == "light":
+        position, size = "lower_middle", "light"
+    return CaptionConfig(style=style, enabled=enabled,
                          accent=_checked_accent(block.get("accent", DEFAULT_ACCENT)),
                          position=position, size=size, pop=pop,
                          hook_seconds=hook_seconds,
