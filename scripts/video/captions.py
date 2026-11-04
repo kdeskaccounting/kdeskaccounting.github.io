@@ -159,9 +159,10 @@ SIZE_TABLE = {
     # (bottom <= 1248 px) at the `lower_middle` centre. Two lines, so one long word wraps
     # rather than shrinking.
     "light": (0.12, 0.375, 2),
-    # `word` (2026-11-04): one word a cue at ~84 px (0.044 of the height; the study measured an
-    # ascender of 0.040-0.045 H, a 9-letter word ~0.37 W). The band is a little taller than the
-    # type so the 1.05 pop never clips. Sized by word_font_px, not by the band fraction.
+    # `word` (2026-11-04): one word a cue at ~96 px (0.050 of the height), which puts a 9-letter
+    # word at the measured ~0.37 W in Nunito Black (the study's ascender, 0.040-0.045 H, reads
+    # smaller in this face). The band is a little taller than the type so the 1.05 pop never
+    # clips. Sized by word_font_px, not by the band fraction.
     "word": (0.11, 0.40, 1),
 }
 SIZES = tuple(SIZE_TABLE)
@@ -268,7 +269,7 @@ CAPTION_STYLES = ("default", "light", "word")
 #: thin dark outline and a soft shadow, on a fixed band at y 0.57; about one cue in seven in a
 #: keyword colour (the whole cue). Rendered as one transparent caption TRACK (word_track_frames)
 #: so the pop animates frame by frame; captions.json and the cap_*.png files are still written.
-WORD_FONT_FRAC = 0.044
+WORD_FONT_FRAC = 0.050
 WORD_MIN_S = 0.12
 WORD_EM = 0.66                       # Nunito Black's average advance, safe side
 WORD_STROKE = "#111111"

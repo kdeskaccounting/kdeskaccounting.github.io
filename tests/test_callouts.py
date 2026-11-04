@@ -298,14 +298,15 @@ def test_wash_bad_is_red_024_with_vignette_and_peaks_on_the_word():
     assert w.t0 == pytest.approx(1.10 - 0.08)
     assert w.ramp_in == 0.2 and w.ramp_out == 0.2
     assert w.t1 == pytest.approx(w.t0 + 0.2 + 0.33 + 0.2)
-    assert "0xFF0000@0.24" in w.filter and "vignette" in w.filter
+    assert w.filter.startswith("lutrgb=r='val*0.7600+61.20':g='val*0.7600+0.00'")
+    assert "vignette" in w.filter
 
 
 def test_wash_good_is_green_044_held_to_the_cut():
     fx = grammar.parse_fx({"fx": {"verdict": "good", "style": "wash", "at": {"word": "456"}}})
     w = grammar.verdict_window(fx, WORDS, 4.0)
     assert w.t1 == 4.0 and w.ramp_out == 0.0 and w.ramp_in == 0.17
-    assert "0x009600@0.44" in w.filter and "vignette" not in w.filter
+    assert "g='val*0.5600+66.00'" in w.filter and "vignette" not in w.filter
 
 
 def test_wash_refuses_grade_keys_and_grade_refuses_wash_keys():
@@ -321,3 +322,11 @@ def test_grade_without_style_is_unchanged():
     fx = grammar.parse_fx({"fx": {"verdict": "good"}})
     assert "style" not in fx and grammar.verdict_window(fx, WORDS, 2.0).filter.startswith(
         "colorchannelmixer=")
+
+
+def test_a_silent_callout_never_gets_the_on_tag_pop():
+    els = _compiled([{"type": "badge", "text": "#1", "when": 0.5, "sfx": None}])
+    scene = {"elements": els}
+    rows = [{"scene": 0, "start": 0.0}]
+    assert grammar.tag_events([(0, make_short.callout_free(scene))], rows) == []
+    assert grammar.tag_events([(0, scene)], rows) != []      # what the filter prevents

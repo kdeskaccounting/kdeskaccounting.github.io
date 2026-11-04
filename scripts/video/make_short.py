@@ -3297,7 +3297,9 @@ def main():
         if gram.cut is not None:
             candidates += grammar.cut_events(cut_rows, picture_cuts)
         if gram.tag is not None:
-            candidates += grammar.tag_events(illustrated, cut_rows)
+            # A callout's sound is its own `sfx` (or none, `sfx: null`): never the on_tag pop.
+            candidates += grammar.tag_events([(i, callout_free(sc)) for i, sc in illustrated],
+                                             cut_rows)
         if gram.move is not None:
             candidates += grammar.move_events(cut_rows, moves, gram.move_lead)
         if gram.tag is not None and plate is not None and plate.style == "strip":

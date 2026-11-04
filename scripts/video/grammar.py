@@ -345,8 +345,13 @@ def verdict_span(fx, words, dur, where="scene") -> tuple:
 
 
 def wash_filter(verdict: str) -> str:
+    """A normal-blend colour layer at the measured alpha: out = in * (1 - a) + colour * a, per
+    RGB channel (lutrgb; drawbox's own alpha does not blend in YUV -- measured: red @0.24 on
+    mid-grey came out (232, 66, 61), not (158, 97, 97))."""
     w = WASH[verdict]
-    f = f"drawbox=x=0:y=0:w=iw:h=ih:color={w['color']}@{w['alpha']:.2f}:t=fill"
+    a = float(w["alpha"])
+    rgb = [int(w["color"][2:][i:i + 2], 16) for i in (0, 2, 4)]
+    f = "lutrgb=" + ":".join(f"{ch}='val*{1 - a:.4f}+{c * a:.2f}'" for ch, c in zip("rgb", rgb))
     return f + (",vignette=angle=0.8" if w["vignette"] else "")
 
 
