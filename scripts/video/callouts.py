@@ -96,7 +96,14 @@ STAMP_RED = "#E5202A"
 #: Nunito's cap height is ~0.705 em; a `size` given as cap height converts to font-size by it.
 CAP_EM = 0.705
 KEYS = ("type", "text", "src", "when", "anchor", "size", "ease", "in_ms", "hold", "out",
-        "out_ms", "offset_ms", "sfx", "enter_from", "direction", "color", "tilt")
+        "out_ms", "offset_ms", "sfx", "enter_from", "direction", "color", "tilt", "labels")
+#: `labels:` on a sticker (2026-11-04, PoC v6): renderer-drawn type ON the sticker, moving with
+#: it. A generated image garbles numerals, so the picture is drawn plain and the number is set
+#: here: {text, x, y (fractions of the sticker box), size (cap height as a fraction of the
+#: sticker WIDTH, default 0.12), color (default white), ink (outline, default #111111),
+#: rotate (degrees)}.
+LABEL_KEYS = ("text", "x", "y", "size", "color", "ink", "rotate")
+LABEL_SIZE = 0.12
 
 
 class CalloutError(ValueError):
@@ -212,7 +219,37 @@ def check(raw_list, where: str = "callouts") -> list:
             raise CalloutError(f"{tag}: `color` must be a #rgb or #rrggbb hex colour")
         if "tilt" in c:
             _num(c["tilt"], "tilt", tag, -45.0, 45.0)
+        if "labels" in c:
+            _check_labels(c["labels"], kind, tag)
     return raw_list
+
+
+def _hex(value):
+    return isinstance(value, str) and value.startswith("#") and len(value) in (4, 7)
+
+
+def _check_labels(labels, kind, tag):
+    if kind != "sticker":
+        raise CalloutError(f"{tag}: `labels` belong on a sticker (type text/badge carry `text`)")
+    if not isinstance(labels, list) or not labels:
+        raise CalloutError(f"{tag}: `labels` must be a non-empty list of {{text, x, y, ...}}")
+    for j, lab in enumerate(labels):
+        where = f"{tag}.labels[{j}]"
+        if not isinstance(lab, dict):
+            raise CalloutError(f"{where}: a label is a mapping")
+        unknown = set(lab) - set(LABEL_KEYS)
+        if unknown:
+            raise CalloutError(f"{where}: unknown key(s) {', '.join(sorted(unknown))}")
+        if not (isinstance(lab.get("text"), str) and lab["text"]):
+            raise CalloutError(f"{where}: needs `text`")
+        _num(lab.get("x"), "x", where, -0.5, 1.5)
+        _num(lab.get("y"), "y", where, -0.5, 1.5)
+        _num(lab.get("size", LABEL_SIZE), "size", where, 0.01, 1.0)
+        if "rotate" in lab:
+            _num(lab["rotate"], "rotate", where, -90.0, 90.0)
+        for key in ("color", "ink"):
+            if key in lab and not _hex(lab[key]):
+                raise CalloutError(f"{where}: `{key}` must be a #rgb or #rrggbb hex colour")
 
 
 def nearest_edge(x: float, y: float) -> str:
@@ -262,7 +299,7 @@ def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="call
         sfx = c.get("sfx", d["sfx"])
         if sfx:
             el["sfx"] = sfx
-        for key in ("text", "src", "direction", "color", "tilt"):
+        for key in ("text", "src", "direction", "color", "tilt", "labels"):
             if key in c:
                 el[key] = c[key]
         if kind == "sticker":
@@ -349,6 +386,20 @@ def _text_body(text: str, cap_frac: float, color: str) -> str:
             f"{_html.escape(text)}</div>")
 
 
+def _label_html(lab, w: float, h: float) -> str:
+    """One renderer-drawn label on a sticker: heavy rounded type centred on (x, y) of the box."""
+    fs = float(lab.get("size", LABEL_SIZE)) * w / CAP_EM
+    ink = lab.get("ink", INK)
+    return (f'<div style="position:absolute;left:{float(lab["x"]) * w:.1f}px;'
+            f'top:{float(lab["y"]) * h:.1f}px;transform:translate(-50%,-50%) '
+            f'rotate({float(lab.get("rotate", 0.0)):g}deg);white-space:nowrap;'
+            f"font-family:'{ROUNDED_FAMILY}',Arial Rounded MT Bold,sans-serif;font-weight:900;"
+            f"font-size:{fs:.1f}px;line-height:1;color:{lab.get('color', '#FFFFFF')};"
+            f"-webkit-text-stroke:{0.08 * fs:.1f}px {ink};paint-order:stroke fill;"
+            f'text-shadow:0 {0.04 * fs:.1f}px {0.08 * fs:.1f}px rgba(0,0,0,.5)">'
+            f"{_html.escape(lab['text'])}</div>")
+
+
 def callout_html(el, idx, *, image_uri=None, png_size=None) -> tuple:
     """-> (html, css) for one compiled callout element. Frame-exact under illustrate's seek().
 
@@ -386,8 +437,17 @@ def callout_html(el, idx, *, image_uri=None, png_size=None) -> tuple:
             raise ValueError("a sticker callout needs the caller's image_uri (illustrate)")
         w = float(el["size"]) * W
         tilt = float(el.get("tilt", 0.0))
-        body = (f'<img alt="" src="{image_uri(el["src"])}" style="position:absolute;left:0;top:0;'
-                f'width:{w:.1f}px;height:auto;transform:translate(-50%,-50%) rotate({tilt:g}deg)">')
+        if el.get("labels"):
+            dims = png_size(el["src"]) if png_size is not None else None
+            h = w * ((dims[1] / dims[0]) if dims else 1.0)
+            body = (f'<div style="position:absolute;left:0;top:0;width:{w:.1f}px;height:{h:.1f}px;'
+                    f'transform:translate(-50%,-50%) rotate({tilt:g}deg)">'
+                    f'<img alt="" src="{image_uri(el["src"])}" style="position:absolute;left:0;'
+                    f'top:0;width:100%;height:100%">'
+                    + "".join(_label_html(lab, w, h) for lab in el["labels"]) + "</div>")
+        else:
+            body = (f'<img alt="" src="{image_uri(el["src"])}" style="position:absolute;left:0;top:0;'
+                    f'width:{w:.1f}px;height:auto;transform:translate(-50%,-50%) rotate({tilt:g}deg)">')
     elif kind == "badge":
         body = _text_body(el["text"], float(el["size"]), el.get("color", "#FFFFFF"))
     elif kind == "text":
@@ -435,7 +495,8 @@ def callout_html(el, idx, *, image_uri=None, png_size=None) -> tuple:
                  f"{inner}</div>")
     root = (f'<div id="{nid}" class="callout callout-{kind}" style="position:absolute;'
             f'left:{x * 100:.4f}%;top:{y * 100:.4f}%;width:0;height:0">{inner}</div>')
-    return root, "\n".join([font_face_css() if kind in ("badge", "text") else "", *css])
+    needs_font = kind in ("badge", "text") or bool(el.get("labels"))
+    return root, "\n".join([font_face_css() if needs_font else "", *css])
 
 
 def bbox(el) -> tuple:
@@ -502,8 +563,19 @@ def parse_open(spec) -> dict | None:
     if not (isinstance(c, (list, tuple)) and len(c) == 2):
         raise CalloutError("open.center must be [x, y]")
     cfg["center"] = [_num(c[0], "center.x", "open", 0.0, 1.0), _num(c[1], "center.y", "open", 0.0, 1.0)]
-    if cfg["sfx"] is not None and cfg["sfx"] not in OPEN_SFX:
-        raise CalloutError(f"open.sfx must be one of {', '.join(OPEN_SFX)} or null")
+    sfx = cfg["sfx"]
+    if isinstance(sfx, dict):
+        # PoC v6: any sound, as {src, gain_db, end} (e.g. a longer bundled chime).
+        unknown = set(sfx) - {"src", "gain_db", "end"}
+        if unknown or not (isinstance(sfx.get("src"), str) and sfx["src"].strip()):
+            raise CalloutError("open.sfx as a mapping is {src, gain_db?, end?} with a `src`")
+        cfg["sfx"] = {"src": sfx["src"],
+                      "gain_db": _num(sfx.get("gain_db", -10.0), "open.sfx.gain_db", "open", -60.0, 6.0),
+                      "end": (None if sfx.get("end") is None
+                              else _num(sfx["end"], "open.sfx.end", "open", 0.05, 10.0))}
+    elif sfx is not None and sfx not in OPEN_SFX:
+        raise CalloutError(f"open.sfx must be one of {', '.join(OPEN_SFX)}, a mapping "
+                           f"{{src, gain_db, end}}, or null")
     return cfg
 
 
@@ -517,6 +589,9 @@ def open_sting(cfg) -> dict | None:
     """The `audio.sfx.opening` block `open.sfx` stands for (impact 0.0), or None."""
     if not cfg or not cfg.get("sfx"):
         return None
-    s = OPEN_SFX[cfg["sfx"]]
-    return {"impact": 0.0, "layers": [{"src": s["src"], "at": 0.0, "end": s["end"],
-                                        "fade_out": 0.08, "gain_db": s["gain_db"]}]}
+    s = cfg["sfx"] if isinstance(cfg["sfx"], dict) else OPEN_SFX[cfg["sfx"]]
+    layer = {"src": s["src"], "at": 0.0, "gain_db": s["gain_db"]}
+    if s.get("end") is not None:      # a trimmed sound gets the 80 ms tail fade; a whole one ends itself
+        layer["end"] = s["end"]
+        layer["fade_out"] = 0.08
+    return {"impact": 0.0, "layers": [layer]}

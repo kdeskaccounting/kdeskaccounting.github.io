@@ -330,3 +330,43 @@ def test_a_silent_callout_never_gets_the_on_tag_pop():
     rows = [{"scene": 0, "start": 0.0}]
     assert grammar.tag_events([(0, make_short.callout_free(scene))], rows) == []
     assert grammar.tag_events([(0, scene)], rows) != []      # what the filter prevents
+
+
+# --- PoC v6 (2026-11-04): sticker labels, a configurable opening sound -------------------------
+
+def test_sticker_labels_are_drawn_on_the_sticker_and_move_with_it():
+    [el] = _compiled([{"type": "sticker", "src": "/tmp/s.png", "when": 0.5,
+                       "anchor": {"x": 0.5, "y": 0.5}, "size": 0.5, "ease": "overshoot",
+                       "labels": [{"text": "456 FT", "x": 0.3, "y": 0.1},
+                                  {"text": "382 FT", "x": 0.7, "y": 0.3, "color": "#F7E63C"}]}])
+    assert el["labels"][1]["text"] == "382 FT"
+    html, css = callouts.callout_html(el, 0, image_uri=lambda p: "data:image/png;base64,AA",
+                                      png_size=lambda p: (100, 200))
+    # the labels sit inside the sticker's own box (540 x 1080 px), below the entrance node
+    assert "width:540.0px;height:1080.0px" in html
+    assert html.index("456 FT") > html.index("kf-el0-in") and "382 FT" in html
+    assert "left:162.0px;top:108.0px" in html and "#F7E63C" in html
+    assert callouts.ROUNDED_FAMILY in css
+
+
+@pytest.mark.parametrize("bad", [
+    {"type": "badge", "text": "x", "when": 0.1, "labels": [{"text": "a", "x": 0, "y": 0}]},
+    {"type": "sticker", "src": "a.png", "when": 0.1, "anchor": {"x": 0.5, "y": 0.5},
+     "labels": [{"text": "a", "x": 0.5}]},
+    {"type": "sticker", "src": "a.png", "when": 0.1, "anchor": {"x": 0.5, "y": 0.5},
+     "labels": [{"text": "a", "x": 0.5, "y": 0.5, "font": "x"}]},
+])
+def test_labels_are_checked(bad):
+    with pytest.raises(callouts.CalloutError):
+        callouts.check([bad])
+
+
+def test_open_sfx_mapping_names_any_sound():
+    cfg = callouts.parse_open({"open": {"sfx": {"src": "bundle:chime_quick", "gain_db": -12}}})
+    sting = callouts.open_sting(cfg)
+    assert sting["layers"][0] == {"src": "bundle:chime_quick", "at": 0.0, "gain_db": -12.0}
+    trimmed = callouts.open_sting(callouts.parse_open(
+        {"open": {"sfx": {"src": "bundle:chime_quick", "end": 0.9}}}))
+    assert trimmed["layers"][0]["end"] == 0.9 and trimmed["layers"][0]["fade_out"] == 0.08
+    with pytest.raises(callouts.CalloutError):
+        callouts.parse_open({"open": {"sfx": {"gain_db": -3}}})
