@@ -154,6 +154,17 @@ def test_brand_tokens_accepts_the_three_key_block_the_caller_emits():
     assert (tokens["name"], tokens["url"], tokens["accent"]) == ("Park Sheet", "parksheet.com", "#FFD966")
 
 
+def test_brand_sticker_style_is_a_validated_record_defaulting_to_empty():
+    """ParkSheet format of record v6 (2026-11-04): `brand.sticker_style` names the house
+    sticker look as '<look>@<style_version>'. Absent is '', exactly the old token set."""
+    assert cards.DEFAULT_BRAND["sticker_style"] == ""
+    assert cards.brand_tokens({"sticker_style": "3d@1"})["sticker_style"] == "3d@1"
+    assert cards.brand_tokens({"sticker_style": ""})["sticker_style"] == ""
+    for bad in ("3d", "3D rendered", "3d@", "@1", "3d@1;color:red", True):
+        with pytest.raises(ValueError):
+            cards.brand_tokens({"sticker_style": bad})
+
+
 def test_brand_tokens_rejects_an_unknown_key_instead_of_ignoring_it():
     with pytest.raises(KeyError) as e:
         cards.brand_tokens({"colour": "#fff"})

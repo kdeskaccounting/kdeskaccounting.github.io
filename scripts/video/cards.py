@@ -131,6 +131,12 @@ DEFAULT_BRAND: dict = {
     #: y 1220 of 1920), above Meta's 35% bottom zone, so the attribution is not under the
     #: Reels/Shorts UI. Opt-in (ParkSheet footage PoC, 2026-11-03). See media.credit_box.
     "credit_position": "",
+    #: The brand layer's sticker look, as a RECORD the renderer validates and never draws
+    #: from: "" (the default) or "<look>@<style_version>", e.g. "3d@1" -- ParkSheet's
+    #: gen_sticker.py `--look 3d` at its STYLE_VERSION "1" (format of record v6, 2026-11-04).
+    #: The stickers are PNGs the spec names; this says which house look they were made in,
+    #: so a template can state it and a build that mixes looks is visible in its spec.
+    "sticker_style": "",
 }
 
 #: brand['credit_plate'] values.
@@ -146,6 +152,9 @@ BUNDLED_FONTS: dict = {
 
 #: brand['credit_position'] values: "" is the historical bottom plate, "safe" the UI-safe one.
 CREDIT_POSITIONS = ("", "safe")
+
+#: brand['sticker_style']: "" or "<look>@<style_version>" (lower-case look name, a version tag).
+_STICKER_STYLE = re.compile(r"^(?:|[a-z0-9_-]+@[A-Za-z0-9._-]+)$")
 
 _COLOUR_TOKENS = ("bg", "bg_alt", "fg", "muted", "accent", "accent_fg")
 _HEX = re.compile(r"^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$")
@@ -168,6 +177,9 @@ def _checked_token(key: str, value: object) -> str:
     if key == "credit_position" and text not in CREDIT_POSITIONS:
         raise ValueError(f"brand token 'credit_position' must be one of "
                          f"{', '.join(repr(k) for k in CREDIT_POSITIONS)}, got {text!r}")
+    if key == "sticker_style" and not _STICKER_STYLE.match(text):
+        raise ValueError(f"brand token 'sticker_style' must be '' or '<look>@<style_version>' "
+                         f"like '3d@1', got {text!r}")
     if key == "font" and not _FONT_STACK.match(text):
         raise ValueError(f"brand token 'font' must be a plain font stack "
                          f"(letters, digits, spaces, commas, hyphens), got {text!r}")

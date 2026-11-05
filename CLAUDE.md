@@ -296,6 +296,11 @@ scripts/video/.venv-tts/bin/python scripts/video/make_short.py --spec marketing/
 # CREDIT PLATES OFF BY DEFAULT (Stephen, 2026-11-04): a scene's `credit:` is no longer burned
 # in unless `brand: {credit_plate: on}` (which renders the old plate byte for byte). Attribution
 # goes in the description's Credits block, CC BY only.
+# STICKER STYLE RECORD (2026-11-04, ParkSheet format of record v6): `brand: {sticker_style:
+# '<look>@<style_version>'}` (e.g. '3d@1' = ParkSheet gen_sticker.py `--look 3d` at STYLE_VERSION
+# "1") is validated and recorded, never drawn from: default "" renders the same bytes. The ParkSheet
+# v6 template (video/hand/_template/scenes.yaml) sets it; its stickers are `callouts:` PNGs with
+# renderer-drawn `labels:`.
 # ATTRIBUTION follows the pictures. Under `beats:` the scene's own `src:` is never rendered, so
 # each beat is asked for its OWN `credit:` — a licensed still borrowed into an uncredited
 # footage scene is licensed on its own line — falling back to the scene's `credit:` when the

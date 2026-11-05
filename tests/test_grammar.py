@@ -324,7 +324,12 @@ def test_a_bundle_src_refuses_a_missing_name_a_missing_file_and_a_changed_file(t
 
 def test_the_shipped_manifest_records_a_licence_url_and_sha_for_every_sound():
     data = G.load_bundle()
-    assert set(data["sounds"]) == {"hit", "pop", "whoosh", "ding", "buzzer"}
+    # The grammar layer's five, plus the eight Mixkit audition candidates of PoC v6
+    # (callouts-v6, 2026-11-04); v6 picked pop_bubble / chime_achievement / buzzer_long.
+    assert set(data["sounds"]) == {"hit", "pop", "whoosh", "ding", "buzzer",
+                                   "pop_bubble", "pop_long", "pop_liquid",
+                                   "chime_achievement", "chime_quick", "chime_attention",
+                                   "buzzer_long", "buzzer_bass"}
     for name, row in data["sounds"].items():
         assert row["provider"] == "mixkit", name
         assert row["licence_url"].startswith("https://mixkit.co/license"), name
