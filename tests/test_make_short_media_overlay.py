@@ -38,7 +38,9 @@ import make_short as M
 import media
 
 
-BRAND = {"name": "Park Sheet", "url": "parksheet.com", "accent": "#FFD966"}
+# credit_plate "on": these tests are ABOUT the plate, which is off by default since
+# 2026-11-04 (test_credit_plate_is_off_by_default covers the default).
+BRAND = {"name": "Park Sheet", "url": "parksheet.com", "accent": "#FFD966", "credit_plate": "on"}
 CREDIT = "Imagery: placeholder, generated locally"
 DURATIONS = {"0": 4.0, "1": 3.0}
 PART_SECONDS = 5.0

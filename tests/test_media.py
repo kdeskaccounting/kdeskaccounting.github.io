@@ -1059,3 +1059,42 @@ def test_the_credit_plate_loads_the_bundled_face_only_when_the_brand_asks():
                                       cards.brand_tokens({"font_bundle": "carlito"}))
     assert "@font-face" not in plain
     assert (cards.FONT_DIR / "Carlito-Bold.ttf").as_uri() in bundled
+
+
+# --- brand.credit_position: safe (footage PoC, 2026-11-03) -------------------------------
+
+@pytest.mark.parametrize("w,h", CANVASES)
+def test_the_default_credit_box_is_unchanged_by_the_new_position_argument(w, h):
+    assert media.credit_box(w, h) == media.credit_box(w, h, "")
+
+
+@pytest.mark.parametrize("w,h", CANVASES)
+def test_the_safe_credit_box_sits_inside_the_ui_safe_area(w, h):
+    """x 120-880 and above y 1248 at 1080x1920 (Meta's 35% bottom zone starts at 1248)."""
+    left, top, right, bottom = media.credit_box(w, h, "safe")
+    assert left >= round(w * 120 / 1080) - 1 and right <= round(w * 880 / 1080) + 1
+    assert bottom <= h * 1248 / 1920
+    assert top > captions.caption_box(w, h)[3]          # below the caption band
+    assert not media.boxes_overlap((left, top, right, bottom), media.watermark_box(w, h))
+    font_px = media.CREDIT_FS_UNITS * h / 100.0
+    assert (right - left) / font_px >= 10               # still wide enough to read
+
+
+def test_an_unknown_credit_position_is_refused():
+    with pytest.raises(ValueError):
+        media.credit_box(1080, 1920, "top")
+    with pytest.raises(ValueError):
+        cards.brand_tokens({"credit_position": "top"})
+
+
+def test_the_credit_plate_page_follows_brand_credit_position():
+    plain = cards.brand_tokens(BRAND)
+    safe = cards.brand_tokens({**BRAND, "credit_position": "safe"})
+    assert plain["credit_position"] == ""
+    default_page = media.credit_plate_html(CREDIT, plain, 1080, 1920)
+    safe_page = media.credit_plate_html(CREDIT, safe, 1080, 1920)
+    # default: bottom-left at SAFE_X_FRAC, 42 px off the bottom (byte-for-byte the old page)
+    assert "left:59px;bottom:42px;" in default_page
+    left, _t, right, bottom = media.credit_box(1080, 1920, "safe")
+    assert f"left:{left}px;bottom:{1920 - bottom}px;" in safe_page
+    assert f"max-width:{right - left}px;" in safe_page

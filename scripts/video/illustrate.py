@@ -209,6 +209,7 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import render_sheets as R  # stdlib-only to import; playwright stays inside R's lazy path
+import callouts  # stdlib-only: the `callout` element (make_short compiles a scene's `callouts:`)
 
 FPS = 30
 W, H = 1080, 1920
@@ -226,8 +227,9 @@ GRAPHITE = "#343A46"
 PAPER = "#F7F3EA"
 
 ELEMENT_TYPES = {"emoji", "image", "label", "tag", "arrow", "squiggle", "figure", "box",
-                 "calendar"}
-SFX_KINDS = {"pop", "chime", "hit", "whoosh"}
+                 "calendar", "callout"}
+#: `ding` (2026-11-04) is the callouts' badge/arrow sound (SPEC: ding on #1 and on the arrow).
+SFX_KINDS = {"pop", "chime", "hit", "whoosh", "ding"}
 
 #: The PNG signature, the first eight bytes of every PNG file. Both `png_size` (is this a file
 #: whose header I can trust?) and `image_data_uri` (am I about to label a non-PNG as one?)
@@ -276,6 +278,7 @@ HOW_ANIM = {
 EVENT_OFFSET = {
     "pop": 0.0, "fade": 0.0, "slide-left": 0.0, "slide-right": 0.0, "box": 0.0,
     "drop": DROP_DUR, "draw": DRAW_DUR,
+    "callout": 0.0,   # a callout's sound lands on its entry (SPEC: overlays and their SFX coincide)
 }
 
 ENTER_HOW_BY_TYPE = {
@@ -546,7 +549,21 @@ def _validate_calendar(el, tag):
     _check_time(el.get("t0", 0.0), tag, "calendar 't0'")
 
 
+def _validate_callout(el, tag):
+    """A COMPILED callout (callouts.compile_callouts output). A spec writes `callouts:` on the
+    scene, never `type: callout` by hand; the scene list is checked by callouts.check."""
+    if el.get("callout") not in callouts.TYPES:
+        raise ValueError(f"{tag}: callout must be one of {', '.join(callouts.TYPES)}")
+    _point(el, "at", tag)
+    enter = el.get("enter")
+    if not isinstance(enter, dict) or not _num(enter.get("t")):
+        raise ValueError(f"{tag}: a compiled callout carries enter.t in seconds")
+    if el.get("ease") not in (*callouts.EASING, "none"):
+        raise ValueError(f"{tag}: unknown callout ease {el.get('ease')!r}")
+
+
 _VALIDATORS = {
+    "callout": _validate_callout,
     "emoji": _validate_emoji, "image": _validate_image,
     "label": _validate_label, "tag": _validate_tag,
     "arrow": _validate_arrow, "squiggle": _validate_squiggle, "box": _validate_box,
@@ -1268,6 +1285,8 @@ def element_bbox(el, width=W, height=H):
             box = (min(xs) - half_w, min(ys) - half_h, max(xs) + half_w, max(ys) + half_h)
         else:
             box = centred(el["at"], half_w, half_h)
+    elif kind == "callout":
+        box = callouts.bbox(el)
     elif kind == "calendar":
         cols = int(el["cols"])
         cell, gap = calendar_geometry(cols, width)
@@ -1318,6 +1337,8 @@ _BUILDERS = {
     "label": _label_html, "tag": _tag_html, "arrow": _arrow_html,
     "squiggle": _squiggle_html, "figure": _figure_html, "box": _box_html,
     "calendar": _calendar_html,
+    "callout": lambda el, idx, sticker=True: callouts.callout_html(
+        el, idx, image_uri=image_data_uri, png_size=png_size),
 }
 
 
@@ -1329,8 +1350,26 @@ def render_element(el, idx, sticker=True):
     `sticker` is the SCENE's default (see `scene_html`); the element's own `sticker:` key, when
     it has one, wins. Defaulted here as well as there so a caller testing one element type gets
     the treatment every element really renders with.
+
+    `exit: {t: <seconds>}` (2026-11-04) is set by make_short (`tags.clear: next_cue`) on a
+    RESOLVED element, never written in a spec: the element's root carries `data-t1` and
+    `seek()` hides it from that instant on (a snap, no animation). Absent, the HTML is
+    byte-identical to what it was.
     """
-    return _BUILDERS[el["type"]](el, idx, sticker)
+    html, css = _BUILDERS[el["type"]](el, idx, sticker)
+    exit_ = el.get("exit")
+    if isinstance(exit_, dict) and "t" in exit_:
+        root = f'id="{_el_id(idx)}"'
+        html = html.replace(root, f'{root} data-t1="{float(exit_["t"]):.4f}"', 1)
+    return html, css
+
+
+#: Appended to `seek()` only when an element carries `exit` (see `render_element`).
+EXIT_JS = """
+  var outs = document.querySelectorAll('[data-t1]');
+  for (var j = 0; j < outs.length; j++) {
+    outs[j].style.visibility = t >= parseFloat(outs[j].getAttribute('data-t1')) ? 'hidden' : '';
+  }"""
 
 
 def scene_html(scene, transparent=False):
@@ -1365,7 +1404,7 @@ window.seek = function(t) {{
     var node = nodes[i];
     var t0 = parseFloat(node.getAttribute('data-t0'));
     node.style.animationDelay = (t0 - t) + 's';
-  }}
+  }}{EXIT_JS if any(isinstance(el.get("exit"), dict) for el in scene["elements"]) else ""}
 }};
 window.seek(0);
 </script>

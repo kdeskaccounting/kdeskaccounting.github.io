@@ -187,10 +187,40 @@ def parse_open(raw, where="crashzoom") -> dict:
 
 
 def parse_badge(raw, where, what):
-    badge = _block(raw, {"text", "at", "font", *BADGE_DEFAULTS}, BADGE_DEFAULTS, where, what)
+    badge = _block(raw, {"text", "at", "font", "blur_bg", *BADGE_DEFAULTS}, BADGE_DEFAULTS,
+                   where, what)
     badge["at"] = _pair(badge.get("at"), f"{what}.at", where)
     badge["text"] = str(badge.get("text") or "")
+    if "blur_bg" in badge:
+        # The grammar layer (grammar.py): blur the picture behind the badge while it is up.
+        # Absent -> the key is not in the config at all, so the clip's cache hash and every
+        # pixel are what they were.
+        import grammar
+        try:
+            cfg = grammar.parse_blur_bg(badge["blur_bg"], f"{where} {what}.blur_bg")
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
+        if cfg is None:
+            del badge["blur_bg"]
+        else:
+            badge["blur_bg"] = cfg
     return badge
+
+
+def blur_behind(frame, badges):
+    """`frame` blurred for whichever badge's `blur_bg` is up, at its ramp. `badges` is
+    [(badge, d)] with d in frames since that badge's impact. The frame itself when none is."""
+    import grammar
+    from PIL import ImageFilter
+    k_sigma = 0.0
+    for badge, d in badges:
+        cfg = (badge or {}).get("blur_bg")
+        if cfg:
+            k = grammar.blur_strength(cfg, (float(d) - float(badge["start"])) / FPS)
+            k_sigma = max(k_sigma, k * float(cfg["sigma"]))
+    if k_sigma <= 0.05:
+        return frame
+    return frame.filter(ImageFilter.GaussianBlur(k_sigma))
 
 
 def parse_turn(raw, where="crashzoom") -> dict:
@@ -442,6 +472,8 @@ class Painter:
             dx, dy = c["shake"][int(d)]
             p = (p[0] + dx, p[1] + dy)
         frame = self.background(rs, p, fast).convert("RGBA")
+        if d >= 0 and c.get("badge") and c["badge"].get("blur_bg"):
+            frame = blur_behind(frame, [(c["badge"], d)])
         if d >= 0 and c.get("ring"):
             self.ring_flash(frame, rs, p, d)
         if d >= 0 and c.get("badge"):
@@ -463,6 +495,11 @@ class Painter:
             dx, dy = turn["shake"][int(d)]
             p = (p[0] + dx, p[1] + dy)
         frame = self.background(rs, p, fast).convert("RGBA")
+        blurs = [(b, dd) for b, dd in ((c.get("badge"), start + g - cam.impact),
+                                       (turn.get("turn_badge"), g))
+                 if b and b.get("blur_bg")]
+        if blurs:
+            frame = blur_behind(frame, blurs)
         if c.get("badge"):
             draw_badge(frame, c["badge"], start + g - cam.impact)
         if turn.get("turn_badge"):

@@ -148,7 +148,7 @@ def test_the_layer_pngs_are_fully_transparent_over_the_attribution_zone(tmp_path
                                   "footer": "kdeskaccounting.com"}},
              "credit": "Imagery: " + "Placeholder Imagery Provider, " * 4}
     only = {layer: scene[layer]}
-    pngs = M.media_layers(only, cards.brand_tokens(None), tmp_path, 0)
+    pngs = M.media_layers(only, cards.brand_tokens({"credit_plate": "on"}), tmp_path, 0)
     assert len(pngs) == 1
     for what, box in (("attribution zone", media.watermark_box(M.RW, M.RH)),
                       ("measured Google Earth mark", TM.mark_box(M.RW, M.RH))):
@@ -232,8 +232,8 @@ def test_a_layer_png_is_not_simply_blank(tmp_path):
     """Guards the test above from passing because nothing was drawn at all."""
     import cards
     import make_short as M
-    pngs = M.media_layers({"credit": "Imagery: placeholder"}, cards.brand_tokens(None),
-                          tmp_path, 0)
+    pngs = M.media_layers({"credit": "Imagery: placeholder"},
+                          cards.brand_tokens({"credit_plate": "on"}), tmp_path, 0)
     alpha = _alpha_bytes(pngs[0], media.credit_box(M.RW, M.RH))
     assert max(alpha) > 0, "the credit plate drew nothing inside its own box"
 

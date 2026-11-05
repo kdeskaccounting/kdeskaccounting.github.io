@@ -680,7 +680,8 @@ def test_an_event_with_no_src_is_refused(tmp_path, monkeypatch):
 def test_the_event_roles_are_the_ones_an_illustration_element_may_ask_for():
     """A role a `sfx:` cannot name is a file that can never fire."""
     import illustrate
-    assert illustrate.SFX_KINDS == {"pop", "chime", "hit", "whoosh"}
+    # `ding` joined 2026-11-04: the callouts' badge/arrow sound (callouts.py).
+    assert illustrate.SFX_KINDS == {"pop", "chime", "hit", "whoosh", "ding"}
 
 
 # --- thinning ------------------------------------------------------------------------------

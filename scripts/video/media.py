@@ -194,6 +194,17 @@ OVERLAY_TOP_FRAC = 0.40
 CREDIT_BOTTOM_FRAC = 0.022
 CREDIT_PLATE_H_FRAC = 0.032
 
+#: `brand.credit_position: safe` (opt-in, 2026-11-03): the plate's box inside the platform-
+#: UI-free area instead of the bottom strip. The bottom-strip plate sits ~42 px from the
+#: bottom of a 1920 frame, ~630 px inside Meta's 35% bottom zone, where the Reels caption,
+#: handle and action rail cover it. These fractions are the conservative safe box ParkSheet's
+#: lint measures against (x 120-880, y 290-1248 at 1080x1920), with the bottom edge pulled
+#: up to y 1220 so a two-line wrap still clears 1248 by its padding. The plate is still
+#: bottom-anchored and grows upward when it wraps; nothing else moves.
+SAFE_CREDIT_LEFT_FRAC = 120 / 1080
+SAFE_CREDIT_RIGHT_FRAC = 880 / 1080
+SAFE_CREDIT_BOTTOM_FRAC = 1220 / 1920
+
 #: Credit type size, in canvas units (height/100): small, but never below the 24px floor a
 #: phone needs — 1.35 units is 31px on the 1296x2304 composite, 26px delivered. Held at 1.35
 #: when the plate narrowed: shrinking the type to keep the credit on one line would have put
@@ -529,13 +540,22 @@ def overlay_box(width: int, height: int) -> tuple[int, int, int, int]:
             round(height * (1 - WATERMARK_H_FRAC - CLEARANCE_FRAC)))
 
 
-def credit_box(width: int, height: int) -> tuple[int, int, int, int]:
+def credit_box(width: int, height: int, position: str = "") -> tuple[int, int, int, int]:
     """The credit plate: bottom-LEFT, stopping short of the watermark zone's left edge.
 
     The bottom and right edges are the load-bearing ones. The nominal top is where a
     single-line plate starts; a wrapped credit grows upward past it into empty frame, which
     is deliberate — see credit_plate_html.
+
+    `position="safe"` (brand.credit_position) puts the same plate inside the UI-safe box
+    instead (SAFE_CREDIT_*): far above the watermark zone, so it cannot touch it either.
     """
+    if position == "safe":
+        bottom = round(height * SAFE_CREDIT_BOTTOM_FRAC)
+        return (round(width * SAFE_CREDIT_LEFT_FRAC), bottom - round(height * CREDIT_PLATE_H_FRAC),
+                round(width * SAFE_CREDIT_RIGHT_FRAC), bottom)
+    if position:
+        raise ValueError(f"unknown credit position {position!r}; known: '', 'safe'")
     x = round(width * SAFE_X_FRAC)
     right = round(width * (1 - WATERMARK_W_FRAC)) - round(width * CLEARANCE_FRAC)
     bottom = int(height) - round(height * CREDIT_BOTTOM_FRAC)
@@ -553,7 +573,7 @@ def credit_plate_html(credit: str, brand: dict, width: int = 1296, height: int =
     text = str(credit or "").strip()
     if not text:
         raise ValueError("credit_plate_html needs a non-empty credit line")
-    left, _top, right, bottom = credit_box(width, height)
+    left, _top, right, bottom = credit_box(width, height, (brand or {}).get("credit_position") or "")
     unit = height / 100.0
     fs = CREDIT_FS_UNITS * unit
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>

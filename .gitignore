@@ -36,3 +36,7 @@ marketing/seo-tracking/mailerlite-sync.jsonl
 
 # Session working notes from the superpowers/SDD flow (local evidence, not source)
 .superpowers/
+
+# Bundled SFX (scripts/video/sfx/manifest.json): Mixkit files are fetched by hand with
+# sfx/fetch.py, never committed (public repo; the Mixkit licence bars stand-alone redistribution).
+scripts/video/sfx/*.wav
