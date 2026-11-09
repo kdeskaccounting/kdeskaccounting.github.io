@@ -22,7 +22,7 @@ INSTAGRAM_NAME = "Park Detective"
 # --- pre-2026-11-09 identity: for parsing history only, never for a channel check ------------
 LEGACY_YOUTUBE_CHANNEL_NAME = "ParkSheet"
 LEGACY_YOUTUBE_HANDLE = "@Parksheet"
-LEGACY_TIKTOK_HANDLE = "park.sheet"
+LEGACY_TIKTOK_HANDLE = "parksheet"         # tiktok.com/@parksheet (some KDesk comments wrote @park.sheet)
 LEGACY_INSTAGRAM_HANDLE = "park.sheet"
 
 

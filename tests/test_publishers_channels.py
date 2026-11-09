@@ -12,7 +12,7 @@ def test_current_identity_is_park_detective():
 def test_legacy_values_are_kept_for_history_and_differ_from_current():
     assert C.LEGACY_YOUTUBE_CHANNEL_NAME == "ParkSheet" != C.YOUTUBE_CHANNEL_NAME
     assert C.LEGACY_INSTAGRAM_HANDLE == "park.sheet" != C.INSTAGRAM_HANDLE
-    assert C.LEGACY_TIKTOK_HANDLE == "park.sheet" != C.TIKTOK_HANDLE
+    assert C.LEGACY_TIKTOK_HANDLE == "parksheet" != C.TIKTOK_HANDLE
 
 
 def test_profile_urls():
