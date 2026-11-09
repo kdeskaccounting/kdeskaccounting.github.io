@@ -20,7 +20,7 @@ from browser import studio_channel as sc
 from publishers import youtube_web as yw
 
 SANTIAGO = {"active": True, "email": "santiagokdesk@gmail.com",
-            "channels": ["KDeskAccounting", "ParkSheet", "Court of Inquiry", "KDesk Games"]}
+            "channels": ["KDeskAccounting", S.CHANNEL_NAME, "Court of Inquiry", "KDesk Games"]}
 SMICHELS_OTHER = {"active": False, "email": "smichels1@gmail.com",
                   "channels": ["Stephen is Acting", "booshigotyou"]}
 # Seen live 2026-10-10 with Studio on Court of Inquiry.
@@ -34,38 +34,38 @@ PANEL_ON_SMICHELS = [dict(SMICHELS_OTHER, active=True), dict(SANTIAGO, active=Fa
 @pytest.mark.parametrize("current", ["Court of Inquiry", "KDeskAccounting", "KDesk Games",
                                      "court of  inquiry"])
 def test_another_channel_of_the_same_account_is_switched(current):
-    decision, why = sc.plan_switch(current, "ParkSheet", PANEL_ON_SANTIAGO)
+    decision, why = sc.plan_switch(current, S.CHANNEL_NAME, PANEL_ON_SANTIAGO)
     assert decision == sc.SWITCH, why
 
 
 def test_already_on_the_target_stays_without_reading_the_menu():
-    assert sc.plan_switch("ParkSheet", "ParkSheet", None)[0] == sc.STAY
+    assert sc.plan_switch(S.CHANNEL_NAME, S.CHANNEL_NAME, None)[0] == sc.STAY
 
 
 @pytest.mark.parametrize("current", ["Stephen is Acting", "booshigotyou"])
 def test_a_different_google_account_is_refused(current):
-    decision, why = sc.plan_switch(current, "ParkSheet", PANEL_ON_SMICHELS)
+    decision, why = sc.plan_switch(current, S.CHANNEL_NAME, PANEL_ON_SMICHELS)
     assert decision == sc.REFUSE
     assert "smichels1@gmail.com" in why and "sign-in" in why
 
 
 def test_the_target_only_under_other_accounts_is_refused():
     """ParkSheet listed, but not under the active account: clicking it is a Google sign-in."""
-    assert sc.plan_switch("Stephen is Acting", "ParkSheet", PANEL_ON_SMICHELS)[0] == sc.REFUSE
+    assert sc.plan_switch("Stephen is Acting", S.CHANNEL_NAME, PANEL_ON_SMICHELS)[0] == sc.REFUSE
 
 
 @pytest.mark.parametrize("sections", [[], None, [SMICHELS_OTHER],
                                       [SANTIAGO, dict(SMICHELS_OTHER, active=True)]])
 def test_a_menu_that_does_not_say_which_account_is_active_is_refused(sections):
-    assert sc.plan_switch("Court of Inquiry", "ParkSheet", sections)[0] == sc.REFUSE
+    assert sc.plan_switch("Court of Inquiry", S.CHANNEL_NAME, sections)[0] == sc.REFUSE
 
 
 def test_a_current_channel_the_active_account_does_not_list_is_refused():
-    assert sc.plan_switch("Someone Else", "ParkSheet", PANEL_ON_SANTIAGO)[0] == sc.REFUSE
+    assert sc.plan_switch("Someone Else", S.CHANNEL_NAME, PANEL_ON_SANTIAGO)[0] == sc.REFUSE
 
 
 def test_the_restore_direction_is_the_same_decision():
-    assert sc.plan_switch("ParkSheet", "Court of Inquiry", PANEL_ON_SANTIAGO)[0] == sc.SWITCH
+    assert sc.plan_switch(S.CHANNEL_NAME, "Court of Inquiry", PANEL_ON_SANTIAGO)[0] == sc.SWITCH
 
 
 # ------------------------------------------------------------------- switch_to (browser half)
@@ -108,8 +108,8 @@ def fake_menu(monkeypatch):
 
 def test_switch_to_clicks_the_target_on_the_same_account(fake_menu):
     page = _Page("Court of Inquiry", PANEL_ON_SANTIAGO)
-    assert sc.switch_to(page, "Court of Inquiry", "ParkSheet") == sc.SWITCH
-    assert page.clicked == ["ParkSheet"]
+    assert sc.switch_to(page, "Court of Inquiry", S.CHANNEL_NAME) == sc.SWITCH
+    assert page.clicked == [S.CHANNEL_NAME]
 
 
 def test_switch_to_refuses_another_account_and_clicks_nothing(fake_menu):
@@ -117,7 +117,7 @@ def test_switch_to_refuses_another_account_and_clicks_nothing(fake_menu):
     page.pressed = []
     page.keyboard = type("K", (), {"press": lambda self, k: page.pressed.append(k)})()
     with pytest.raises(sc.ChannelRefused):
-        sc.switch_to(page, "Stephen is Acting", "ParkSheet")
+        sc.switch_to(page, "Stephen is Acting", S.CHANNEL_NAME)
     assert page.clicked == []
     assert page.pressed == ["Escape"]          # the menu is closed again
 
@@ -127,25 +127,25 @@ def test_a_switch_that_lands_on_a_sign_in_page_is_a_refusal(fake_menu):
     page = _Page("Court of Inquiry", PANEL_ON_SANTIAGO, switch_works=False,
                  url="https://accounts.google.com/v3/signin/challenge/pk")
     with pytest.raises(sc.ChannelRefused) as exc:
-        sc.switch_to(page, "Court of Inquiry", "ParkSheet")
+        sc.switch_to(page, "Court of Inquiry", S.CHANNEL_NAME)
     assert "no credentials" in str(exc.value)
 
 
 def test_restore_switches_back_to_the_channel_found(fake_menu):
-    page = _Page("ParkSheet", PANEL_ON_SANTIAGO)
+    page = _Page(S.CHANNEL_NAME, PANEL_ON_SANTIAGO)
     assert sc.restore(page, "Court of Inquiry") is True
     assert page.clicked == ["Court of Inquiry"] and page.navigated == [S.STUDIO_URL]
 
 
 def test_restore_with_nothing_to_restore_touches_nothing(fake_menu):
-    page = _Page("ParkSheet", PANEL_ON_SANTIAGO)
+    page = _Page(S.CHANNEL_NAME, PANEL_ON_SANTIAGO)
     assert sc.restore(page, None) is True
     assert sc.restore_in_new_tab(page, None) is True
     assert page.navigated == [] and page.clicked == []
 
 
 def test_restore_never_raises_and_logs_the_failure(fake_menu, capsys):
-    page = _Page("ParkSheet", PANEL_ON_SANTIAGO)
+    page = _Page(S.CHANNEL_NAME, PANEL_ON_SANTIAGO)
 
     def boom(url, **kw):
         raise RuntimeError("browser went away")
@@ -159,8 +159,8 @@ def test_restore_never_raises_and_logs_the_failure(fake_menu, capsys):
 # ------------------------------------------------------------------- the publisher
 
 class _StudioPage(_Page):
-    """A page the publisher's assert_channel can read: url carries ParkSheet's id once the
-    header reads ParkSheet."""
+    """A page the publisher's assert_channel can read: url carries the channel's id once the
+    header reads S.CHANNEL_NAME."""
 
     @property
     def url(self):
@@ -304,11 +304,11 @@ def pin():
     return importlib.import_module("browser.youtube_pin_comment")
 
 
-def test_pin_script_switches_to_parksheet_and_remembers_the_channel(pin, fake_menu):
+def test_pin_script_switches_to_the_channel_and_remembers_the_channel(pin, fake_menu):
     page = _Page("Court of Inquiry", PANEL_ON_SANTIAGO)
     found = {}
-    pin.ensure_parksheet(page, found)
-    assert page.clicked == ["ParkSheet"] and found == {"original": "Court of Inquiry"}
+    pin.ensure_channel(page, found)
+    assert page.clicked == [S.CHANNEL_NAME] and found == {"original": "Court of Inquiry"}
 
 
 def test_pin_script_refuses_another_account_and_posts_nothing(pin, fake_menu):
@@ -316,18 +316,56 @@ def test_pin_script_refuses_another_account_and_posts_nothing(pin, fake_menu):
     page.keyboard = type("K", (), {"press": lambda self, k: None})()
     found = {}
     with pytest.raises(sc.ChannelRefused):
-        pin.ensure_parksheet(page, found)
+        pin.ensure_channel(page, found)
     assert page.clicked == [] and found == {}
 
 
 def test_pin_script_refuses_a_sign_in_page(pin, fake_menu):
     page = _Page("x", PANEL_ON_SANTIAGO, url="https://accounts.google.com/signin")
     with pytest.raises(sc.ChannelRefused):
-        pin.ensure_parksheet(page, {})
+        pin.ensure_channel(page, {})
 
 
-def test_pin_script_on_parksheet_has_nothing_to_restore(pin, fake_menu):
-    page = _Page("ParkSheet", PANEL_ON_SANTIAGO)
+def test_pin_script_on_the_channel_has_nothing_to_restore(pin, fake_menu):
+    page = _Page(S.CHANNEL_NAME, PANEL_ON_SANTIAGO)
     found = {}
-    pin.ensure_parksheet(page, found)
+    pin.ensure_channel(page, found)
     assert page.clicked == [] and found == {}
+
+
+# ------------------------------------------------------------------- the 2026-11-09 rename
+
+PANEL_AFTER_RENAME = [{"active": True, "email": "santiagokdesk@gmail.com",
+                       "channels": ["KDeskAccounting", "Park Detective", "Court of Inquiry",
+                                    "KDesk Games"]}, SMICHELS_OTHER]
+
+
+def test_the_target_channel_is_park_detective_since_the_rename():
+    assert S.CHANNEL_NAME == "Park Detective"
+    assert S.CHANNEL_ID == "UC7ApR5Ntbc4DRkkZ_FrwyOw"   # the rename did not change the id
+
+
+def test_the_renamed_channel_is_switched_to_from_another_santiagokdesk_channel():
+    assert sc.plan_switch("Court of Inquiry", S.CHANNEL_NAME, PANEL_AFTER_RENAME)[0] == sc.SWITCH
+    assert sc.plan_switch("Park Detective", S.CHANNEL_NAME, PANEL_AFTER_RENAME)[0] == sc.STAY
+
+
+def test_the_old_name_is_not_accepted_as_the_channel():
+    """A header still reading "ParkSheet" is not proof of the right channel any more."""
+    assert sc.plan_switch("ParkSheet", S.CHANNEL_NAME, PANEL_AFTER_RENAME)[0] == sc.REFUSE
+
+
+def test_publisher_on_park_detective_passes_without_a_click(pub):
+    page = _StudioPage("Park Detective", PANEL_AFTER_RENAME)
+    assert pub.assert_channel(page) == "Park Detective"
+    assert page.clicked == [] and pub._restore_channel is None
+
+
+def test_publisher_on_a_header_still_reading_parksheet_refuses(pub):
+    """The old name is not in the renamed switch menu, so nothing is clicked and nothing posts."""
+    page = _StudioPage("ParkSheet", PANEL_AFTER_RENAME)
+    page.keyboard = type("K", (), {"press": lambda self, k: None})()
+    with pytest.raises(yw.WrongChannel) as exc:
+        pub.assert_channel(page)
+    assert page.clicked == []
+    assert "'Park Detective'" in str(exc.value)

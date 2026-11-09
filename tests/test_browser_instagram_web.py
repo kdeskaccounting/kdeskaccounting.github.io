@@ -74,7 +74,7 @@ def test_unconfirmed_after_shared_toast_says_probably_live_and_no_retry():
     assert not ok
     assert "has been shared" in why and "PROBABLY LIVE" in why
     assert "Do NOT re-run with --go" in why
-    assert "instagram.com/park.sheet/" in why
+    assert "instagram.com/park.detective/" in why   # handle renamed 2026-11-09
 
 
 # --- Trial Reels (--trial). instagram.com has no trial option (2026-10-09), so --trial only checks and aborts.
@@ -135,3 +135,9 @@ def test_trial_is_routed_before_the_profile_read_and_share():
     import inspect
     src = inspect.getsource(ig.main)
     assert src.index("if args.trial") < src.index("HANDLE}/") < src.index('"Share"')
+
+
+def test_handle_is_park_detective_since_the_2026_11_09_rename():
+    from publishers import channels
+    assert ig.HANDLE == channels.INSTAGRAM_HANDLE == "park.detective"
+    assert channels.LEGACY_INSTAGRAM_HANDLE == "park.sheet" != ig.HANDLE

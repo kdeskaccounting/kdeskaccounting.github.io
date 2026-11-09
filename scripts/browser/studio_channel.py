@@ -1,13 +1,13 @@
 """Switch the YouTube Studio channel within ONE Google account, and put it back afterwards.
 
 The debug Chrome profile is signed in to two Google accounts. santiagokdesk@gmail.com owns
-KDeskAccounting, ParkSheet, Court of Inquiry and KDesk Games; smichels1@gmail.com owns
-"Stephen is Acting" and booshigotyou. Studio opens on whichever channel was used last, and
-Stephen works in Court of Inquiry by hand in the same profile.
+KDeskAccounting, Park Detective (named ParkSheet until 2026-11-09), Court of Inquiry and KDesk
+Games; smichels1@gmail.com owns "Stephen is Acting" and booshigotyou. Studio opens on whichever
+channel was used last, and Stephen works in Court of Inquiry by hand in the same profile.
 
-So a driver that needs ParkSheet:
+So a driver that needs the venture channel (selectors_youtube.CHANNEL_NAME):
 
-  * stays put when Studio already reads ParkSheet;
+  * stays put when Studio already reads that name;
   * SWITCHES (avatar -> Switch account -> the channel) when Studio is on another channel of the
     santiagokdesk account — the "Accounts" section of that menu, headed by the account email;
   * REFUSES when the active account is anything else (the channel it would need sits under

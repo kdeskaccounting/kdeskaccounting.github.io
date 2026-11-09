@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish a Short to the ParkSheet channel through YouTube Studio's web uploader.
+"""Publish a Short to the Park Detective (ex-ParkSheet) channel through YouTube Studio's web uploader.
 
   scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py --check
   scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py --dry-run \
@@ -33,7 +33,7 @@ and is untouched; this one is `youtube_web`.
 **Shape** (spec Chrome rule 4 — the same read → diff → apply → re-read → assert the Gumroad
 and TikTok drivers use):
 
-    am I ParkSheet? ─► no, another santiagokdesk channel ─► switch (and switch BACK after)
+    am I S.CHANNEL_NAME? ─► no, another santiagokdesk channel ─► switch (and switch BACK after)
                     ─► no, another Google account ─► refuse, touch nothing
                     └► yes ─► read the content list ─► this title already there? ─► skip, ok
                                                     └► no ─► upload, fill, walk to Visibility
@@ -854,7 +854,7 @@ def held_steps(asset: pathlib.Path, meta: dict, video_id=None) -> list[str]:
     where = S.EDIT_URL.format(video_id=video_id) if video_id else S.CONTENT_URL
     return [
         "Run: python3 scripts/browser/ensure_chrome.py",
-        f"Open {where} (ParkSheet channel) and read the Checks result on the draft titled: "
+        f"Open {where} ({S.CHANNEL_NAME} channel) and read the Checks result on the draft titled: "
         f"{title_of(meta)}",
         "Copyright claim: decide whether to dispute it, trim the claimed part and re-render, "
         "or drop the day. Restriction: read the policy notice before doing anything",
@@ -1452,7 +1452,7 @@ class YouTubeWebPublisher(Publisher):
                 f"moved.")
 
     def switch_channel(self, page, current: str) -> None:
-        """Avatar -> Switch account -> ParkSheet, if `studio_channel.plan_switch` allows it.
+        """Avatar -> Switch account -> S.CHANNEL_NAME, if `studio_channel.plan_switch` allows it.
 
         Raises WrongChannel when it does not: another Google account (the smichels1 channels),
         a sign-in or passkey prompt, or a menu that cannot be read. Credentials are never
@@ -1463,12 +1463,12 @@ class YouTubeWebPublisher(Publisher):
         except studio_channel.ChannelRefused as exc:
             raise WrongChannel(
                 f"YouTube Studio is signed in as {current!r}, not {S.CHANNEL_NAME!r}, and "
-                f"switching was refused: {exc}. Refusing to upload: a ParkSheet Short posted "
+                f"switching was refused: {exc}. Refusing to upload: a {S.CHANNEL_NAME} Short posted "
                 f"to another channel cannot be moved. Switch channels in Studio by hand "
                 f"(avatar -> Switch account) and run this again.") from exc
 
     def assert_channel(self, page) -> str:
-        """Refuse to do anything unless Studio is signed in as ParkSheet.
+        """Refuse to do anything unless Studio is signed in as S.CHANNEL_NAME (Park Detective).
 
         Two independent tests, because either alone has a way of being wrong: the channel id in
         the URL Studio redirects to (exact, but a deep link could carry a stale one) and the
@@ -1501,12 +1501,12 @@ class YouTubeWebPublisher(Publisher):
             raise WrongChannel(
                 f"YouTube Studio is signed in as {name!r}, not {S.CHANNEL_NAME!r}. Refusing to "
                 f"upload: this Chrome profile also holds Stephen's personal channel, and a "
-                f"ParkSheet Short posted there cannot be moved. Switch channels in Studio "
+                f"{S.CHANNEL_NAME} Short posted there cannot be moved. Switch channels in Studio "
                 f"(avatar -> Switch account) and run this again.")
         if S.CHANNEL_ID not in (page.url or ""):
             raise WrongChannel(
                 f"the Studio header reads {name!r} but the URL is {page.url!r}, which does not "
-                f"carry the ParkSheet channel id {S.CHANNEL_ID}. Refusing to upload against a "
+                f"carry the {S.CHANNEL_NAME} channel id {S.CHANNEL_ID}. Refusing to upload against a "
                 f"channel the two tests disagree about.")
         return name
 
@@ -2345,7 +2345,7 @@ def _id_from_edit_href(href) -> str | None:
 # ----------------------------------------------------------------------------- the CLI
 
 def check(page, *, out=None) -> tuple[int, list[str]]:
-    """Read-only: is this ParkSheet, and does every anchor still resolve?
+    """Read-only: is this S.CHANNEL_NAME, and does every anchor still resolve?
 
     Navigates, waits for each page's own ready anchor, and counts. It never selects a file,
     never types and never clicks anything that changes state: opening the upload dialog creates
@@ -2431,7 +2431,7 @@ def check(page, *, out=None) -> tuple[int, list[str]]:
 
 def main(argv=None, *, repo: pathlib.Path | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Publish a Short to the ParkSheet channel via YouTube Studio in Chrome.")
+        description=f"Publish a Short to the {S.CHANNEL_NAME} channel via YouTube Studio in Chrome.")
     ap.add_argument("--check", action="store_true",
                     help="read-only: channel + every anchor resolves; changes nothing")
     ap.add_argument("--dry-run", action="store_true",

@@ -6,7 +6,7 @@ Needs Stephen's Chrome running with --remote-debugging-port=9222 (scripts/browse
 The script:
 
   0. opens YouTube Studio and reads the active channel. Another channel of the santiagokdesk
-     account (Court of Inquiry, KDeskAccounting, ...) is switched to ParkSheet and, whatever
+     account (Court of Inquiry, KDeskAccounting, ...) is switched to S.CHANNEL_NAME (Park Detective) and, whatever
      happens, switched BACK afterwards (best-effort, logged); another Google account refuses
      with exit 5 and nothing is posted (browser/studio_channel.py, 2026-10-10)
   1. opens the watch page and scrolls to the comments
@@ -19,7 +19,7 @@ The script:
 Exit codes: 0 pinned (or already pinned) · 2 comment did not post · 3 pin blocked because the
 channel has not verified a phone number (Studio > Settings > Channel > Feature eligibility >
 Intermediate features) — the comment stays up, unpinned · 4 pin clicked but badge not seen ·
-5 refused: Studio is not on ParkSheet and may not be switched (nothing posted).
+5 refused: Studio is not on S.CHANNEL_NAME and may not be switched (nothing posted).
 No YouTube Data API is used (uploads via the API are barred; comments are kept off it too).
 """
 from __future__ import annotations
@@ -57,7 +57,7 @@ def main(argv=None) -> int:
         found: dict = {}
         try:
             try:
-                ensure_parksheet(page, found)
+                ensure_channel(page, found)
             except studio_channel.ChannelRefused as exc:
                 print(f"REFUSED: {exc}. Nothing posted.")
                 page.close()
@@ -68,8 +68,8 @@ def main(argv=None) -> int:
                                               label="youtube_pin_comment")
 
 
-def ensure_parksheet(page, found: dict) -> None:
-    """Studio on ParkSheet, switching within the santiagokdesk account if needed.
+def ensure_channel(page, found: dict) -> None:
+    """Studio on S.CHANNEL_NAME, switching within the santiagokdesk account if needed.
 
     `found["original"]` is the channel to switch back to afterwards — set BEFORE the switch, so
     a switch that times out half-way is still put back. Raises studio_channel.ChannelRefused
@@ -93,7 +93,7 @@ def ensure_parksheet(page, found: dict) -> None:
 
 
 def post_and_pin(page, video: str, lines: list[str], first: str) -> int:
-    """Steps 1-4 of the module docstring, on a page whose session is ParkSheet."""
+    """Steps 1-4 of the module docstring, on a page whose session is S.CHANNEL_NAME."""
     page.goto(f"https://www.youtube.com/watch?v={video}", wait_until="domcontentloaded")
     page.wait_for_timeout(5000)
     for _ in range(6):

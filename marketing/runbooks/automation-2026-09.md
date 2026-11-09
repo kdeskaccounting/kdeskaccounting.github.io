@@ -198,7 +198,7 @@ gh secret set GUMROAD_ACCESS_TOKEN --repo "$R" \
 
 # From https://www.upload-post.com/ after connecting YouTube, TikTok and Instagram.
 gh secret set UPLOAD_POST_KEY --repo "$R"        # prompts, so the key never reaches shell history
-# Upload-Post profiles (free tier, 2 max): `default` = KDesk YouTube; `parksheet` = ParkSheet YouTube + IG @park.sheet.
+# Upload-Post profiles (free tier, 2 max): `default` = KDesk YouTube; `parksheet` = the venture's YouTube (Park Detective, ex-ParkSheet) + IG @park.detective (ex @park.sheet; renamed 2026-11-09, profile id unchanged).
 # KDesk jobs pass UPLOAD_POST_PROFILE=default (also the code default); ParkSheet passes parksheet.
 
 gh secret list --repo "$R"
@@ -377,9 +377,10 @@ restricted channel rather than a broken script. It runs beside Stephen, one post
 is no workflow file for it; `tests/test_publishers_youtube_web.py` asserts there never is one.
 
 **The channel guard is the part to understand.** The debug Chrome profile holds Stephen's
-**personal** channel as well as **ParkSheet**, and Studio opens whichever was used last. A
-ParkSheet Short posted to the personal channel cannot be moved. So every entry point reads the
-header's channel name *and* the channel id in the URL, and refuses on anything but ParkSheet
+**personal** channel as well as **Park Detective** (the venture channel, named ParkSheet until
+2026-11-09; id unchanged), and Studio opens whichever was used last. A
+venture Short posted to the personal channel cannot be moved. So every entry point reads the
+header's channel name *and* the channel id in the URL, and refuses on anything but Park Detective
 (`UC7ApR5Ntbc4DRkkZ_FrwyOw`). If `--check` prints `WRONG`, switch channels in Studio (avatar →
 Switch account) before anything else.
 

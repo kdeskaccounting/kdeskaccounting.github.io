@@ -45,12 +45,17 @@ nothing.
 """
 
 # --- Identity. The debug Chrome profile also holds Stephen's PERSONAL channel, so "signed in
-# to Studio" is not the same question as "signed in as ParkSheet". The driver refuses to
-# upload anywhere else, and these two are how it tells.
+# to Studio" is not the same question as "signed in as the venture channel". The driver refuses
+# to upload anywhere else, and these two are how it tells.
 # Seen live 2026-09-25: https://studio.youtube.com redirected to /channel/<CHANNEL_ID> and
-# the header's #entity-name read "ParkSheet".
+# the header's #entity-name read the channel name (then "ParkSheet").
+# 2026-11-09: channel renamed "ParkSheet" -> "Park Detective" (@Parksheet -> @ParkDetective);
+# the id did not change. The name lives in publishers/channels.py so a rename is one file.
+from publishers import channels as _channels  # noqa: E402
+
 CHANNEL_ID = "UC7ApR5Ntbc4DRkkZ_FrwyOw"   # verified 2026-09-25: the URL Studio redirects to
-CHANNEL_NAME = "ParkSheet"                # verified 2026-09-25: #entity-name text
+CHANNEL_NAME = _channels.YOUTUBE_CHANNEL_NAME   # #entity-name text; "Park Detective" since 2026-11-09
+CHANNEL_HANDLE = _channels.YOUTUBE_HANDLE
 
 # --- URLs.
 STUDIO_URL = "https://studio.youtube.com"      # verified 2026-09-25: -> /channel/<CHANNEL_ID>
@@ -91,7 +96,7 @@ ALT_HOSTS: tuple[str, ...] = ()
 LOGIN_MARKER = "/signin"
 
 # --- Identity anchors on the Studio shell.
-CHANNEL_NAME_TEXT = "#entity-name"       # verified 2026-09-25: matched 1, text "ParkSheet"
+CHANNEL_NAME_TEXT = "#entity-name"       # verified 2026-09-25: matched 1, text = CHANNEL_NAME
 AVATAR_BUTTON = "#avatar-btn"            # verified 2026-09-25: matched 1, aria-label "Account"
 SWITCH_ACCOUNT_TEXT = "Switch account"   # verified 2026-09-29: avatar menu item; the list then names each channel
 #: The Google account whose channels a driver may switch between (scripts/browser/studio_channel.py).
@@ -103,7 +108,7 @@ SWITCH_SECTION = "ytd-account-section-list-renderer"                    # verifi
 ACTIVE_ACCOUNT_EMAIL = "ytd-google-account-header-renderer #email"      # verified 2026-10-10: santiagokdesk@gmail.com
 OTHER_ACCOUNT_HEADER = "ytd-account-item-section-header-renderer"       # verified 2026-10-10: smichels1@gmail.com
 SWITCH_CHANNEL_ITEM = "ytd-account-item-renderer"                       # verified 2026-10-10: 6 channels
-SWITCH_CHANNEL_TITLE = "ytd-account-item-renderer #channel-title"       # verified 2026-10-10: "ParkSheet", "Court of Inquiry", ...
+SWITCH_CHANNEL_TITLE = "ytd-account-item-renderer #channel-title"       # verified 2026-10-10: CHANNEL_NAME, "Court of Inquiry", ...
 #: Where a cross-account switch lands (a sign-in / passkey prompt). Never typed into.
 SIGN_IN_HOST = "accounts.google.com"
 #: What to wait for before reading the channel name, so the probe does not race the render.

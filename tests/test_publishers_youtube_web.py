@@ -1641,7 +1641,7 @@ def test_a_foreign_google_account_is_still_refused(monkeypatch):
     monkeypatch.setattr(sc, "read_accounts", lambda pg: [
         {"active": True, "email": "smichels1@gmail.com",
          "channels": ["Stephen is Acting", "booshigotyou"]},
-        {"active": False, "email": "santiagokdesk@gmail.com", "channels": ["ParkSheet"]}])
+        {"active": False, "email": "santiagokdesk@gmail.com", "channels": [S.CHANNEL_NAME]}])
     monkeypatch.setattr(sc, "click_channel", lambda pg, name: pytest.fail("must not switch"))
     monkeypatch.setattr(pub, "goto", lambda pg, url: None)
     with pytest.raises(yw.WrongChannel):

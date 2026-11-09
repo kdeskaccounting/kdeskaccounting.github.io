@@ -44,8 +44,11 @@ import pathlib
 import re
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))   # scripts/
+from publishers import channels  # noqa: E402
+
 CDP = "http://127.0.0.1:9222"
-HANDLE = "park.sheet"
+HANDLE = channels.INSTAGRAM_HANDLE   # "park.detective" since 2026-11-09 (was "park.sheet")
 SHOTS = pathlib.Path(__file__).resolve().parent / "runs" / "instagram-web"
 
 
