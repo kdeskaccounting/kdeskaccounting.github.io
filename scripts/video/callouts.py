@@ -38,6 +38,10 @@ Per type (src / direction / enter_from / color / tilt are type-specific):
   text     {text, size: cap height fraction of HEIGHT (0.06), color (default #E5202A)}. A stamp
             word: 0.90 -> 1.03 -> 1.0 in 100 ms (the SPEC's red X stamp curve).
 
+  hoot     Hoot, the Park Detective owl (2026-11-09): a pose from the ParkSheet repo's
+            media/brand/hoot/hoot.json, a renderer-drawn speech bubble and badge text. See
+            HOOT_DOC below for the keys; absent, nothing here changes.
+
 `compile_callouts()` turns a scene's list into illustrate.py elements (`type: callout`) once the
 scene's words and picture cuts are known; `callout_html()` is the element's frame-exact HTML,
 built on illustrate's paused-animation `seek()` mechanism. Pure: standard library only.
@@ -68,7 +72,7 @@ EASING = {
 EASE_OUT_CUBIC = "cubic-bezier(0.33,1,0.68,1)"
 EASE_IN_CUBIC = "cubic-bezier(0.32,0,0.67,0)"
 
-TYPES = ("sticker", "badge", "arrow", "circle", "text")
+TYPES = ("sticker", "badge", "arrow", "circle", "text", "hoot")
 #: Per-type defaults. `size` units differ per type (see the module docstring).
 TYPE_DEFAULTS = {
     "sticker": {"ease": "slide_in", "size": 0.55, "hold": "next_cut", "sfx": "whoosh"},
@@ -76,10 +80,11 @@ TYPE_DEFAULTS = {
     "arrow": {"ease": "pop_arrow", "size": 0.15, "hold": 1200, "sfx": "ding"},
     "circle": {"ease": "pop_arrow", "size": 0.30, "hold": 1200, "sfx": "pop"},
     "text": {"ease": "pop_stamp", "size": 0.06, "hold": "next_cut", "sfx": "pop"},
+    "hoot": {"ease": "slide_in", "size": 0.22, "hold": "next_cut", "sfx": "pop"},
 }
 #: `ease: overshoot` means the type's own measured overshoot curve; `pop` the gentle stamp.
 OVERSHOOT = {"sticker": "pop_badge", "badge": "pop_badge", "arrow": "pop_arrow",
-             "circle": "pop_arrow", "text": "pop_badge"}
+             "circle": "pop_arrow", "text": "pop_badge", "hoot": "pop_badge"}
 EASE_NAMES = ("overshoot", "pop", "slide_in", "fade", "none", *EASING)
 HOLDS = ("next_cut", "scene")
 OUTS = ("snap", "slide_out", "fade")
@@ -96,7 +101,12 @@ STAMP_RED = "#E5202A"
 #: Nunito's cap height is ~0.705 em; a `size` given as cap height converts to font-size by it.
 CAP_EM = 0.705
 KEYS = ("type", "text", "src", "when", "anchor", "size", "ease", "in_ms", "hold", "out",
-        "out_ms", "offset_ms", "sfx", "enter_from", "direction", "color", "tilt", "labels")
+        "out_ms", "offset_ms", "sfx", "enter_from", "direction", "color", "tilt", "labels",
+        *("pose", "say", "bubble", "badge_text", "point_to", "blur_bg"))
+#: Keys only `type: hoot` reads; on any other type they are refused by name.
+HOOT_KEYS = ("pose", "say", "bubble", "badge_text", "point_to", "blur_bg")
+#: Set by make_short's preflight on a hoot (the loaded pose set); never written in a spec.
+INTERNAL_KEYS = ("_hoot",)
 #: `labels:` on a sticker (2026-11-04, PoC v6): renderer-drawn type ON the sticker, moving with
 #: it. A generated image garbles numerals, so the picture is drawn plain and the number is set
 #: here: {text, x, y (fractions of the sticker box), size (cap height as a fraction of the
@@ -174,13 +184,19 @@ def check(raw_list, where: str = "callouts") -> list:
         tag = f"{where}[{i}]"
         if not isinstance(c, dict):
             raise CalloutError(f"{tag}: a callout is a mapping, got {c!r}")
-        unknown = set(c) - set(KEYS)
+        unknown = set(c) - set(KEYS) - set(INTERNAL_KEYS)
         if unknown:
             raise CalloutError(f"{tag}: unknown key(s) {', '.join(sorted(unknown))}; "
                                f"known: {', '.join(KEYS)}")
         kind = c.get("type")
         if kind not in TYPES:
             raise CalloutError(f"{tag}: `type` must be one of {', '.join(TYPES)}, got {kind!r}")
+        if kind != "hoot":
+            stray = sorted(set(c) & set(HOOT_KEYS))
+            if stray:
+                raise CalloutError(f"{tag}: {', '.join(stray)} belong(s) to `type: hoot` only")
+        else:
+            _check_hoot(c, tag)
         if kind in ("badge", "text") and not (isinstance(c.get("text"), str) and c["text"]):
             raise CalloutError(f"{tag}: a {kind} needs `text`")
         if kind == "sticker" and not (isinstance(c.get("src"), str) and c["src"].strip()):
@@ -190,7 +206,8 @@ def check(raw_list, where: str = "callouts") -> list:
             raise CalloutError(f"{tag}: needs `when:` -- the word it pictures, or seconds")
         if not _is_wordref(when):
             _num(when, "when", tag, 0.0, 600.0)
-        _anchor(c.get("anchor"), tag, kind)
+        if not (kind == "hoot" and c.get("anchor") is None):
+            _anchor(c.get("anchor"), tag, kind)
         size = c.get("size", TYPE_DEFAULTS[kind]["size"])
         _num(size, "size", tag, 0.005, 1.2)
         ease = c.get("ease", TYPE_DEFAULTS[kind]["ease"])
@@ -257,12 +274,15 @@ def nearest_edge(x: float, y: float) -> str:
     return min((("bottom", 1.0 - y), ("left", x), ("right", 1.0 - x)), key=lambda kv: kv[1])[0]
 
 
-def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="callouts") -> list:
+def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="callouts",
+                     avoid=None) -> list:
     """A scene's `callouts:` -> illustrate elements (`type: callout`), times resolved.
 
     `resolve_time(value) -> seconds` resolves a word reference against the scene's own words
     (make_short passes illustrate.resolve_time bound to the scene's rows). `local_cuts` are the
     scene's picture cuts (beat boundaries), scene-local seconds; `dur` is the scene's length.
+    `avoid` is a list of (left, top, right, bottom) frame fractions a `hoot` may never cover
+    (make_short passes the caption band); the other types ignore it.
     """
     check(raw_list, where)
     cuts = sorted(float(t) for t in (local_cuts or ()))
@@ -271,12 +291,17 @@ def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="call
         tag = f"{where}[{i}]"
         kind = c["type"]
         d = TYPE_DEFAULTS[kind]
-        x, y, track = _anchor(c.get("anchor"), tag, kind)
+        if kind == "hoot" and c.get("anchor") is None:
+            x, y, track = 0.0, 0.0, None       # placed by hoot_element
+        else:
+            x, y, track = _anchor(c.get("anchor"), tag, kind)
         offset = float(c.get("offset_ms", DEFAULT_OFFSET_MS)) / 1000.0
         t0 = max(0.0, float(resolve_time(c["when"])) + offset)
         if t0 >= float(dur):
             raise CalloutError(f"{tag}: enters at {t0:.3f}s, after its scene ends ({dur:.3f}s)")
         ease = ease_of(c.get("ease", d["ease"]), kind)
+        if kind == "hoot" and "ease" not in c and (c.get("pose") == "badge" or "badge_text" in c):
+            ease = OVERSHOOT["hoot"]           # badge poses pop (0.6 -> 1.15 -> 1.0)
         base_ms = (EASING[ease].get("settle_ms") or EASING[ease].get("ms")) if ease in EASING else 0
         in_ms = float(c.get("in_ms", base_ms or 0.0))
         hold = c.get("hold", d["hold"])
@@ -288,6 +313,9 @@ def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="call
             t1 = t0 + in_ms / 1000.0 + float(hold) / 1000.0
         if t1 is not None and t1 >= float(dur) - 1e-3:
             t1 = None          # the part's own end is the cut
+        if kind == "hoot":
+            out.append(hoot_element(c, tag, t0, t1, dur, avoid or ()))
+            continue
         el = {"type": "callout", "callout": kind, "at": [x, y], "size": float(c.get("size", d["size"])),
               "ease": ease, "in_ms": in_ms, "enter": {"t": round(t0, 4), "how": "callout"},
               "out": c.get("out", "snap"), "out_ms": float(c.get("out_ms", DEFAULT_OUT_MS)),
@@ -306,6 +334,452 @@ def compile_callouts(raw_list, resolve_time, local_cuts, dur: float, where="call
             el["enter_from"] = c.get("enter_from") or nearest_edge(x, y)
         out.append(el)
     return out
+
+
+# --- hoot: the Park Detective owl (2026-11-09) ------------------------------------------------
+
+HOOT_DOC = """
+    - type: hoot
+      when: {word: circle}              # as every callout
+      pose: point_right                 # a key of hoot.json `poses` (default: neutral; chosen
+                                        #   from `point_to` / `badge_text` when absent)
+      say: "A perfect CIRCLE"           # drawn into the bubble: <= 4 words a line, 2 lines,
+                                        #   Nunito Black, auto-fitted (refused past 8 words)
+      bubble: auto                      # left | right | auto: which side of Hoot it sits
+                                        #   (auto: toward the frame centre)
+      badge_text: "12 G"                # drawn on the held badge (picks pose `badge`), or on
+                                        #   the `nope` sign in stamp red ("X")
+      anchor: {x: 0.2, y: 0.45}         # Hoot's body centre (default: lower-left, just above
+                                        #   the caption band; lower-right when point_to is left)
+      point_to: {x: 0.5, y: 0.27}       # picks point_left/right/up/down by direction and
+                                        #   mirrors a horizontal pose that faces away
+      size: 0.22                        # Hoot's body width, fraction of frame WIDTH
+      hold: next_cut                    # next_cut | scene | ms
+      ease: slide_in                    # slide_in (default, from the nearest edge, 300 ms,
+                                        #   bounded 230-370) | overshoot (badge poses' default)
+      sfx: pop                          # pop on arrival (default)
+      blur_bg: true                     # optional: blur the footage while he is up
+"""
+#: SPEC rule 3: sticker slide-in measured 230-370 ms.
+HOOT_SLIDE_MS = (230.0, 370.0)
+HOOT_MAX_WORDS_LINE = 4
+HOOT_MAX_LINES = 2
+HOOT_INK = "#111111"
+#: The say-bubble type: cap height as a fraction of frame HEIGHT (~0.6 of the word caption's).
+HOOT_SAY_CAP = 0.021
+HOOT_EM_PER_CHAR = 0.62
+#: The most the bubble PNG may be stretched wider than tall (x scale / y scale).
+HOOT_BUBBLE_STRETCH = 2.0
+#: Hoot holding a number is drawn bigger by default, so the number reads (the disc is ~1/4 of him).
+HOOT_BADGE_SIZE = 0.30
+#: Hoot's default home when the spec gives no anchor: inside the SAFE x margin, his body's
+#: bottom this far above the top of whatever `avoid` holds below him (the caption band).
+HOOT_SAFE_X = 0.055
+HOOT_SAFE_TOP = 0.08
+HOOT_SAFE_BOTTOM = 0.75
+HOOT_GAP = 0.012
+#: How far (frame-width fractions) a pointed-at subject must stay outside Hoot and his bubble.
+HOOT_POINT_CLEAR = 0.03
+POINT_POSES = {"left": "point_left", "right": "point_right", "up": "point_up", "down": "point_down"}
+BUBBLE_SIDES = ("left", "right", "auto")
+BLUR_KEYS = ("sigma", "in_ms", "out_ms", "hold")
+
+
+def _point(raw, name, tag):
+    if not isinstance(raw, dict) or set(raw) - {"x", "y"}:
+        raise CalloutError(f"{tag}: `{name}` must be {{x, y}} (fractions of the frame)")
+    return (_num(raw.get("x"), f"{name}.x", tag, 0.0, 1.0),
+            _num(raw.get("y"), f"{name}.y", tag, 0.0, 1.0))
+
+
+def say_lines(text: str, tag: str = "hoot") -> list:
+    """`say:` -> 1 or 2 lines of <= 4 words, balanced (a 5-word line becomes 3 + 2)."""
+    words = str(text).split()
+    if not words:
+        raise CalloutError(f"{tag}: `say` is empty")
+    if len(words) > HOOT_MAX_WORDS_LINE * HOOT_MAX_LINES:
+        raise CalloutError(f"{tag}: `say` has {len(words)} words; a bubble holds "
+                           f"{HOOT_MAX_WORDS_LINE * HOOT_MAX_LINES} (2 lines of "
+                           f"{HOOT_MAX_WORDS_LINE}). Say less: he points, the narrator talks.")
+    if len(words) <= 3:
+        return [" ".join(words)]
+    cut = (len(words) + 1) // 2
+    return [" ".join(words[:cut]), " ".join(words[cut:])]
+
+
+def _check_hoot(c, tag):
+    if "say" in c:
+        if not (isinstance(c["say"], str) and c["say"].strip()):
+            raise CalloutError(f"{tag}: `say` must be a non-empty string")
+        say_lines(c["say"], tag)
+    if "badge_text" in c and not (isinstance(c["badge_text"], str) and c["badge_text"].strip()
+                                  and len(c["badge_text"]) <= 8):
+        raise CalloutError(f"{tag}: `badge_text` must be a short string (<= 8 characters)")
+    if "bubble" in c and c["bubble"] not in BUBBLE_SIDES:
+        raise CalloutError(f"{tag}: `bubble` must be one of {', '.join(BUBBLE_SIDES)}")
+    if "pose" in c and not (isinstance(c["pose"], str) and c["pose"]):
+        raise CalloutError(f"{tag}: `pose` must be a pose name from hoot.json")
+    if "point_to" in c:
+        _point(c["point_to"], "point_to", tag)
+    if "badge_text" in c and "say" in c:
+        raise CalloutError(f"{tag}: give `badge_text` OR `say`, not both -- one thing at a time")
+    blur = c.get("blur_bg")
+    if blur is not None and blur is not True and blur is not False:
+        if not isinstance(blur, dict) or set(blur) - set(BLUR_KEYS):
+            raise CalloutError(f"{tag}: `blur_bg` must be true or {{{', '.join(BLUR_KEYS)}}}")
+    ease = c.get("ease")
+    if ease is not None and ease not in ("slide_in", "overshoot", "pop_badge", "none", "fade"):
+        raise CalloutError(f"{tag}: a hoot enters `slide_in` or `overshoot` (or none/fade)")
+    if "in_ms" in c and ease in (None, "slide_in") and "badge_text" not in c \
+            and c.get("pose") != "badge":
+        lo, hi = HOOT_SLIDE_MS
+        _num(c["in_ms"], "in_ms", tag, lo, hi)
+    if "enter_from" in c and c["enter_from"] not in EDGES:
+        raise CalloutError(f"{tag}: `enter_from` must be one of {', '.join(EDGES)}")
+    hs = c.get("_hoot")
+    if hs is not None:
+        pose = c.get("pose")
+        if pose is not None and pose not in hs["poses"]:
+            raise CalloutError(f"{tag}: unknown hoot pose {pose!r}; hoot.json has "
+                               f"{', '.join(sorted(hs['poses']))}")
+
+
+def check_hoot_set(data, where="hoot.json") -> dict:
+    """A loaded hoot.json, checked for what the renderer reads. Returns it."""
+    if not isinstance(data, dict) or not isinstance(data.get("poses"), dict):
+        raise CalloutError(f"{where}: needs a `poses` mapping")
+    for name, pose in data["poses"].items():
+        for key in ("src", "body"):
+            if key not in pose:
+                raise CalloutError(f"{where}: pose {name} lacks `{key}`")
+    for need in ("neutral", "badge", *POINT_POSES.values()):
+        if need not in data["poses"]:
+            raise CalloutError(f"{where}: pose {need} is missing")
+    if "bubble" not in data or "src" not in data["bubble"]:
+        raise CalloutError(f"{where}: needs `bubble: {{src, body, text_box, tail}}`")
+    if "badge" not in data["poses"]["badge"]:
+        raise CalloutError(f"{where}: pose badge needs `badge: [cx, cy, r]`")
+    return data
+
+
+def _box_hits(a, b, pad=0.0) -> bool:
+    return not (a[2] + pad <= b[0] or b[2] + pad <= a[0] or a[3] + pad <= b[1] or b[3] + pad <= a[1])
+
+
+def _union(a, b):
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def _mirror_box(b):
+    return (1.0 - b[2], b[1], 1.0 - b[0], b[3])
+
+
+def _pick_pose(c, hs, ax, ay):
+    """(pose name, mirrored?) from pose / badge_text / point_to."""
+    pose = c.get("pose")
+    pt = c.get("point_to")
+    if pose is None:
+        if "badge_text" in c:
+            pose = "badge"
+        elif pt is not None:
+            dx, dy = (pt["x"] - ax) * W, (pt["y"] - ay) * H
+            if abs(dx) >= abs(dy):
+                pose = POINT_POSES["right" if dx > 0 else "left"]
+            else:
+                pose = POINT_POSES["down" if dy > 0 else "up"]
+        else:
+            pose = "neutral"
+    mirror = False
+    if pt is not None and pose in (POINT_POSES["left"], POINT_POSES["right"]):
+        faces_right = pose == POINT_POSES["right"]
+        mirror = (pt["x"] > ax) != faces_right
+    return pose, mirror
+
+
+def _default_anchor(c, hs, avoid, size):
+    """Lower-left (or lower-right when he points left), body bottom just above the first
+    `avoid` box that spans the frame's middle (the caption band), else above the safe floor."""
+    neutral = hs["poses"]["neutral"]["body"]
+    bw = size
+    bh = size * W / H * (neutral[3] - neutral[1]) / (neutral[2] - neutral[0])
+    floor = HOOT_SAFE_BOTTOM
+    for box in avoid:
+        if box[1] > 0.3:
+            floor = min(floor, box[1])
+    y = floor - HOOT_GAP - bh / 2
+    pt = c.get("point_to")
+    right = pt is not None and pt["x"] < 0.5
+    x = 1.0 - HOOT_SAFE_X - bw / 2 - 0.1 if right else HOOT_SAFE_X + bw / 2
+    return x, y
+
+
+def _hoot_geometry(c, hs, ax, ay, size, pose, mirror):
+    """Image placement and boxes, all in frame fractions."""
+    pdata = hs["poses"][pose]
+    ref = hs["poses"]["neutral"]["body"]
+    scale = size / (ref[2] - ref[0])          # canvas-width fractions -> frame-width fractions
+    body = tuple(pdata["body"])
+    if mirror:
+        body = _mirror_box(body)
+    bcx, bcy = (body[0] + body[2]) / 2, (body[1] + body[3]) / 2
+    cw = scale                                 # canvas width, frame-width fractions
+    ch = scale * W / H                         # canvas height (square), frame-height fractions
+    left, top = ax - bcx * cw, ay - bcy * ch
+    hoot_box = (left + body[0] * cw, top + body[1] * ch, left + body[2] * cw, top + body[3] * ch)
+
+    def at(pt):
+        x = (1.0 - pt[0]) if mirror else pt[0]
+        return left + x * cw, top + pt[1] * ch
+    return {"left": left, "top": top, "cw": cw, "ch": ch, "box": hoot_box, "at": at,
+            "pdata": pdata}
+
+
+def _bubble_geometry(c, hs, g, side, lines):
+    """Where the bubble sits beside Hoot, its text size, its box. Frame fractions.
+
+    The bubble PNG is scaled to its text, x and y separately (a short line does not need a
+    tall balloon), the stretch capped at HOOT_BUBBLE_STRETCH so the corners stay round."""
+    b = hs["bubble"]
+    bbody, tbox, tail = b["body"], b["text_box"], b["tail"]
+    longest = max(len(line) for line in lines)
+    fs_px = HOOT_SAY_CAP * H / CAP_EM
+    tw, th = tbox[2] - tbox[0], tbox[3] - tbox[1]
+
+    def size_for(fs):
+        text_w = max(longest, 6) * HOOT_EM_PER_CHAR * fs
+        text_h = len(lines) * 1.15 * fs
+        sx, sy = text_w / tw, text_h / th
+        sy = max(sy, sx / HOOT_BUBBLE_STRETCH)       # cap the horizontal stretch
+        return sx, sy
+    sx, sy = size_for(fs_px)
+    max_w = (1.0 - 2 * HOOT_SAFE_X - 0.85 * (g["box"][2] - g["box"][0])) * W
+    if sx * (bbody[2] - bbody[0]) > max_w:
+        k = max_w / (sx * (bbody[2] - bbody[0]))
+        fs_px *= k
+        sx, sy = size_for(fs_px)
+    cw, ch = sx / W, sy / H                          # canvas size in frame fractions
+    mirror = side == "left"                          # the source tail is bottom-left
+    hb = g["box"]
+    # The tail tip lands just inside Hoot's head on the bubble's side, a quarter down him.
+    tip_y = hb[1] + 0.25 * (hb[3] - hb[1])
+    tip_x = hb[2] - 0.12 * (hb[2] - hb[0]) if side == "right" else hb[0] + 0.12 * (hb[2] - hb[0])
+    tx = (1.0 - tail[0]) if mirror else tail[0]
+    left, top = tip_x - tx * cw, tip_y - tail[1] * ch
+    bb = _mirror_box(tuple(bbody)) if mirror else tuple(bbody)
+    tb = _mirror_box(tuple(tbox)) if mirror else tuple(tbox)
+    box = (left + bb[0] * cw, top + bb[1] * ch, left + bb[2] * cw, top + bb[3] * ch)
+    text = (left + tb[0] * cw, top + tb[1] * ch, left + tb[2] * cw, top + tb[3] * ch)
+    return {"left": left, "top": top, "cw": cw, "ch": ch, "mirror": mirror, "box": box,
+            "text_box": text, "font_px": round(fs_px, 1), "lines": lines, "tail": (tip_x, tip_y)}
+
+
+def hoot_element(c, tag, t0, t1, dur, avoid) -> dict:
+    """A `type: hoot` callout -> one compiled element with every pixel decision made."""
+    hs = c.get("_hoot")
+    if hs is None:
+        raise CalloutError(f"{tag}: a hoot needs the pose set (make_short loads hoot.json)")
+    holds_badge = c.get("pose") == "badge" or ("badge_text" in c and c.get("pose") is None)
+    size = float(c.get("size", HOOT_BADGE_SIZE if holds_badge else TYPE_DEFAULTS["hoot"]["size"]))
+    if c.get("anchor") is not None:
+        ax, ay, _ = _anchor(c["anchor"], tag, "hoot")
+        explicit = True
+    else:
+        ax, ay = _default_anchor(c, hs, avoid, size)
+        explicit = False
+    pose, mirror = _pick_pose(c, hs, ax, ay)
+    g = _hoot_geometry(c, hs, ax, ay, size, pose, mirror)
+    box = g["box"]
+    bubble = None
+    if c.get("say"):
+        side = c.get("bubble", "auto")
+        if side == "auto":
+            side = "right" if ax < 0.5 else "left"
+        bubble = _bubble_geometry(c, hs, g, side, say_lines(c["say"], tag))
+        box = _union(box, bubble["box"])
+    # Never on the caption band, never on the subject he points at, never off the frame.
+    for band in avoid:
+        if _box_hits(box, band):
+            how = "move `anchor`" if explicit else "give an `anchor` clear of it"
+            raise CalloutError(f"{tag}: Hoot (and his bubble) at {_fmt(box)} would cover the "
+                               f"caption band {_fmt(band)}; {how}")
+    pt = c.get("point_to")
+    if pt is not None:
+        px, py = pt["x"], pt["y"]
+        pad = HOOT_POINT_CLEAR
+        if box[0] - pad < px < box[2] + pad and box[1] - pad * W / H < py < box[3] + pad * W / H:
+            raise CalloutError(f"{tag}: Hoot (and his bubble) at {_fmt(box)} would cover the "
+                               f"point he points to ({px:g}, {py:g}); move `anchor` or `bubble`")
+    if box[0] < -1e-6 or box[2] > 1 + 1e-6 or box[1] < -1e-6 or box[3] > 1 + 1e-6:
+        raise CalloutError(f"{tag}: Hoot at {_fmt(box)} runs off the frame; move `anchor`")
+    is_badge = pose == "badge" or "badge_text" in c
+    ease = c.get("ease") or ("overshoot" if is_badge else "slide_in")
+    ease = ease_of(ease, "hoot")
+    base_ms = (EASING[ease].get("settle_ms") or EASING[ease].get("ms")) if ease in EASING else 0
+    in_ms = float(c.get("in_ms", base_ms or 0.0))
+    el = {"type": "callout", "callout": "hoot", "at": [round(ax, 6), round(ay, 6)],
+          "size": size, "ease": ease, "in_ms": in_ms, "enter": {"t": round(t0, 4), "how": "callout"},
+          "out": c.get("out", "snap"), "out_ms": float(c.get("out_ms", DEFAULT_OUT_MS)),
+          "sticker": False, "pose": pose, "mirror": mirror, "src": g["pdata"]["src"],
+          "img": [round(g["left"], 6), round(g["top"], 6), round(g["cw"], 6)],
+          "box": [round(v, 6) for v in box], "hoot_box": [round(v, 6) for v in g["box"]]}
+    if t1 is not None:
+        el["exit"] = {"t": round(t1, 4)}
+    sfx = c.get("sfx", TYPE_DEFAULTS["hoot"]["sfx"])
+    if sfx:
+        el["sfx"] = sfx
+    if ease == "slide_in":
+        hb = g["box"]
+        el["enter_from"] = c.get("enter_from") or nearest_edge((hb[0] + hb[2]) / 2, (hb[1] + hb[3]) / 2)
+    if bubble is not None:
+        el["bubble"] = {"src": hs["bubble"]["src"], "mirror": bubble["mirror"],
+                        "img": [round(bubble["left"], 6), round(bubble["top"], 6),
+                                round(bubble["cw"], 6), round(bubble["ch"], 6)],
+                        "text_box": [round(v, 6) for v in bubble["text_box"]],
+                        "tail": [round(v, 6) for v in bubble["tail"]],
+                        "lines": bubble["lines"], "font_px": bubble["font_px"]}
+    if "badge_text" in c:
+        if "badge" not in g["pdata"]:
+            raise CalloutError(f"{tag}: pose {pose} holds nothing to write `badge_text` on "
+                               f"(poses with a badge: badge, nope)")
+        cx, cy, r = g["pdata"]["badge"]
+        bx, by = g["at"]((cx, cy))
+        el["badge"] = {"text": c["badge_text"], "at": [round(bx, 6), round(by, 6)],
+                       "r": round(r * g["cw"], 6),
+                       "color": g["pdata"].get("badge_color", "#FFFFFF")}
+    blur = c.get("blur_bg")
+    if blur:
+        cfg = {} if blur is True else dict(blur)
+        if "hold" not in cfg and t1 is not None:
+            cfg["hold"] = round(max(1.0 / 30, t1 - t0), 4)
+        el["blur_bg"] = cfg
+    if pt is not None:
+        el["point_to"] = [pt["x"], pt["y"]]
+    return el
+
+
+def _fmt(box) -> str:
+    return "(" + ", ".join(f"{v:.3f}" for v in box) + ")"
+
+
+def _hoot_text(text, fs_px, color, ink, stroke_k=0.0):
+    stroke = (f"-webkit-text-stroke:{stroke_k * fs_px:.1f}px {ink};paint-order:stroke fill;"
+              if stroke_k else "")
+    return (f"font-family:'{ROUNDED_FAMILY}',Arial Rounded MT Bold,sans-serif;font-weight:900;"
+            f"font-size:{fs_px:.1f}px;line-height:1.08;color:{color};{stroke}"
+            f"white-space:nowrap;text-align:center")
+
+
+def hoot_body_html(el, image_uri) -> str:
+    """Hoot's picture (+ badge text), positioned relative to the anchor (the root's origin)."""
+    ax, ay = el["at"]
+    left, top, cw = el["img"]
+    w = cw * W
+    x0, y0 = (left - ax) * W, (top - ay) * H
+    flip = "transform:scaleX(-1);" if el.get("mirror") else ""
+    parts = [f'<img alt="" src="{image_uri(el["src"])}" style="position:absolute;'
+             f'left:{x0:.1f}px;top:{y0:.1f}px;width:{w:.1f}px;height:{w:.1f}px;{flip}">']
+    badge = el.get("badge")
+    if badge:
+        bx, by = (badge["at"][0] - ax) * W, (badge["at"][1] - ay) * H
+        r = badge["r"] * W
+        lines = badge["text"].split() if len(badge["text"]) > 3 else [badge["text"]]
+        if len(lines) > 2:
+            lines = [" ".join(lines[:-1]), lines[-1]]
+        longest = max(len(line) for line in lines)
+        # Fit the disc: width ~2.3 r for the longest line, height ~1.9 r for all lines.
+        fs = min(1.2 * r, 2.3 * r / max(1.0, longest * 0.62), 1.9 * r / (1.05 * len(lines)))
+        text = "<br>".join(_html.escape(line) for line in lines)
+        parts.append(f'<div style="position:absolute;left:{bx:.1f}px;top:{by:.1f}px;'
+                     f'transform:translate(-50%,-50%);'
+                     f'{_hoot_text("", fs, badge.get("color", "#FFFFFF"), INK, 0.09)};'
+                     f'line-height:1.0;text-shadow:0 {0.04 * fs:.1f}px {0.08 * fs:.1f}px rgba(0,0,0,.45)">'
+                     f"{text}</div>")
+    return "".join(parts)
+
+
+def hoot_bubble_html(el, image_uri) -> str:
+    b = el["bubble"]
+    ax, ay = el["at"]
+    left, top, cw, ch = b["img"]
+    w, h = cw * W, ch * H
+    x0, y0 = (left - ax) * W, (top - ay) * H
+    flip = "transform:scaleX(-1);" if b.get("mirror") else ""
+    tb = b["text_box"]
+    tx, ty = ((tb[0] + tb[2]) / 2 - ax) * W, ((tb[1] + tb[3]) / 2 - ay) * H
+    lines = "<br>".join(_html.escape(line) for line in b["lines"])
+    return (f'<img alt="" src="{image_uri(b["src"])}" style="position:absolute;left:{x0:.1f}px;'
+            f'top:{y0:.1f}px;width:{w:.1f}px;height:{h:.1f}px;{flip}">'
+            f'<div style="position:absolute;left:{tx:.1f}px;top:{ty:.1f}px;'
+            f'transform:translate(-50%,-50%);{_hoot_text("", b["font_px"], HOOT_INK, INK)}">'
+            f"{lines}</div>")
+
+
+def hoot_offset(el) -> tuple:
+    """(dx, dy) px that put Hoot's body wholly off the edge he enters from."""
+    hb = el["hoot_box"]
+    edge = el.get("enter_from") or "bottom"
+    if edge == "bottom":
+        return 0.0, (1.0 - hb[1]) * H + 8
+    if edge == "top":
+        return 0.0, -hb[3] * H - 8
+    if edge == "left":
+        return -hb[2] * W - 8, 0.0
+    return (1.0 - hb[0]) * W + 8, 0.0
+
+
+def hoot_html(el, idx, image_uri) -> tuple:
+    """-> (html, css). Hoot slides (or pops) in; the bubble pops from its tail as he lands."""
+    nid = f"el{idx}"
+    x, y = el["at"]
+    t0 = float(el["enter"]["t"])
+    in_s = max(0.001, float(el.get("in_ms") or 0.0) / 1000.0)
+    ease = el["ease"]
+    css = []
+    if ease == "slide_in":
+        dx, dy = hoot_offset(el)
+        css.append(slide_keyframes(f"kf-{nid}-in", dx, dy))
+        origin = "0 0"
+    elif ease in EASING and "peak" in EASING[ease]:
+        css.append(scale_keyframes(f"kf-{nid}-in", EASING[ease]))
+        hb = el["hoot_box"]
+        origin = f"{((hb[0] + hb[2]) / 2 - x) * W:.1f}px {(hb[3] - y) * H:.1f}px"
+    else:
+        css.append(appear_keyframes(f"kf-{nid}-in", ease == "fade"))
+        origin = "0 0"
+        if ease == "none":
+            in_s = 0.001
+    body = (f'<div class="anim" data-t0="{t0:.4f}" style="position:absolute;left:0;top:0;'
+            f"transform-origin:{origin};animation:kf-{nid}-in {in_s:.4f}s linear both paused;"
+            f'animation-delay:{t0:.4f}s">{hoot_body_html(el, image_uri)}</div>')
+    inner = body
+    if el.get("bubble"):
+        tb = t0 + in_s                         # the bubble pops as he lands
+        tip = el["bubble"]["tail"]
+        css.append(scale_keyframes(f"kf-{nid}-bub", EASING["pop_badge"]))
+        bub_ms = EASING["pop_badge"]["settle_ms"] / 1000.0
+        inner += (f'<div class="anim" data-t0="{tb:.4f}" style="position:absolute;left:0;top:0;'
+                  f"transform-origin:{(tip[0] - x) * W:.1f}px {(tip[1] - y) * H:.1f}px;"
+                  f"animation:kf-{nid}-bub {bub_ms:.4f}s linear both paused;"
+                  f'animation-delay:{tb:.4f}s">{hoot_bubble_html(el, image_uri)}</div>')
+    exit_ = el.get("exit")
+    if exit_ and el.get("out", "snap") != "snap":
+        t_exit = float(exit_["t"])
+        o = min(float(el.get("out_ms", DEFAULT_OUT_MS)) / 1000.0, max(0.001, t_exit - t0 - in_s))
+        ts = t_exit - o
+        if el["out"] == "fade":
+            css.append(f"@keyframes kf-{nid}-out{{0%{{opacity:1}}100%{{opacity:0}}}}")
+        else:
+            dx, dy = hoot_offset(el)
+            css.append(f"@keyframes kf-{nid}-out{{0%{{transform:translate(0,0);"
+                       f"animation-timing-function:{EASE_IN_CUBIC}}}"
+                       f"100%{{transform:translate({dx:.1f}px,{dy:.1f}px)}}}}")
+        inner = (f'<div class="anim" data-t0="{ts:.4f}" style="position:absolute;left:0;top:0;'
+                 f"animation:kf-{nid}-out {o:.4f}s linear both paused;animation-delay:{ts:.4f}s\">"
+                 f"{inner}</div>")
+    root = (f'<div id="{nid}" class="callout callout-hoot" style="position:absolute;'
+            f'left:{x * 100:.4f}%;top:{y * 100:.4f}%;width:0;height:0">{inner}</div>')
+    needs_font = bool(el.get("bubble") or el.get("badge"))
+    return root, "\n".join([font_face_css() if needs_font else "", *css])
 
 
 # --- HTML -------------------------------------------------------------------------------------
@@ -408,6 +882,10 @@ def callout_html(el, idx, *, image_uri=None, png_size=None) -> tuple:
     anchor is its centre (the arrow: its tip). Every animated node carries `data-t0`.
     """
     kind = el["callout"]
+    if kind == "hoot":
+        if image_uri is None:
+            raise ValueError("a hoot callout needs the caller's image_uri (illustrate)")
+        return hoot_html(el, idx, image_uri)
     nid = f"el{idx}"
     x, y = el["at"]
     t0 = float(el["enter"]["t"])
@@ -503,6 +981,8 @@ def bbox(el) -> tuple:
     """(left, top, right, bottom) fractions a compiled callout can paint, erring wide (the
     watermark guard's question). Tracking widens it to the whole path."""
     kind = el["callout"]
+    if kind == "hoot":
+        return tuple(round(v, 6) for v in el["box"])
     s = float(el["size"])
     if kind == "sticker":
         hw, hh = s / 2, s * W / H     # a square-ish worst case for the height

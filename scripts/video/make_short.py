@@ -581,6 +581,39 @@ def callout_preflight(scene, where: str, spec_path) -> None:
             if illustrate.png_size(c["src"]) is None:
                 raise SystemExit(f"{where} callouts[{i}] (sticker): {c['src']} is not a PNG; a "
                                  f"sticker is a transparent PNG cut-out")
+        elif c.get("type") == "hoot":
+            try:
+                c["_hoot"] = load_hoot_set(spec_path)
+                callouts.check([c], f"{where} callouts[{i}]")
+            except (FileNotFoundError, ValueError) as exc:
+                raise SystemExit(f"{where} callouts[{i}] (hoot): {exc}") from None
+
+
+#: Where a spec's repository keeps Hoot's pose set (ParkSheet, 2026-11-09). `PARKSHEET_HOOT_SET`
+#: points elsewhere (a test, a trial set) without touching the spec.
+HOOT_SET = "media/brand/hoot/hoot.json"
+_HOOT_CACHE: dict = {}
+
+
+def load_hoot_set(spec_path) -> dict:
+    """hoot.json for this spec's repo, checked, every `src` made absolute. Cached per path."""
+    import os
+    env = os.environ.get("PARKSHEET_HOOT_SET")
+    path = (pathlib.Path(env).expanduser() if env
+            else media.repo_root(spec_path) / HOOT_SET).resolve()
+    if path in _HOOT_CACHE:
+        return _HOOT_CACHE[path]
+    if not path.is_file():
+        raise FileNotFoundError(f"no Hoot pose set at {path} (set PARKSHEET_HOOT_SET or add "
+                                f"{HOOT_SET} to the spec's repository)")
+    data = callouts.check_hoot_set(json.loads(path.read_text()), str(path))
+    for entry in [*data["poses"].values(), data["bubble"]]:
+        src = (path.parent / entry["src"]).resolve()
+        if illustrate.png_size(src) is None:
+            raise FileNotFoundError(f"{path}: {entry['src']} is not a PNG")
+        entry["src"] = str(src)
+    _HOOT_CACHE[path] = data
+    return data
 
 
 def illustration_spans(scene, dur: float, fps: int = FPS) -> list:
@@ -2992,11 +3025,16 @@ def main():
                     # this scene's clock, and `hold: next_cut` reads this scene's beat cuts.
                     _rows = illustrate.word_rows(captions.read_words(wav))
                     _where = f"scene {idx:02d} callouts"
+                    # A hoot never covers the caption band: it is handed the band to avoid.
+                    _avoid = None
+                    if cap.enabled and any(c.get("type") == "hoot" for c in callout_raw):
+                        _b = captions.caption_box(OUT_W, OUT_H, None, cap.position, cap.size)
+                        _avoid = [(_b[0] / OUT_W, _b[1] / OUT_H, _b[2] / OUT_W, _b[3] / OUT_H)]
                     try:
                         compiled = callouts.compile_callouts(
                             callout_raw,
                             lambda v: illustrate.resolve_time(v, _rows, _where, "when"),
-                            picture_cuts.get(idx, []), dur, _where)
+                            picture_cuts.get(idx, []), dur, _where, avoid=_avoid)
                     except ValueError as exc:
                         raise SystemExit(str(exc)) from None
                     ov_scene["elements"] = list(ov_scene["elements"]) + compiled
