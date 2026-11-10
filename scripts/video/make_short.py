@@ -40,6 +40,7 @@ import argparse, dataclasses, html, json, math, pathlib, subprocess, sys
 # imports with the standard library alone (see tests/test_make_short_cards.py).
 HERE = pathlib.Path(__file__).resolve().parent; REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE)); import render_sheets as R
+import beds
 import callouts
 import captions
 import cards
@@ -2323,7 +2324,12 @@ def audio_settings(spec: dict, spec_path):
     meant to carry music and came out silent is indistinguishable from one that was not,
     and the whole point of round 3 is to hear the difference.
     """
-    block = (spec or {}).get("audio")
+    # `audio.bed: rotate` / `pool:<id>` (beds.py, 2026-11-09) becomes the picked pool entry
+    # here; a mapping bed (every older spec) passes through as the same object.
+    try:
+        block = beds.resolve_audio(spec)
+    except ValueError as exc:
+        raise SystemExit(f"audio.bed: {exc}") from None
     if block is None:
         return None
     if not isinstance(block, dict):
