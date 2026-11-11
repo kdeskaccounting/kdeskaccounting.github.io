@@ -52,7 +52,7 @@ second opinion and does not count as a pass.
   yourself wanting to fix a typo, report it instead.
 - **You may not pass something you could not verify.** "Probably fine", "standard practice", and "it reads
   reasonably" are FIX FIRST. Silence from a source is not confirmation.
-- **Escalate, never soften.** If a claim sits in a T3 area — implying an active CPA licence (Stephen's WA
+- **Escalate, never soften.** If a claim sits in a T3 area — calling Stephen a CPA or implying a CPA licence (Stephen's WA
   licence is **inactive**), giving tax or legal advice, asserting anything about CAE, or for `parksheet`
   drifting into financial advice — flag it for Stephen. Do not propose gentler wording that keeps the claim.
 - Check the **arithmetic**, not just the prose: amortization, PV, withholding, wait-time aggregates. Recompute.

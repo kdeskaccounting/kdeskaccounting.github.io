@@ -17,7 +17,7 @@
 | SaaS Metrics & ARR Dashboard | https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard | https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard/UPGRADE20 |
 | Startup Runway Calculator | https://kdeskaccounting.gumroad.com/l/runway-calculator | https://kdeskaccounting.gumroad.com/l/runway-calculator/UPGRADE20 |
 
-**Voice rules:** open on the reader's situation, one concrete number or mechanic per email, no emojis, no "hope this helps", sign as Stephen. Never claim active CPA licensure. Never give tax advice. Every email has a real reply-to.
+**Voice rules:** open on the reader's situation, one concrete number or mechanic per email, no emojis, no "hope this helps", sign as Stephen. Never call Stephen a CPA (license inactive). Never give tax advice. Every email has a real reply-to.
 
 ---
 

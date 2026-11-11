@@ -35,7 +35,7 @@ waits for Stephen.
   T1 — #69 covers nurture sends on the list, not one-to-one outreach from Stephen's identity.
 - **Outreach is T2**: act + 48-hour veto. Log the batch to `decisions/decisions.jsonl` and surface it in the
   digest.
-- **T3 gates, absolute:** never imply Stephen practises as a licensed CPA (WA licence **inactive**); **no tax
+- **T3 gates, absolute:** never call Stephen a CPA or imply he practises as one (WA licence **inactive**); **no tax
   or legal advice** in a message, however casual; nothing about CAE having clients, a waitlist, or a ship
   date; no refund or pricing commitments; nothing that reads as IRS/FASB/auditor/legal correspondence.
 - **Never fabricate** a shared connection, a mutual acquaintance, a customer count, a result, or a testimonial.

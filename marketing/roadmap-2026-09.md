@@ -125,7 +125,7 @@ Article order can be swapped by Monday data. Every article: product CTA, FAQ sch
 
 ## Guardrails
 
-- No active-CPA claims, no tax advice, no CAE claims; refunds and IRS/legal correspondence Stephen-only; no outreach or posting from Stephen's accounts without his paste/OK.
+- No CPA claims of any kind (license inactive), no tax advice, no CAE claims; refunds and IRS/legal correspondence Stephen-only; no outreach or posting from Stephen's accounts without his paste/OK.
 - Paid spend: $0 until the first sale, then $100/mo cap, then $250/mo at M3.
 - Pricing: tests within ±30 % only at the triggers above, each logged T2 with a 48-hour veto.
 - Kill/pivot: 0 full-price sales by 2026-12-01 despite ≥ 40 new downloads and ≥ 12 organic/day → Stephen decision on caps, pricing structure or repositioning, with a data memo from Claude.

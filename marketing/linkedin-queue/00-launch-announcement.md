@@ -9,7 +9,7 @@
 
 Been having a lot of fun with Claude Code recently.
 
-I'm a CPA — 10+ years in sales comp accounting and ASC 606, most of it at CaptivateIQ. So I paired my accounting depth with Claude Code's web design skills, and together we built kdeskaccounting.com.
+I've spent 10+ years in sales comp accounting and ASC 606, most of it at CaptivateIQ. So I paired my accounting depth with Claude Code's web design skills, and together we built kdeskaccounting.com.
 
 Excel templates and step-by-step guides for ASC 606 commission capitalization, ASC 842 lease accounting, startup runway, and SaaS metrics — the stuff I used to walk controllers through on Sunday nights.
 

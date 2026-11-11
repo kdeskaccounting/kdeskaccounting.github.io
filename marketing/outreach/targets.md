@@ -1,6 +1,6 @@
 # Link targets (researched 2026-09-03, nothing contacted yet)
 
-Goal: 10 referring domains by 2026-12-01 (roadmap rank milestone). Ordered by feasibility inside each group. Every email goes out from santiagokdesk@gmail.com only after Stephen OKs the weekly batch. Pitches never imply an active CPA license and never touch tax positions.
+Goal: 10 referring domains by 2026-12-01 (roadmap rank milestone). Ordered by feasibility inside each group. Every email goes out from santiagokdesk@gmail.com only after Stephen OKs the weekly batch. Pitches never call Stephen a CPA (license inactive) and never touch tax positions.
 
 ## 0. Warm contact (Stephen's relationship, Stephen sends)
 

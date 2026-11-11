@@ -628,7 +628,7 @@ publishes, and only after the gate. T3 gates apply to every agent without except
 
 ## Hard gates — never bypass, in any phase, for any agent
 
-1. No CPA-licensure claim. Stephen's WA license is **inactive**; content must never imply active practice.
+1. No CPA-licensure claim. Stephen's WA license is **inactive**; content must never call him a CPA (not even "inactive CPA") or imply CPA practice.
 2. No tax or legal advice. Mechanics only.
 3. No IRS / FASB / auditor / legal correspondence — escalate to Stephen.
 4. No refunds or anything financial — Stephen only.

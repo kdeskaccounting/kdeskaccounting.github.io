@@ -59,9 +59,9 @@ This is book depreciation under US GAAP only. It does NOT cover MACRS / tax depr
 - Formula cells locked, input cells unlocked, separate password on Opening Accumulated Depreciation
 - File size approximately 2-5 MB
 
-## Built by a CPA
+## Who built it
 
-Built by Stephen Michels — 10+ years in technical accounting (CaptivateIQ alum) and the operator behind KDesk Accounting's existing ASC 606 and ASC 842 workbooks. WA CPA license (currently inactive); this is a template, not professional advice.
+Built by Stephen Michels — 10+ years in technical accounting (CaptivateIQ alum) and the operator behind KDesk Accounting's existing ASC 606 and ASC 842 workbooks. This is a template, not professional advice.
 
 ## What you get
 

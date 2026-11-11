@@ -81,9 +81,9 @@ The Month-End Close Checklist is the scaffolding that holds all of them together
 
 This is a structural close workbook, not technical-accounting math. It does NOT compute commission amortization, lease ROU/liability schedules, or fixed asset depreciation — those are in the dedicated paid workbooks above. It does NOT handle multi-entity consolidation, intercompany eliminations, FX revaluation, or flux/variance analysis. It does NOT enforce SOX-compliant access controls (it's a free Excel file; if you need workflow software, look at FloQast, BlackLine, or Numeric).
 
-## Built by a CPA
+## Who built it
 
-Built by Stephen Michels — 10+ years in technical accounting (CaptivateIQ alum) and the operator behind KDesk Accounting's ASC 606, ASC 842, and Fixed Asset workbooks. WA CPA license (currently inactive); this is a template, not professional advice.
+Built by Stephen Michels — 10+ years in technical accounting (CaptivateIQ alum) and the operator behind KDesk Accounting's ASC 606, ASC 842, and Fixed Asset workbooks. This is a template, not professional advice.
 
 ## What you get
 

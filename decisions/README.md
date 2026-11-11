@@ -36,7 +36,7 @@ Two optional fields, **written only when present**, let a LATER entry answer an 
 
 ## Hard gates (the agent NEVER bypasses)
 
-1. Stephen's CPA license is described as **inactive WA**. Content must never imply active CPA licensure or "this is tax advice."
+1. Stephen's WA CPA license is inactive. Content must never call him a CPA (not even "CPA, inactive"), imply CPA licensure, or say "this is tax advice."
 2. CAE positioning — never imply CAE is shippable / has clients / has a waitlist until Stephen confirms.
 3. No content that contradicts the operating-principles in `~/kdesk-workspace/CLAUDE.md` (deterministic > aspirational; margin > revenue; systems > heroics; etc).
 4. No paid spend without explicit approval.
