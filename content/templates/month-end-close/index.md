@@ -1,6 +1,6 @@
 ---
 title: "Month-End Close Checklist + Tie-Out Workbook (Free Excel Template)"
-description: "Free Excel workbook for SaaS controllers: 42-task close calendar across 5 phases, 18 subledger-to-GL reconciliations with materiality flag, 50-row JE tracker with debit=credit sanity check, and a printable sign-off page that auto-tabulates close metrics. Built by a CPA. No macros."
+description: "Free Excel workbook for SaaS controllers: 42-task close calendar across 5 phases, 18 subledger-to-GL reconciliations with materiality flag, 50-row JE tracker with debit=credit sanity check, and a printable sign-off page that auto-tabulates close metrics. Built by a SaaS accounting practitioner. No macros."
 summary: "A free 5-tab Excel workbook that holds your entire month-end close in one place — 42 pre-populated tasks, 18 standard subledger reconciliations, JE log with sanity check, and printable sign-off with auto-tabulated close metrics."
 date: 2026-05-26
 author: "KDesk Accounting"
@@ -34,7 +34,7 @@ faq:
     a: "No. Close-management software gives you workflow, access controls, real-time multi-user collaboration, integration to your GL, evidence storage, and SOX-compliant audit trails. This workbook does none of that — it's an Excel file. If you're an early-stage SaaS company without a software budget for close management, this is a solid stopgap. If you're growing past 25-30 reconciliations or have SOX requirements, evaluate the dedicated tools."
 ---
 
-A complete month-end close workbook in five tabs — free. Built by a CPA who has run SaaS close cycles at multiple companies and got tired of rebuilding the same checklist in Notion / Google Docs / Smartsheet every time. **Free. Pay What You Want on Gumroad.**
+A complete month-end close workbook in five tabs — free. Built by someone who has run SaaS close cycles at multiple companies and got tired of rebuilding the same checklist in Notion / Google Docs / Smartsheet every time. **Free. Pay What You Want on Gumroad.**
 
 [Download the Workbook (Free) →](https://kdeskaccounting.gumroad.com/l/month-end-close-checklist)
 

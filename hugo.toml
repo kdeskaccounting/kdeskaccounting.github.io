@@ -11,7 +11,7 @@ theme = "PaperMod"
 
 [params]
   env = "production"
-  description = "Audit-ready Excel templates and guides for ASC 606, ASC 842, commission accounting, lease accounting, and finance ops. Built by a CPA for controllers, accounting managers, and finance teams."
+  description = "Audit-ready Excel templates and guides for ASC 606, ASC 842, commission accounting, lease accounting, and finance ops. Built for controllers, accounting managers, and finance teams by a practitioner with 10+ years in SaaS revenue and commission accounting."
   author = "KDesk Accounting"
   ShowReadingTime = true
   ShowShareButtons = true

@@ -13,7 +13,7 @@
 
 ## What this is
 
-A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen is a CPA (10+ years sales-comp accounting, ex-CaptivateIQ). The site sells Excel templates on Gumroad ($49–249 each; $599 bundle; a $149 RSU planner and a $1,997 commission kit staged) and feeds an email list that compounds into the bigger 2026 plays (CAE → tax practice).
+A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen holds an **inactive** WA CPA license, so public copy never calls him a CPA (hard gate 1) (10+ years sales-comp accounting, ex-CaptivateIQ). The site sells Excel templates on Gumroad ($49–249 each; $599 bundle; a $149 RSU planner and a $1,997 commission kit staged) and feeds an email list that compounds into the bigger 2026 plays (CAE → tax practice).
 
 ## Architecture
 
@@ -718,7 +718,7 @@ stops new leaks, it does not undo old ones. Do not rewrite history or force-push
 
 ## Hard gates (never bypass)
 
-1. CPA license claims: Stephen's WA license is **inactive**. Content must never imply active CPA practice/licensure or constitute tax advice.
+1. CPA license claims: Stephen's WA license is **inactive**. Content must never call him a CPA (no "Built by a CPA"), imply CPA practice/licensure, or constitute tax advice. Describe him by experience instead. Vault rule: `~/CommandCenter/05-Decisions/2026-11-11-no-cpa-holding-out.md`.
 2. CAE positioning: never imply CAE has clients, a waitlist, or is shippable until Stephen confirms. Currently building MVP.
 3. Tax/legal/IRS correspondence: escalate to Stephen, never auto-respond.
 4. Refunds and anything financial: Stephen-only.
