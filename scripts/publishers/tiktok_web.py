@@ -199,6 +199,22 @@ def caption_of(meta: dict) -> str:
     return caption[:S.CAPTION_MAX]
 
 
+PHOTO_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp")
+PHOTOS_MIN, PHOTOS_MAX = 2, 35        # TikTok Studio: "Upload up to 35 photos per post"
+
+
+def photos_of(folder) -> list[pathlib.Path]:
+    """The slides of a photo post: the image files in `folder`, sorted by name (01.jpg, 02.jpg...).
+
+    A carousel (ParkSheet, 2026-11-13) is published by passing its slide folder as the asset."""
+    folder = pathlib.Path(folder)
+    photos = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in PHOTO_SUFFIXES)
+    if not PHOTOS_MIN <= len(photos) <= PHOTOS_MAX:
+        raise ScheduleError(f"{folder}: a photo post takes {PHOTOS_MIN} to {PHOTOS_MAX} images "
+                            f"({', '.join(PHOTO_SUFFIXES)}); found {len(photos)}")
+    return photos
+
+
 def caption_key(caption: str) -> str:
     """The idempotency key: the first KEY_LEN characters, whitespace- and case-normalised."""
     return _norm(caption)[:KEY_LEN]
@@ -635,6 +651,8 @@ class TikTokWebPublisher(Publisher):
 
     def drive(self, page, asset: pathlib.Path, meta: dict) -> PublishResult:
         """read → skip-if-present → upload → re-read → assert."""
+        if pathlib.Path(asset).is_dir():
+            photos_of(asset)            # a bad slide folder fails before anything is read or sent
         when = parse_schedule(meta.get("schedule_at"))
         caption = caption_of(meta)
         key = caption_key(caption)
@@ -702,11 +720,19 @@ class TikTokWebPublisher(Publisher):
         if when is not None:
             check_within_limit(when)
         self.goto(page, S.UPLOAD_URL)
-        # The file input is display:none (TikTok drives it from the "Select video" button),
-        # so it is waited on ATTACHED, never visible. set_input_files does not need it shown.
-        page.locator(S.FILE_INPUT).first.wait_for(state="attached",
-                                                  timeout=ANCHOR_TIMEOUT_MS)
-        page.set_input_files(S.FILE_INPUT, str(pathlib.Path(asset).resolve()))
+        if pathlib.Path(asset).is_dir():
+            # A photo post: the Photos tab swaps the video input for an image one (multiple).
+            page.get_by_role("tab", name=S.PHOTOS_TAB_TEXT, exact=True).first.click()
+            page.locator(S.PHOTO_FILE_INPUT).first.wait_for(state="attached",
+                                                            timeout=ANCHOR_TIMEOUT_MS)
+            page.set_input_files(S.PHOTO_FILE_INPUT,
+                                 [str(p.resolve()) for p in photos_of(asset)])
+        else:
+            # The file input is display:none (TikTok drives it from the "Select video" button),
+            # so it is waited on ATTACHED, never visible. set_input_files does not need it shown.
+            page.locator(S.FILE_INPUT).first.wait_for(state="attached",
+                                                      timeout=ANCHOR_TIMEOUT_MS)
+            page.set_input_files(S.FILE_INPUT, str(pathlib.Path(asset).resolve()))
         # None of the form exists before this line. Verified read-only on 2026-09-15: the bare
         # upload page carries one hidden file input and two data-e2e nodes, and zero rich-text
         # editors, switches or text inputs. So the wait for the caption box belongs AFTER the

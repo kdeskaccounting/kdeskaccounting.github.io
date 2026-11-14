@@ -249,7 +249,8 @@ class _Page:
 
     # writes ----------------------------------------------------------------
     def set_input_files(self, sel, path):
-        self.calls.append(f"set_input_files:{pathlib.Path(path).name}")
+        paths = path if isinstance(path, (list, tuple)) else [path]
+        self.calls.append(f"set_input_files:{','.join(pathlib.Path(x).name for x in paths)}")
 
     def expect_response(self, *a, **kw):
         import contextlib
@@ -1566,3 +1567,52 @@ def test_submit_waits_for_studio_to_leave_the_form_instead_of_navigating():
     assert not any(c.startswith(f"goto:{S.CONTENT_URL}") for c in after), after
     assert any(c.startswith("wait_for_function") for c in after)
     assert "wait_for_url" in after
+
+
+# ---- photo carousels (ParkSheet, 2026-11-13): a directory of slides posts on the Photos tab ----
+
+@pytest.fixture
+def slides(tmp_path):
+    d = tmp_path / "out"
+    d.mkdir()
+    for name in ("02.jpg", "01.jpg", "03.jpg", "notes.txt"):
+        (d / name).write_bytes(b"x")
+    return d
+
+
+CAROUSEL = {"slug": "mk-walk-past", "kind": "carousel", "title": "6 Magic Kingdom secrets you walk right past",
+            "description": "6 Magic Kingdom secrets you walk right past. Which one did you already know?"}
+
+
+def test_a_carousel_posts_its_slides_in_order_on_the_photos_tab(pub, slides):
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(CAROUSEL))]])
+    result = pub.drive(page, slides, CAROUSEL)
+    assert result.ok is True
+    calls = page.calls
+    tab = calls.index(f"click:role:tab:{S.PHOTOS_TAB_TEXT}")
+    upload = calls.index("set_input_files:01.jpg,02.jpg,03.jpg")     # sorted; the .txt is not a slide
+    assert tab < upload
+    assert f"wait_for:{S.PHOTO_FILE_INPUT}" in calls[tab:upload]
+    assert f"click:role:button:{S.POST_BUTTON_TEXT}" in calls[upload:]
+
+
+def test_photos_of_lists_slides_and_refuses_too_few_or_too_many(tmp_path, slides):
+    assert [p.name for p in tw.photos_of(slides)] == ["01.jpg", "02.jpg", "03.jpg"]
+    one = tmp_path / "one"
+    one.mkdir()
+    (one / "01.jpg").write_bytes(b"x")
+    with pytest.raises(tw.ScheduleError, match="2 to 35"):
+        tw.photos_of(one)
+    many = tmp_path / "many"
+    many.mkdir()
+    for i in range(36):
+        (many / f"{i:02d}.jpg").write_bytes(b"x")
+    with pytest.raises(tw.ScheduleError, match="2 to 35"):
+        tw.photos_of(many)
+
+
+def test_a_video_never_clicks_the_photos_tab(pub, asset):
+    meta = {k: v for k, v in META.items() if k != "schedule_at"}
+    page = _Page(rows_reads=[[], [_row(tw.caption_of(meta))]])
+    pub.drive(page, asset, meta)
+    assert f"click:role:tab:{S.PHOTOS_TAB_TEXT}" not in page.calls

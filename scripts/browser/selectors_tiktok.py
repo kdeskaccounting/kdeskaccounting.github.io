@@ -67,6 +67,11 @@ LOGIN_QR_TEXT = "Use QR code"                     # UNVERIFIED (only visible sig
 FILE_INPUT = "input[type=file]"                   # verified 2026-09-15: matched 1, accept="video/*"
 # TikTok's own test ids for the pre-file uploader stage. These are the only two `data-e2e`
 # attributes on the page, which makes them the honest "has the uploader rendered" signal.
+# Photo posts (ParkSheet carousels, 2026-11-13). The upload page has two role=tab buttons,
+# "Videos" and "Photos"; after the Photos tab, the only file input takes images, multiple=true
+# ("Upload up to 35 photos per post"). Verified read-only 2026-11-13 (tab clicked, no file chosen).
+PHOTOS_TAB_TEXT = "Photos"                        # verified 2026-11-13: <button role=tab>Photos</button>
+PHOTO_FILE_INPUT = "input[type=file][accept*='image']"   # verified 2026-11-13: accept image/jpg,...,webp
 SELECT_VIDEO_CONTAINER = "[data-e2e='select_video_container']"  # verified 2026-09-15: matched 1
 SELECT_VIDEO_BUTTON = "[data-e2e='select_video_button']"        # verified 2026-09-15: matched 1
 # What to wait for before counting anything on the upload page. Without it the read races the
