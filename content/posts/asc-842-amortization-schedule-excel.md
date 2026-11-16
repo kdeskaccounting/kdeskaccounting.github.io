@@ -229,7 +229,7 @@ If you have one or two leases and stable terms, building this in Excel is a reas
 
 If you have 5–20 leases, different commencement dates, or lease modifications in your history, the maintenance burden of a manual schedule adds up fast. The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles 20 leases with 120-month schedules per lease, non-chained PV formulas, period-level JE aggregation, and a reconciliation tab — all in one Excel file.
 
-[**Get the Workbook ($97) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
+[**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 
 [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 

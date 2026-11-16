@@ -266,7 +266,7 @@ Want to test the layout first? Grab the [free version](https://kdeskaccounting.g
 
 - [How to Calculate Startup Runway](/posts/how-to-calculate-startup-runway/) —deep dive on runway modeling, including fundraising timing and scenario planning
 - [ASC 606 Commission Capitalization Workbook](/templates/asc606/) ($79) —automates the commission expense accrual and amortization schedule that feeds into your burn rate
-- [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($97) —handles lease liability and ROU asset schedules, so you can separate cash rent from GAAP lease expense in your burn model
+- [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($249) —handles lease liability and ROU asset schedules, so you can separate cash rent from GAAP lease expense in your burn model
 - [Browse all templates →](/templates/)
 
 ---

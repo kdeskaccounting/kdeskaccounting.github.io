@@ -302,7 +302,7 @@ If you want early access, email **hello@kdeskaccounting.com**.
 In the meantime, if you are dealing with related SaaS accounting workflows, these templates are available now:
 
 - [ASC 606 Commission Capitalization Workbook](/templates/asc606/) ($79) —automates commission amortization schedules under ASC 340-40, with journal entries and rollforward reconciliation
-- [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($97) —lease liability amortization, ROU asset schedules, and journal entries under ASC 842
+- [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($249) —lease liability amortization, ROU asset schedules, and journal entries under ASC 842
 - [Startup Runway Calculator](/templates/runway/) ($49) —cash runway modeling with two-rate revenue growth and scenario analysis
 
 Each one is built for the same audience —SaaS finance teams managing technical accounting in Excel who need audit-ready output without enterprise software.

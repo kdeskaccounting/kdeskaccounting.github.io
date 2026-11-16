@@ -219,7 +219,7 @@ The journal entries above all pull from the same [lease amortization schedule](/
 
 That's exactly what the ASC 842 Lease Accounting Workbook handles — 20 leases, 120-month amortization schedule, period-level journal entry aggregation, and a reconciliation tab that confirms everything ties to $0 every month.
 
-**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
+**[$249, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 
 Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) to see it working before you buy.
 

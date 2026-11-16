@@ -179,7 +179,7 @@ After commencement, the ROU asset amortizes to zero over the lease term — see 
 
 The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles the full calculation — ROU asset opening balance including IDC, prepaid, and incentives; 120-month amortization schedule per lease; period journal entry aggregation — for up to 20 leases in a single file.
 
-[**Get the Workbook ($97) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
+[**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 
 [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 

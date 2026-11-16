@@ -175,7 +175,7 @@ Once a lease is classified, the next steps are [calculating the right-of-use ass
 
 The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) handles both lease types in a single workbook — you classify each lease on input, and the schedule, journal entries, and rollforward adjust automatically.
 
-**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
+**[$249, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 
 Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) first.
 

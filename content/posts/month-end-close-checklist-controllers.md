@@ -238,7 +238,7 @@ A 5-tab Excel workbook that holds your entire close in one place: 42 pre-populat
 **[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $79
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.
 
-**[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $97
+**[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $249
 Handles 20 leases (operating + finance), 120-month amortization schedule, period journal entries, and balance sheet reconciliation. [Try the free 3-lease version →](https://kdeskaccounting.gumroad.com/l/gljxc)
 
 **[Fixed Asset Rollforward Workbook](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)** — $79

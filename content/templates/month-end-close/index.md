@@ -21,7 +21,7 @@ faq:
   - q: "Does it work on a Mac?"
     a: "Yes. Pure Excel formulas — no VBA macros, no Windows-only features, no dynamic-array spills. Works on Excel 2016, Excel 365, and Excel for Mac."
   - q: "Why is this free when your other workbooks are paid?"
-    a: "This workbook is structural — it holds your close together but does not compute the technical accounting schedules. Our paid workbooks (ASC 606 Commission Accrual at $79, ASC 842 Lease Accounting at $97, Fixed Asset Rollforward at $79) handle the math-heavy areas that take controllers the longest. The free Close Checklist is the scaffolding; the paid workbooks are the engines."
+    a: "This workbook is structural — it holds your close together but does not compute the technical accounting schedules. Our paid workbooks (ASC 606 Commission Accrual at $79, ASC 842 Lease Accounting at $249, Fixed Asset Rollforward at $79) handle the math-heavy areas that take controllers the longest. The free Close Checklist is the scaffolding; the paid workbooks are the engines."
   - q: "Can I customize the pre-populated task list?"
     a: "Yes. The 42 tasks are starter content drawn from a typical SaaS controller's close. Add rows for tasks specific to your company (board reporting, KPI calculations, cap-table updates), delete rows that don't apply, change Owner/Due Date for your team. The Sign-Off summary counts whatever's in the Calendar."
   - q: "How does the materiality flag on Reconciliations work?"
@@ -153,7 +153,7 @@ If you're tired of rebuilding the technical schedules from scratch each month:
 | Workbook | What it does | Price |
 |---|---|---|
 | **[ASC 606 Commission Accrual Workbook](/templates/asc606/)** | Capitalizes and amortizes sales commissions under ASC 340-40. 50 deals, three amortization methods, JE generator, rollforward, reconciliation. | $79 |
-| **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** | ROU asset, lease liability, amortization schedule for operating + finance leases. 20 leases, six-category JE generator. | $97 |
+| **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** | ROU asset, lease liability, amortization schedule for operating + finance leases. 20 leases, six-category JE generator. | $249 |
 | **[Fixed Asset Rollforward Workbook](/templates/fixed-assets/)** | 50 capitalized assets, four depreciation methods, JE generator with GL system presets, five-way reconciliation. | $79 |
 
 Or run them all on a free browser-based estimate first: **[Free Amortization Calculator →](/calculator/)**

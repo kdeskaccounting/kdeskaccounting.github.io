@@ -42,7 +42,7 @@ faq:
     a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
-If you're implementing ASC 842 for the first time, or your current spreadsheet breaks every time a lease changes, this workbook handles the math correctly and produces audit-ready output. **$97, one-time purchase. No subscription. No macros.**
+If you're implementing ASC 842 for the first time, or your current spreadsheet breaks every time a lease changes, this workbook handles the math correctly and produces audit-ready output. **$249, one-time purchase. No subscription. No macros.**
 
 [Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/phxigq)
 

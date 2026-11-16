@@ -344,7 +344,7 @@ If you are building out your finance tech stack in Excel, these may be useful:
 - **[Month-End Close Checklist for Controllers](/posts/month-end-close-checklist-controllers/)** — the process that feeds your dashboard with clean monthly data.
 - **[SaaS Metrics & ARR Dashboard](/templates/saas-metrics/)** ($67) — the workbook version of this guide: 11 metrics from seven monthly inputs, board-ready dashboard, 24-month trend table.
 - **[ASC 606 Commission Workbook](/templates/asc606/)** ($79) — automates commission capitalization under ASC 340-40, which directly affects your CAC calculations.
-- **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($97) — if your SaaS company has office leases, this handles the ROU asset and liability schedules that show up on your balance sheet.
+- **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($249) — if your SaaS company has office leases, this handles the ROU asset and liability schedules that show up on your balance sheet.
 - **[Startup Runway Calculator](/templates/runway/)** ($49) — turns your MRR growth assumptions and burn rate into a month-by-month cash forecast.
 
 ---

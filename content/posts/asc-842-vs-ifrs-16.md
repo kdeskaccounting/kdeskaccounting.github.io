@@ -164,7 +164,7 @@ If you need the period-by-period entries, see [ASC 842 Journal Entries: A Comple
 
 The [ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq) is structured around US GAAP but the amortization math and journal entry logic is compatible with IFRS 16 as well.
 
-**[$97, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
+**[$249, one time. No subscription. Get it here →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 
 Or [try the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc) before you buy.
 

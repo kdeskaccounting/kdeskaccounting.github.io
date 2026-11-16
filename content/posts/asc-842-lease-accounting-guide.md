@@ -248,7 +248,7 @@ Purpose-built lease software earns its cost at 50 or more leases, or when leases
 
 That is the design of the [ASC 842 Lease Accounting Workbook](/templates/asc842/): 20 leases, operating and finance, 120-month schedules per lease, a JE Generator that uses your GL codes, a rollforward split current and non-current, the maturity analysis for the footnote, and a reconciliation tab that compares the entries to the register. Every number in this guide's worked example comes from its sample data, and the [walkthrough video](/templates/asc842/#walkthrough) runs through each tab in four minutes.
 
-**[Get the workbook — $97, one time, no subscription →](https://kdeskaccounting.gumroad.com/l/phxigq)**
+**[Get the workbook — $249, one time, no subscription →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 
 Not ready to buy? [Download the free 3-lease version](https://kdeskaccounting.gumroad.com/l/gljxc): the register and the schedule, capped at three leases and 36 months, so you can test the mechanics on your own leases first.
 

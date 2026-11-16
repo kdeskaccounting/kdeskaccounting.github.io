@@ -217,7 +217,7 @@ The [**Startup Runway Calculator**](/templates/runway/) ($49) gives you a month-
 
 If you want to test the layout before purchasing, grab the [**free version**](https://kdeskaccounting.gumroad.com/l/runway-calculator-free) — it includes the core model with limited scenarios.
 
-For companies that also need to track the accounting side of their spending decisions, the [ASC 606 Commission Capitalization Workbook](/templates/asc606/) ($79) handles commission expense amortization under ASC 340-40, and the [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($97) handles the lease liability and ROU asset schedules for any office space decisions.
+For companies that also need to track the accounting side of their spending decisions, the [ASC 606 Commission Capitalization Workbook](/templates/asc606/) ($79) handles commission expense amortization under ASC 340-40, and the [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($249) handles the lease liability and ROU asset schedules for any office space decisions.
 
 ---
 
