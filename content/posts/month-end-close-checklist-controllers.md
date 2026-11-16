@@ -235,7 +235,7 @@ Five of the most time-consuming finance tasks — close orchestration, deferred 
 **[Month-End Close Checklist + Tie-Out Workbook](/templates/month-end-close/)** — **Free**
 A 5-tab Excel workbook that holds your entire close in one place: 42 pre-populated tasks, 18 subledger reconciliations with materiality flag, JE tracker, and printable sign-off. Pay What You Want, $0 minimum.
 
-**[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $79
+**[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $249
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.
 
 **[ASC 842 Lease Accounting Workbook](https://kdeskaccounting.gumroad.com/l/phxigq)** — $249

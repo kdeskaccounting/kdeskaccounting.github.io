@@ -417,7 +417,7 @@ Or [try the free 5-asset version](https://kdeskaccounting.gumroad.com/l/fixed-as
 
 If you are building out your accounting infrastructure in Excel, these templates handle other common pain points for SaaS finance teams:
 
-- **[ASC 606 Commission Capitalization Workbook](/templates/asc606/)** ($79) —Automates commission capitalization, amortization, and journal entries under ASC 340-40. If you are capitalizing sales commissions, this saves hours every month-end.
+- **[ASC 606 Commission Capitalization Workbook](/templates/asc606/)** ($249) —Automates commission capitalization, amortization, and journal entries under ASC 340-40. If you are capitalizing sales commissions, this saves hours every month-end.
 - **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($249) —Full lease accounting schedule with ROU asset, lease liability, amortization, and journal entries. Handles both operating and finance leases.
 - **[Startup Runway Calculator](/templates/runway/)** ($49) —Cash flow forecasting with two-rate revenue growth, departmental hiring plans, and scenario modeling for board-ready runway analysis.
 
