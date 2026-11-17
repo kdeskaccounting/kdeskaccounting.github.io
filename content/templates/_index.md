@@ -14,7 +14,7 @@ Each template is purpose-built for one workflow. No generic spreadsheet packs. E
 All five paid workbooks plus the free close checklist in one purchase. $693 bought separately. Same Setup / inputs / JE Generator / reconciliation conventions in every file.
 
 ### [ASC 842 Lease Accounting Workbook](/templates/asc842/) — $249
-ROU asset, lease liability, amortization schedule, journal entries, rollforward, and disclosure table for operating and finance leases. 20-lease capacity. Non-chained PV formulas. Free 3-lease version available.
+ROU asset, lease liability, amortization schedule, journal entries, rollforward, and disclosure table for operating and finance leases. 20-lease capacity. Escalating rent, free rent and irregular payment schedules. Free 3-lease version available.
 
 ### [ASC 606 Commission Capitalization Workbook](/templates/asc606/) — $249
 Capitalizes and amortizes sales commissions under ASC 340-40 for SaaS companies with multi-year contracts. 50-deal capacity, three amortization methods, automated journal entries, and reconciliation. Free 5-deal version available.

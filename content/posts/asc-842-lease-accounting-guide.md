@@ -244,7 +244,7 @@ The full 42-task calendar those steps sit inside, with the reconciliation rows f
 
 ## Excel or Software?
 
-Purpose-built lease software earns its cost at 50 or more leases, or when leases live in several entities and currencies. Below that, the accounting is well within Excel, provided the file is built for the month-end use case rather than a one-time calculation: one register, one discount rate cell per lease, a period selector that drives every tab, non-chained PV formulas, and a reconciliation that reads zero before anything is posted.
+Purpose-built lease software earns its cost at 50 or more leases, or when leases live in several entities and currencies. Below that, the accounting is well within Excel, provided the file is built for the month-end use case rather than a one-time calculation: one register, one discount rate cell per lease, a period selector that drives every tab, a payment schedule you can override month by month, and a reconciliation that reads zero before anything is posted.
 
 That is the design of the [ASC 842 Lease Accounting Workbook](/templates/asc842/): 20 leases, operating and finance, 120-month schedules per lease, a JE Generator that uses your GL codes, a rollforward split current and non-current, the maturity analysis for the footnote, and a reconciliation tab that compares the entries to the register. Every number in this guide's worked example comes from its sample data, and the [walkthrough video](/templates/asc842/#walkthrough) runs through each tab in four minutes.
 

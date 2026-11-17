@@ -203,7 +203,7 @@ Building the schedule for one lease takes a few hours. Maintaining it across 5�
 
 **4. Audit traceability.** Auditors want to trace each balance sheet line back to the underlying schedule. With a manual workbook, this tracing is manual and slow.
 
-**5. Error compounding.** Chained formulas mean one wrong input in Period 1 propagates through all 120 periods. Non-chained PV formulas calculate each period independently, so errors don't compound.
+**5. Error compounding.** Chained formulas mean one wrong input in Period 1 propagates through all 120 periods. A manual schedule has no check that catches it; a reconciliation that ties every period to $0 does.
 
 ---
 
@@ -227,7 +227,7 @@ Multiple commencement dates, lease modifications that require remeasurement, per
 
 If you have one or two leases and stable terms, building this in Excel is a reasonable half-day project. Follow the steps in this guide, test the final-period zero balance, and document your IBR assumption.
 
-If you have 5–20 leases, different commencement dates, or lease modifications in your history, the maintenance burden of a manual schedule adds up fast. The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles 20 leases with 120-month schedules per lease, non-chained PV formulas, period-level JE aggregation, and a reconciliation tab — all in one Excel file.
+If you have 5–20 leases, different commencement dates, or lease modifications in your history, the maintenance burden of a manual schedule adds up fast. The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles 20 leases with escalating rent, free rent and irregular payment schedules, period-level JE aggregation, and a reconciliation tab — all in one Excel file.
 
 [**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 
