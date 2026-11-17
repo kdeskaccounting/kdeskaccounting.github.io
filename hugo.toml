@@ -18,7 +18,9 @@ theme = "PaperMod"
   ShowPostNavLinks = true
   ShowBreadCrumbs = true
   ShowCodeCopyButtons = true
-  defaultTheme = "auto"
+  # Light-only: the ledger palette has no dark counterpart; the toggle is hidden (restyle 2026-11-17).
+  defaultTheme = "light"
+  disableThemeToggle = true
   ShowToc = true
   DateFormat = "January 2, 2006"
 
@@ -35,7 +37,7 @@ theme = "PaperMod"
 
   [params.label]
     text = "KDesk Accounting"
-    icon = "/images/brand/kdesk-mark.svg"
+    icon = "/images/brand/kdesk-logo-nav.svg"
     iconHeight = 34
 
   [params.fuseOpts]

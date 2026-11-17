@@ -34,21 +34,4 @@
     {{- with $.Params.buy_url }}<a class="kd-btn kd-btn--primary" href="{{ . }}" target="_blank" rel="noopener">Get the full workbook{{ if gt $price 0 }} (${{ $price }}){{ end }} &rarr;</a>{{ end }}
   </div>
 </section>
-<style>
-.kd-cmp{max-width:900px;margin:2rem auto 1rem;padding:0 1rem}
-.kd-cmp__title{font-size:1.35rem;margin:0 0 .4rem}
-.kd-cmp__lead{color:var(--secondary,#555);margin:0 0 1rem;font-size:.97rem}
-.kd-cmp__scroll{overflow-x:auto}
-.kd-cmp__table{width:100%;border-collapse:collapse;font-size:.95rem}
-.kd-cmp__table th,.kd-cmp__table td{padding:.55rem .75rem;border-bottom:1px solid var(--border,#e3e3dc);text-align:left;vertical-align:top}
-.kd-cmp__table thead th{background:var(--code-bg,#f6f6f0);font-weight:700}
-.kd-cmp__table thead th:nth-child(3){border-top:3px solid var(--kd-blue,#2e75b6)}
-.kd-cmp__table tbody th{font-weight:500}
-.kd-cmp__table td:nth-child(2),.kd-cmp__table td:nth-child(3){text-align:center;white-space:nowrap}
-.kd-cmp__yes{color:#1f7a3f;font-weight:700}
-.kd-cmp__no{color:#9a9a9a}
-.kd-cmp__price{font-weight:400;color:var(--secondary,#666);font-size:.85rem;margin-left:.25rem}
-.kd-cmp__ctas{display:flex;flex-wrap:wrap;gap:.6rem;margin-top:1rem}
-@media(max-width:600px){.kd-cmp__ctas .kd-btn{flex:1 1 auto;justify-content:center}}
-</style>
 {{- end }}

@@ -99,6 +99,11 @@
 </script>
 {{- end }}
 
+{{/* Brand type: Newsreader (headings), IBM Plex Sans (body), IBM Plex Mono (figures). Shared with kdeskconsulting.com. */}}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
 {{/* Favicons */}}
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -106,19 +111,6 @@
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
-{{/* Scroll-triggered fade-in animations */}}
-<script>
-document.addEventListener('DOMContentLoaded',function(){
-  var targets=document.querySelectorAll('.kd-proof-card,.kd-product,.kd-post-card,.kd-section__hd,.kd-animate-target');
-  if(!targets.length||!('IntersectionObserver' in window))return;
-  var obs=new IntersectionObserver(function(entries){
-    entries.forEach(function(e){
-      if(e.isIntersecting){e.target.classList.add('kd-animate');obs.unobserve(e.target);}
-    });
-  },{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
-  targets.forEach(function(t){obs.observe(t);});
-});
-</script>
 
 {{/* GA4 Key Event instrumentation — outbound Gumroad clicks, calculator opens, internal CTA clicks.
      Fires events even if the click opens a new tab. Falls back silently if gtag isn't loaded. */}}
