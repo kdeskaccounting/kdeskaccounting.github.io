@@ -32,7 +32,7 @@ compare:
     - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle both operating and finance leases?"
-    a: "Yes. Each lease in the register has a type dropdown — operating or finance. The amortization schedule, JE Generator, and rollforward all adjust automatically."
+    a: "Yes. Each lease in Lease Data has a type dropdown: operating, finance or short-term exempt. The amortization schedule, JE Generator, and rollforward all adjust automatically."
   - q: "Does it work on a Mac?"
     a: "Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
   - q: "What if I need to modify a lease mid-term?"
@@ -59,41 +59,45 @@ No subscription. No new software platform. No black-box calculations.
 
 ## What's in the Workbook
 
-Seven tabs, each with a specific job. You enter data in Setup and the Lease Register; every other tab calculates automatically.
+Eight working tabs plus an Instructions tab. You enter data in Setup and Lease Data (and, if a lease has an irregular rent schedule, the Payment Schedule). Every other tab calculates automatically.
 
 ### Setup
 
-Company name, incremental borrowing rate (IBR) defaults, fiscal year start, and reporting period selector. Every downstream tab — amortization schedules, journal entries, rollforward, disclosure — reads from Setup. Change the reporting period once; the entire workbook shifts.
+Company name, GL account codes, default IBR, default payment timing (beginning or end of month), the mid-month commencement convention, and the Selected Period. The JE Generator, Rollforward, Reconciliation and Dashboard all read the Selected Period. Change it once and every tab moves to that month.
 
-### Lease Register (20-lease capacity)
+### Lease Data (20-lease capacity)
 
-One row per lease. Inputs: lease type (operating or finance), commencement date, term in months, monthly payment, IBR, initial direct costs (IDC), lease incentives, and prepaid rent. The ROU asset and opening lease liability calculate automatically from your inputs. No formulas to write.
+One row per lease: name, type (operating, finance or short-term exempt), asset class, commencement date, term (1 to 360 months), base monthly payment, IBR, initial direct costs and lease incentives. Then the payment terms: payment timing, free-rent months, and an escalation (a percentage or a fixed dollar step every N months, 12 by default). The lease liability and ROU asset calculate from your inputs, and an Input Check column flags anything missing or out of range.
 
-### Amortization Schedule (120-month per lease)
+### Payment Schedule
 
-For each lease: beginning liability, interest accrual, cash payment, principal reduction, ending liability, beginning ROU balance, ROU amortization, ending ROU balance. Non-chained PV formulas mean no cascading errors when a lease is modified — change an input, the schedule recalculates cleanly.
+One row per lease, one column per month, out to 360 months. Each month is filled in from Lease Data with free rent and escalations applied, and every calculation in the workbook reads from this tab. If a lease doesn't follow a neat pattern, type the actual payment over any month: typed months turn orange so you can see what was overridden.
+
+### Lease Schedule
+
+Pick any lease from the dropdown to see its amortization table for the first 120 months: beginning liability, interest, payment, principal, ending liability, and the ROU asset roll (single lease cost for operating leases; depreciation and interest for finance leases). Each month's closing balance is the next month's opening balance, and the liability and ROU asset both close to zero at the end of the term.
 
 ### JE Generator
 
-Six journal entry categories aggregated for the selected reporting period: operating lease expense, finance lease depreciation, finance lease interest, capitalization of new leases, derecognition of terminated leases, and short-term lease expense. GL account codes are user-configurable from Setup. Copy-paste ready for your accounting system.
+Aggregated journal entries for the Selected Period, using your GL codes: operating lease cost, interest and ROU amortization; finance lease depreciation, interest and principal; short-term lease expense, including the straight-line adjustment to accrued or prepaid rent when a short-term lease has free rent or an escalation. Debits equal credits, and a lease-by-lease detail table below shows where each number comes from.
 
-### Balance Sheet Rollforward
+### Rollforward
 
-Opening balance, additions (new leases), reductions (amortization, terminations), and closing balance — split between current and non-current portions, for both operating and finance leases. Ties directly to the JE Generator.
-
-### Disclosure Table
-
-Maturity analysis bucketed by year: within 1 year, 1–3 years, 3–5 years, beyond 5 years, plus total. Weighted-average remaining lease term and weighted-average IBR. Formatted for direct use in financial statement footnotes.
+Beginning balance, additions, reductions and ending balance for operating and finance lease liabilities, ROU assets and short-term accrued rent. Current versus long-term split of the liability at period end, and the ASC 842-20-50 maturity analysis: undiscounted payments by year for five years and thereafter, less imputed interest, back to the present value of the liability.
 
 ### Reconciliation
 
-Confirms the schedule ties to $0 variance every period. If the workbook has an error, this tab will show it.
+Ties the JE Generator to the lease schedules for the Selected Period: interest, payments, total expense, cash paid against the Payment Schedule, and the short-term accrued rent movement. Every variance should read $0; anything else points you to the problem.
+
+### Dashboard
+
+Total lease liability, net ROU assets, period expense, active lease count and operating/finance mix, with a one-line summary for every lease.
 
 ---
 
 ## A Worked Example — Office Lease, Month 1
 
-To make the mechanics concrete: a 36-month office lease at $5,000/month, 6% IBR, no initial direct costs or incentives.
+To make the mechanics concrete: a 36-month office lease at $5,000/month paid at the end of each month, 6% IBR, no initial direct costs or incentives, no escalation.
 
 **Opening lease liability** = PV(6%/12, 36, 5000) = **$164,355**
 
@@ -115,18 +119,18 @@ To make the mechanics concrete: a 36-month office lease at $5,000/month, 6% IBR,
 
 ```
 DR  Lease Expense               5,000
-DR  Lease Liability             4,180
+DR  Lease Liability             4,178
     CR  Cash                              5,000
-    CR  Right-of-Use Asset                4,180
+    CR  Right-of-Use Asset                4,178
 ```
 
-All of this is automatic. You enter the inputs in the Lease Register; every number is calculated across all 120 periods.
+All of this is automatic. You enter the inputs in Lease Data; every number is calculated for every month of the term. With rent paid at the start of each month instead, or with an escalation or free rent, the workbook builds the payments on the Payment Schedule and discounts them accordingly.
 
 ---
 
 ## Finance Lease — How It Differs
 
-Finance leases use a different income statement treatment: straight-line depreciation on the ROU asset plus front-loaded interest expense on the liability. The JE Generator handles both types automatically based on the lease classification you enter in the register.
+Finance leases use a different income statement treatment: straight-line depreciation on the ROU asset plus front-loaded interest expense on the liability. The JE Generator handles both types automatically based on the lease classification you enter in Lease Data.
 
 Example: $2,500/month equipment lease, 48 months, 7% IBR.
 
@@ -139,7 +143,7 @@ Month 1 JE Generator output:
 ```
 DR  Depreciation Expense        2,175
 DR  Interest Expense              609
-DR  Lease Liability             1,877
+DR  Lease Liability             1,891
     CR  Accumulated Depreciation          2,175
     CR  Cash                              2,500
 ```
@@ -150,7 +154,7 @@ The workbook generates separate depreciation and interest lines for finance leas
 
 ## Short-Term Lease Exemption
 
-Mark a lease as "Short-Term" in the register and the workbook skips ROU asset and liability recognition entirely. The payment runs directly to the JE Generator as straight operating expense. The short-term election is made per lease — you can mix short-term and capitalized leases in the same workbook.
+Mark a lease as "Short-term Exempt" in Lease Data and the workbook skips ROU asset and liability recognition entirely. Expense is recognized straight-line over the term (total payments ÷ term), so free rent or an escalation on a short-term lease builds accrued or prepaid rent rather than lumpy expense. The short-term election is made per lease — you can mix short-term and capitalized leases in the same workbook.
 
 ---
 
@@ -175,11 +179,11 @@ This workbook is designed for companies with up to 20 leases. If you have 50–1
 | Specification | Detail |
 |---------------|---------|
 | Lease capacity | 20 leases |
-| Schedule length | 120 months per lease |
-| Lease types | Operating and Finance |
+| Lease term | 1 to 360 months (Lease Schedule tab displays the first 120) |
+| Lease types | Operating, finance and short-term exempt |
 | Excel version | 2016, 365, Mac (no macros) |
 | File format | .xlsx |
-| Formula protection | Locked formula cells, unlocked input cells |
+| Inputs | Yellow input cells; everything else is a formula |
 | Price | $249 one-time |
 
 ---
@@ -195,13 +199,13 @@ Not ready to buy? [Try the free 3-lease version](https://kdeskaccounting.gumroad
 ## Frequently Asked Questions
 
 **Does it handle both operating and finance leases?**
-Yes. Each lease in the register has a type dropdown — operating or finance. The amortization schedule, JE Generator, and rollforward all adjust automatically.
+Yes. Each lease in Lease Data has a type dropdown: operating, finance or short-term exempt. The amortization schedule, JE Generator, and rollforward all adjust automatically.
 
 **Does it work on a Mac?**
 Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. It works on Excel 2016, Excel 365, and Excel for Mac.
 
 **What if I need to modify a lease mid-term?**
-Update the inputs in the Lease Register (new term, new payment, new IBR as of the modification date). The schedule recalculates from that point. You handle the remeasurement journal entry in your accounting system using the output from the JE Generator.
+Update the inputs in Lease Data (new term, new payment, new IBR as of the modification date). The schedule recalculates from that point. You handle the remeasurement journal entry in your accounting system using the output from the JE Generator.
 
 **Can I use it for IFRS 16?**
 The underlying PV math and amortization logic is identical. Classify all leases as "Finance" and the workbook produces depreciation + interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same.
