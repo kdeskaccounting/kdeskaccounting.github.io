@@ -235,4 +235,4 @@ If you have 5–20 leases, different commencement dates, or lease modifications 
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

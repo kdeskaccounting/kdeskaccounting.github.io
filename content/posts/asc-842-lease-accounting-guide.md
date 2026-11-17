@@ -274,4 +274,4 @@ IFRS 16 has a single lessee model: every lease is treated like an ASC 842 financ
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

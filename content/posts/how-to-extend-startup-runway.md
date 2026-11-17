@@ -230,4 +230,4 @@ For companies that also need to track the accounting side of their spending deci
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

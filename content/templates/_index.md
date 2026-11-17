@@ -1,12 +1,12 @@
 ---
 title: "Excel Accounting Templates for SaaS Startups"
-description: "Audit-ready Excel templates for controllers and finance managers at SaaS startups. ASC 606 commission capitalization, ASC 842 lease accounting, fixed asset rollforward, SaaS metrics, startup runway modeling, and a free month-end close workbook."
+description: "Excel templates for controllers and finance managers at SaaS startups. ASC 606 commission capitalization, ASC 842 lease accounting, fixed asset rollforward, SaaS metrics, startup runway modeling, and a free month-end close workbook."
 summary: "Seven purpose-built Excel workbooks for technical accounting, financial operations and equity-comp planning — six paid, one free. No macros, no subscription, no software contract. Every paid workbook has a free reduced-capacity version you can try first."
 ---
 
 Seven Excel workbooks built for controllers and finance managers at Series A–C SaaS companies — plus one for the equity-compensated employees they work with.
 
-Each template is purpose-built for one workflow. No generic spreadsheet packs. Every workbook ships formula-complete with sample data, protected formula cells, and yellow input zones — and every paid workbook has a free, reduced-capacity version so you can see the mechanics on your own data before you buy.
+Each template is purpose-built for one workflow. No generic spreadsheet packs. Every workbook ships formula-complete with sample data and yellow input cells — and every paid workbook has a free, reduced-capacity version so you can see the mechanics on your own data before you buy.
 
 ## Available Templates
 

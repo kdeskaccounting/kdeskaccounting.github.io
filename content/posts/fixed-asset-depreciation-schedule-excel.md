@@ -4,7 +4,7 @@ date: 2026-03-19
 product: fixed-assets
 lastmod: 2026-09-01
 description: "How to build a fixed asset depreciation schedule in Excel — straight-line, double-declining balance, sum-of-years methods, journal entries, and rollforward — plus a ready-made workbook if you don't want to build it from scratch."
-summary: "A step-by-step guide to building a fixed asset depreciation schedule in Excel. Covers three depreciation methods with formulas, worked examples, journal entries, and the register structure you need for audit-ready reporting. Includes a link to a pre-built audit-ready workbook."
+summary: "A step-by-step guide to building a fixed asset depreciation schedule in Excel. Covers three depreciation methods with formulas, worked examples, journal entries, and the register structure that supports a clean rollforward. Includes a link to a pre-built workbook."
 tags: ["depreciation schedule", "fixed assets", "depreciation methods", "Excel", "Excel template", "straight line depreciation", "ASC 360", "accounting"]
 author: "KDesk Accounting"
 ShowToc: true
@@ -439,4 +439,4 @@ No. The depreciation schedule shows each asset's expense period by period. The r
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

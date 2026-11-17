@@ -48,7 +48,7 @@ faq:
     a: "Email hello@kdeskaccounting.com — for portfolios above 50 assets, dedicated fixed-asset software (Sage Fixed Assets, Bloomberg Tax) usually earns its cost. We can also discuss a custom build."
 ---
 
-If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this fixed asset register and depreciation schedule template handles the math correctly and produces audit-ready output. **$79 one-time. No subscription. No macros.**
+If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this fixed asset register and depreciation schedule template handles the math and produces a rollforward that ties to the GL. **$79 one-time. No subscription. No macros.**
 
 [Get the Workbook ($79) →](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)
 
@@ -174,7 +174,7 @@ The Schedule's `Switch Flag` column makes the switch visible. Once switched, the
 
 - Controllers at Series A–C SaaS companies preparing for or in their first financial statement audit
 - Finance managers maintaining a homegrown Excel asset register that breaks every time someone capitalizes a new fleet
-- Companies with 5–50 active capitalized assets needing audit-defensible schedules
+- Companies with 5–50 active capitalized assets needing schedules that reconcile to the GL
 - Any controller spending more than 30 minutes per month-end booking depreciation and tying the rollforward
 
 ---

@@ -18,10 +18,10 @@ faq:
   - q: "What should a month-end close checklist include?"
     a: "Cutoff tasks (AP, AR, payroll, bank), subledger-to-GL reconciliations, technical accounting schedules (revenue, deferred commissions, leases, fixed assets), accruals and prepaids, equity and tax entries, financial statement review, and a sign-off with owner and reviewer for each task."
   - q: "Who signs off on the month-end close?"
-    a: "Each task has a preparer and a reviewer; the controller or CFO signs off on the close package once reconciliations tie within materiality, journal entries are reviewed, and the financial statements are distributed. A printable sign-off page makes the evidence trail audit-ready."
+    a: "Each task has a preparer and a reviewer; the controller or CFO signs off on the close package once reconciliations tie within materiality, journal entries are reviewed, and the financial statements are distributed. A printable sign-off page keeps the evidence trail in one place."
 ---
 
-A fast, clean close isn't about working harder the last three days of the month. It's about having a repeatable sequence that everyone on the team follows, with supporting schedules that produce audit-ready output without heroics.
+A fast, clean close isn't about working harder the last three days of the month. It's about having a repeatable sequence that everyone on the team follows, with supporting schedules that tie out without heroics.
 
 This checklist covers the full close cycle — from cutoff through final signoff — with specific attention to the technical areas (lease accounting, deferred commissions, deferred revenue) where growing companies tend to slow down or make errors.
 
@@ -263,8 +263,8 @@ A tie-out is a reconciliation that proves a subledger or supporting schedule agr
 Cutoff tasks (AP, AR, payroll, bank), subledger-to-GL reconciliations, technical accounting schedules (revenue, deferred commissions, leases, fixed assets), accruals and prepaids, equity and tax entries, financial statement review, and a sign-off with owner and reviewer for each task.
 
 **Who signs off on the month-end close?**
-Each task has a preparer and a reviewer; the controller or CFO signs off on the close package once reconciliations tie within materiality, journal entries are reviewed, and the financial statements are distributed. A printable sign-off page makes the evidence trail audit-ready.
+Each task has a preparer and a reviewer; the controller or CFO signs off on the close package once reconciliations tie within materiality, journal entries are reviewed, and the financial statements are distributed. A printable sign-off page keeps the evidence trail in one place.
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

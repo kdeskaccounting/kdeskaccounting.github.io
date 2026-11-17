@@ -244,7 +244,7 @@ The spread between downside and upside is the information your CEO actually need
 
 ## Skip the Build: Use the Runway Calculator Template
 
-Everything described above —the input panel, dynamic growth rates, monthly/quarterly/annual frequency toggle, scenario analysis, and automatic runway detection —is already built, tested, and audit-ready in the [KDesk Startup Runway Calculator](/templates/runway/).
+Everything described above —the input panel, dynamic growth rates, monthly/quarterly/annual frequency toggle, scenario analysis, and automatic runway detection —is already built and tested in the [KDesk Startup Runway Calculator](/templates/runway/).
 
 What you get:
 
@@ -271,4 +271,4 @@ Want to test the layout first? Grab the [free version](https://kdeskaccounting.g
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

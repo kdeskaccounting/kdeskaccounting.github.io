@@ -1,7 +1,7 @@
 ---
 title: "ASC 606 Commission Capitalization Excel Template"
-description: "Audit-ready Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
-summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single audit-ready Excel file."
+description: "Excel workbook for capitalizing and amortizing sales commissions under ASC 340-40. Handles 50 deals, three amortization methods, automated journal entries, rollforward, and reconciliation. No macros, no subscription."
+summary: "The ASC 606 Commission Accrual Workbook handles your full deferred commission asset — capitalization, amortization schedule, period journal entries, and rollforward — in a single Excel file."
 lastmod: 2026-09-10
 date: 2026-03-16
 author: "KDesk Accounting"
@@ -44,7 +44,7 @@ faq:
     a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
-If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math correctly and produces audit-ready output. **$249, one-time purchase. No subscription. No macros.**
+If you're capitalizing sales commissions for the first time, or your current spreadsheet breaks every time a deal renews, this workbook handles the math and produces a rollforward that ties to the GL. **$249, one-time purchase. No subscription. No macros.**
 
 [Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
@@ -140,7 +140,7 @@ ASC 340-40-25-4 allows immediate expensing of commissions when the amortization 
 
 - Controllers at Series A–C SaaS companies implementing ASC 606 deferred commission accounting for the first time
 - Finance managers maintaining a fragile manual spreadsheet that breaks when deals renew or amend
-- Companies with 1–50 active deals needing audit-defensible amortization schedules
+- Companies with 1–50 active deals needing amortization schedules that reconcile to the GL
 - Teams preparing for their first audit or audit committee review
 - Any finance team spending more than 2 hours per month close on commission accounting
 

@@ -9,7 +9,7 @@ lastmod: 2026-09-06
 
 ## Who We Are
 
-KDesk Accounting builds practical, audit-ready Excel templates for controllers and finance managers at SaaS startups. Our focus is technical accounting workflows — ASC 606 commission capitalization, ASC 842 lease accounting — that are too complex to manage manually but don't justify a six-figure software contract.
+KDesk Accounting builds practical Excel templates for controllers and finance managers at SaaS startups. Our focus is technical accounting workflows — ASC 606 commission capitalization, ASC 842 lease accounting — that are too complex to manage manually but don't justify a six-figure software contract.
 
 Our templates are built by an accountant with ten years of hands-on experience in sales-compensation accounting, revenue recognition, lease accounting and subledgers at high-growth SaaS companies, including as reporting lead at CaptivateIQ. The target customer is a controller or finance manager at a Series A–C company ($3M–$50M revenue) managing technical accounting in Excel.
 

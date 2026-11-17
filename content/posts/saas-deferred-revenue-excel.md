@@ -305,7 +305,7 @@ In the meantime, if you are dealing with related SaaS accounting workflows, thes
 - [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($249) —lease liability amortization, ROU asset schedules, and journal entries under ASC 842
 - [Startup Runway Calculator](/templates/runway/) ($49) —cash runway modeling with two-rate revenue growth and scenario analysis
 
-Each one is built for the same audience —SaaS finance teams managing technical accounting in Excel who need audit-ready output without enterprise software.
+Each one is built for the same audience —SaaS finance teams managing technical accounting in Excel who need schedules that tie to the GL without enterprise software.
 
 ---
 
@@ -336,4 +336,4 @@ A schedule with one row per contract and one column per month that shows how eac
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

@@ -219,4 +219,4 @@ Debit Deferred Commission Asset (or Capitalized Contract Costs) and credit Accru
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

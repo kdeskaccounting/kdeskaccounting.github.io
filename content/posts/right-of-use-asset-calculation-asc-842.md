@@ -185,4 +185,4 @@ The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles the full cal
 
 ---
 
-*KDesk Accounting builds audit-ready Excel tools for finance teams. [Browse all templates →](/templates/)*
+*KDesk Accounting builds practical Excel tools for finance teams. [Browse all templates →](/templates/)*

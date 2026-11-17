@@ -1,7 +1,7 @@
 ---
 title: "SaaS Controller Bundle — All Five KDesk Excel Workbooks"
 description: "All five KDesk workbooks in one purchase for $599 instead of $693: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
-summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $249 instead of $693, plus the close checklist that ties them together."
+summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $599 instead of $693, plus the close checklist that ties them together."
 date: 2026-09-01
 lastmod: 2026-09-06
 author: "KDesk Accounting"
@@ -26,7 +26,7 @@ faq:
     a: "Yes. Every workbook is pure Excel formulas — no VBA macros, no Windows-only features. Excel 2016, Excel 365, and Excel for Mac."
 ---
 
-If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — audit-ready, formula-complete, reconciled to $0 — in one purchase. **$249 one-time instead of $693. No subscription. No macros.**
+If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — formula-complete and reconciled to $0 — in one purchase. **$599 one-time instead of $693. No subscription. No macros.**
 
 [Get the Bundle ($599) →](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
 
@@ -52,7 +52,7 @@ Each product page has a four-minute walkthrough video of the workbook, tab by ta
 
 The month-end close checklist's reconciliation tab has a row for deferred commissions, a row for lease liabilities, a row for accumulated depreciation. Each of those rows ties to a schedule — and each schedule is one of the workbooks in this bundle. Buy them together and the JE tracker's source dropdown, the reconciliation rows, and the technical schedules all name the same files.
 
-- **Same conventions everywhere.** Yellow input cells, protected formulas, a Setup tab with one period selector, a JE Generator with your GL codes, a rollforward, and a reconciliation that reads $0 when everything ties.
+- **Same conventions everywhere.** Yellow input cells, a Setup tab with one period selector, a JE Generator with your GL codes, a rollforward, and a reconciliation that reads $0 when everything ties.
 - **Same audit posture.** Every workbook was built around the question an auditor asks first: show me the schedule that supports this balance, and show me that it ties.
 - **One purchase, six library entries.** Gumroad delivers each workbook into your library as its own product, so every file's updates and receipt stay with that workbook.
 
