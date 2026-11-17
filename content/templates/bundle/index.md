@@ -17,7 +17,7 @@ faq:
   - q: "What exactly is in the bundle?"
     a: "Six .xlsx files: the ASC 842 Lease Accounting Workbook (20 leases), the ASC 606 Commission Accrual Workbook (50 deals), the Fixed Asset Rollforward Workbook (50 assets), the SaaS Metrics & ARR Dashboard (24 months), the Startup Runway Calculator (48 months), and the Month-End Close Checklist + Tie-Out Workbook. They are the same files sold individually."
   - q: "How much do I save?"
-    a: "Bought separately the five paid workbooks are $693 ($249 + $249 + $79 + $67 + $49). The bundle is $249, a $94 saving, one-time, no subscription."
+    a: "Bought separately the five paid workbooks are $693 ($249 + $249 + $79 + $67 + $49). The bundle is $599, a $94 saving, one-time, no subscription."
   - q: "Do I get updates?"
     a: "Yes. Gumroad keeps the download link live, and when a workbook gets a version update the new file is added to the same purchase."
   - q: "Can I buy one now and upgrade to the bundle later?"

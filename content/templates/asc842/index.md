@@ -1,9 +1,9 @@
 ---
 title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-Lease Workbook)"
-description: "ASC 842 implementation in Excel: a free 3-lease template and the full audit-ready workbook for controllers. Handles 20 leases, operating and finance lease types, monthly amortization schedules, journal entries, rollforward, and disclosure table. No macros, no subscription."
-summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, period journal entries, balance sheet rollforward, and disclosure table — in a single audit-ready Excel file."
+description: "ASC 842 lease accounting in Excel, without enterprise software: a free 3-lease template and the full 20-lease workbook. Operating, finance and short-term leases, escalating rent and free rent, journal entries, rollforward and disclosure table. No macros, no subscription."
+summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, escalating rent and free rent, period journal entries, balance sheet rollforward, and disclosure table — in a single Excel file you can trace and tie out."
 date: 2026-03-16
-lastmod: 2026-09-07
+lastmod: 2026-11-16
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -21,7 +21,8 @@ compare:
   full_name: "Full workbook"
   rows:
     - ["Leases", "3", "20"]
-    - ["Schedule length", "36 months", "120 months"]
+    - ["Schedule length", "36 months", "120 months (payments up to 30 years)"]
+    - ["Escalating rent, free rent, start- or end-of-month payments", "yes", "yes"]
     - ["Setup, Lease Data and Lease Schedule tabs", "yes", "yes"]
     - ["Operating and finance lease classification", "yes", "yes"]
     - ["JE Generator (your GL codes)", "no", "yes"]
@@ -35,14 +36,22 @@ faq:
   - q: "Does it work on a Mac?"
     a: "Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
   - q: "What if I need to modify a lease mid-term?"
-    a: "Update the inputs in the Lease Register (new term, new payment, new IBR as of the modification date). The schedule recalculates from that point. You handle the remeasurement journal entry in your accounting system using the output from the JE Generator."
+    a: "Modifications aren't automated. A modification is remeasured at the modification date, and changing a lease's inputs recalculates its whole history, so keep a copy of your closed periods before editing a lease."
   - q: "Can I use it for IFRS 16?"
     a: "The underlying PV math and amortization logic is identical. Classify all leases as Finance and the workbook produces depreciation and interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same."
   - q: "What if I have more than 20 leases?"
     a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
 
-If you're implementing ASC 842 for the first time, or your current spreadsheet breaks every time a lease changes, this workbook handles the math correctly and produces audit-ready output. **$249, one-time purchase. No subscription. No macros.**
+## ASC 842 Lease Accounting Without Enterprise Software
+
+**Stop paying for lease accounting software when all you need are schedules you can trace and tie out.**
+
+KDesk gives controllers a structured Excel workbook for operating, finance and short-term leases: ROU asset and liability calculations, escalating rent and free rent, monthly journal entries, balance sheet rollforwards and disclosure support.
+
+No subscription. No new software platform. No black-box calculations.
+
+**$249. One-time purchase. Built for teams managing up to 20 leases.**
 
 [Get the Workbook ($249) →](https://kdeskaccounting.gumroad.com/l/phxigq)
 
@@ -149,7 +158,7 @@ Mark a lease as "Short-Term" in the register and the workbook skips ROU asset an
 
 - Controllers at Series A–C SaaS companies implementing ASC 842 for the first time
 - Finance managers maintaining a fragile manual lease spreadsheet that breaks when leases change
-- Companies with 1–20 active leases needing audit-defensible schedules
+- Companies with 1–20 active leases that want schedules they can trace line by line
 - Teams preparing for their first audit or audit committee review
 - Any finance team spending more than 2 hours per month close on lease journal entries
 
