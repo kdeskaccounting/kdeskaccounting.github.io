@@ -3,7 +3,7 @@ title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-
 description: "ASC 842 lease accounting in Excel, without enterprise software: a free 3-lease template and the full 20-lease workbook. Operating, finance and short-term leases, escalating rent and free rent, journal entries, rollforward and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, escalating rent and free rent, period journal entries, balance sheet rollforward, and disclosure table — in a single Excel file you can trace and tie out."
 date: 2026-03-16
-lastmod: 2026-11-16
+lastmod: 2026-11-18
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -50,6 +50,10 @@ faq:
 KDesk gives controllers a structured Excel workbook for operating, finance and short-term leases: ROU asset and liability calculations, escalating rent and free rent, monthly journal entries, balance sheet rollforwards and disclosure support.
 
 No subscription. No new software platform. No black-box calculations.
+
+> "I need to make a change from LeaseQuery, because we didn't need such a robust software. I evaluated this Lease Accounting Workbook against the numbers from my current software and they were almost identical. I would highly recommend this template for your lease tracking needs."
+>
+> Paula Ward, Controller
 
 **$249. One-time purchase. Built for teams managing up to 20 leases.**
 
