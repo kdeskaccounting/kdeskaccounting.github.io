@@ -1,8 +1,9 @@
 # The weekly email: one worked journal entry a week
 
-**Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to 16 downloaders
-who had had no email (12 in the morning, 4 more in the afternoon; 2 early ASC 606 downloaders are
-held for a wording decision). Issue 1 is scheduled in MailerLite for Tuesday 2026-11-24, 15:00 UTC
+**Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to all 18
+downloaders who had had no email. The two who downloaded the free ASC 606 file before September got
+the standard line, not the "download it again" line: their file had tabs the current free file no
+longer has. Issue 1 is scheduled in MailerLite for Tuesday 2026-11-24, 15:00 UTC
 (7:00 AM Pacific), on Stephen's go. Issues 2 to 4 are drafts.
 
 ## The promise
