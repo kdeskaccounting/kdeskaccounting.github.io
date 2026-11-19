@@ -40,7 +40,7 @@ The same topic is that week's article and KDesk Short, so one piece of work feed
 
 | # | File | Topic | Fact-check |
 |---|---|---|---|
-| 1 | `issue-01-accrue-and-reverse.md` | An accrual with no invoice, and its reversal | 2026-11-19: FIX FIRST, fixed, re-check pending |
+| 1 | `issue-01-accrue-and-reverse.md` | An accrual with no invoice, and its reversal | 2026-11-19: PASS after one fix |
 | 2 | `issue-02-fixed-asset-sold-at-a-loss.md` | Disposal of a fixed asset below book value | 2026-11-19: PASS |
 | 3 | `issue-03-operating-lease-month-one.md` | Month one of an operating lease under ASC 842 | 2026-11-19: PASS |
-| 4 | `issue-04-capitalizing-a-commission.md` | Capitalizing and amortizing a sales commission under ASC 340-40 | 2026-11-19: FIX FIRST, fixed, re-check pending |
+| 4 | `issue-04-capitalizing-a-commission.md` | Capitalizing and amortizing a sales commission under ASC 340-40 | 2026-11-19: PASS after one fix |

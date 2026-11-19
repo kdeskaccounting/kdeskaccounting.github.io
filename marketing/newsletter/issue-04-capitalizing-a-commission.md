@@ -3,7 +3,7 @@ issue: 4
 subject: "The commission you do not expense in January"
 preview: "An $18,000 commission on a new customer, capitalized and amortized over 36 months."
 status: draft
-fact_check: "2026-11-19 FIX FIRST (contract term and renewal facts missing), fixed; re-check pending"
+fact_check: "2026-11-19 PASS (after adding the contract term and renewal facts)"
 ---
 
 **The situation**

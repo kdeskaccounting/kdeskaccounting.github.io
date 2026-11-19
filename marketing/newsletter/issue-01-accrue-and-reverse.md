@@ -3,7 +3,7 @@ issue: 1
 subject: "The accrual you reverse on day one"
 preview: "A $7,500 legal bill with no invoice at month-end, in three entries."
 status: draft
-fact_check: "2026-11-19 FIX FIRST (product claim), fixed; re-check pending"
+fact_check: "2026-11-19 PASS (after one fix to the product line)"
 ---
 
 **The situation**

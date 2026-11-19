@@ -1,6 +1,6 @@
 ---
 kind: one-time note to Gumroad downloaders who have had no email from KDesk
-status: draft, not sent
+status: draft, not sent (fact-check 2026-11-19: PASS after two fixes; strip the italic variant markers and fill the placeholders at send time)
 send: one at a time from the KDesk address, after Stephen approves and the sign-up form is live
 recipients: about 10 people; the list lives outside this repo
 ---
