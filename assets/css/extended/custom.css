@@ -1040,6 +1040,8 @@ strong, b { font-weight: 600; }
   border-radius: 0;
 }
 .kd-email-cta__inner { max-width: none; }
+/* on template pages and the home page the sign-up sits in its own section, so the section sets the spacing */
+.kd-section--signup .kd-email-cta { margin: 0; }
 .kd-email-cta__title { font-family: var(--serif); font-weight: 400; font-size: 28px; line-height: 1.15; margin: 0 0 10px; color: var(--ink); }
 .kd-email-cta__copy { font-size: 16px; line-height: 1.6; color: var(--muted); margin: 0 0 20px; }
 .kd-email-cta__form { display: flex; flex-wrap: wrap; gap: 10px; }

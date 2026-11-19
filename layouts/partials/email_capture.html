@@ -1,21 +1,24 @@
-{{/* Email-capture CTA, rendered at the end of every blog post.
+{{/* Email-capture CTA: the weekly newsletter sign-up. Rendered at the end of every blog post,
+     on the calculator, on each template page and on the home page.
      Form posts to MailerLite (account 2340006, form 187224873250063752 —
      "KDesk blog email capture" feeding the "KDesk Accounting subscribers" group).
      The MailerLite Universal script in extend_head.html upgrades any
-     form.ml-block-form with CSRF, validation, and AJAX submit. */}}
-<aside class="kd-email-cta" data-kd-email-cta>
+     form.ml-block-form with CSRF, validation, and AJAX submit.
+     The welcome automation still sends the five free templates. */}}
+{{- $loc := cond .IsHome "home" (cond (eq .Section "templates") "template_page" "post_end") -}}
+<aside class="kd-email-cta" id="newsletter" data-kd-email-cta>
   <div class="kd-email-cta__inner">
-    <h2 class="kd-email-cta__title">Get all 5 free Excel templates</h2>
+    <h2 class="kd-email-cta__title">One worked journal entry a week</h2>
     <p class="kd-email-cta__copy">
-      ASC 606 commission tracker, ASC 842 lease workbook, runway calculator, fixed asset rollforward,
-      and the month-end close checklist &mdash; the free versions, bundled in one email. Plus monthly accounting tactics.
+      A short email each week: one real situation, the numbers, the entry and the tie-out.
+      Sign up and you also get the free versions of all five Excel templates in one email.
     </p>
     <form class="ml-block-form kd-email-cta__form"
           action="https://assets.mailerlite.com/jsonp/2340006/forms/187224873250063752/subscribe"
           data-code=""
           method="post"
           target="_blank"
-          onsubmit="if(window.gtag){gtag('event','email_signup',{location:'post_end',page:location.pathname});}">
+          onsubmit="if(window.gtag){gtag('event','email_signup',{location:'{{ $loc }}',page:location.pathname});}">
       <label for="kd-email-input" class="kd-email-cta__label">Email address</label>
       <input type="email"
              id="kd-email-input"
@@ -28,7 +31,7 @@
       <input type="hidden" name="ml-submit" value="1">
       <input type="hidden" name="anticsrf" value="true">
       <button type="submit" class="kd-btn kd-btn--primary kd-email-cta__submit">
-        Send me the templates &rarr;
+        Sign me up &rarr;
       </button>
       <p class="kd-email-cta__fine">
         One-click unsubscribe. We never sell your address. Written by a SaaS accounting practitioner for finance teams.
