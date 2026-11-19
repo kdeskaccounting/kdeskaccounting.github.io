@@ -106,7 +106,7 @@ Free 5-Asset Fixed Asset Depreciation Workbook (Excel)
 
 **Tagline / short description:**
 ```
-A free 5-asset version of the Fixed Asset Rollforward Workbook. Three depreciation methods, journal entries, and reconciliation — limited capacity. No email required.
+A free 5-asset version of the Fixed Asset Rollforward Workbook. Three depreciation methods and a 36-month schedule. The full version adds the journal entries, rollforward and reconciliation.
 ```
 
 **Full description:**
