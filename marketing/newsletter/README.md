@@ -1,7 +1,8 @@
 # The weekly email: one worked journal entry a week
 
-**Status (2026-11-19): drafts. Nothing here has been sent, and the sign-up change is on the
-`newsletter-signup` branch, not on `main`.**
+**Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to the 12 downloaders
+who had had no email. Issue 1 is built in MailerLite as a draft campaign for Tuesday 2026-11-24,
+15:00 UTC (7:00 AM Pacific); it is not scheduled until Stephen says go. Issues 2 to 4 are drafts.
 
 ## The promise
 
@@ -21,8 +22,16 @@ which keeps a month of buffer between the promise and the next deadline.
 2. Second-agent fact-check, the same gate as every T1 send: arithmetic, balanced entries, every
    standard cited. Any FIX FIRST blocks the send.
 3. Stephen reads it. He is the authority on the accounting.
-4. Sent from MailerLite as a plain campaign. The footer carries the unsubscribe link and a postal
-   address that is not a home address.
+4. Sent from MailerLite as a regular campaign in the Custom HTML editor, to the group "KDesk
+   Accounting subscribers", Tuesdays at 15:00 UTC. Build the email with
+   `/usr/bin/python3 ~/kdesk-analytics/newsletter/build_issue.py issue-NN-slug.md`, then use
+   Import HTML to upload the ZIP it writes. The script lives outside this repo because it reads
+   the footer's postal address from MailerLite's account settings at build time, so the address
+   is never written here. Send a test to the account's own inbox before scheduling.
+
+MailerLite has no authenticated sending domain yet, so the From line shows a `mailerlite.eu`
+address with replies going to the KDesk inbox. Authenticating `kdeskaccounting.com` there (DNS
+records) would let the email come from `hello@kdeskaccounting.com`.
 
 The same topic is that week's article and KDesk Short, so one piece of work feeds three places.
 
