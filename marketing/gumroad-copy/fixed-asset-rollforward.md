@@ -13,7 +13,7 @@ Fixed Asset Rollforward Workbook (ASC 360, Excel, 50 Assets)
 
 **Tagline / short description (Gumroad subheading, ~140 chars):**
 ```
-Audit-ready Excel workbook for 50 capitalized assets. Four depreciation methods, auto-generated JEs, five-way reconciliation. No macros.
+Excel workbook for 50 capitalized assets. Four depreciation methods, auto-generated JEs, five-way reconciliation. No macros.
 ```
 
 **Cover image alt text:**
@@ -26,7 +26,7 @@ Screenshot of the Fixed Asset Rollforward Workbook showing the Asset Register, S
 ```
 The only fixed asset workbook with an auto-reconciling audit tab, built by a SaaS controller — between toy Etsy templates and $5,000/year enterprise software.
 
-If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this workbook handles the math correctly and produces audit-ready output.
+If you maintain a fixed asset register in Excel and your month-end depreciation routine takes longer than 20 minutes — or your auditor keeps asking for a clean rollforward that ties — this workbook handles the math correctly and produces a rollforward that ties to the schedule, the journal entries, the register and the GL.
 
 ## What's in the workbook
 

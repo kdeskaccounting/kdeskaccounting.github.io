@@ -1,8 +1,8 @@
 # The weekly email: one worked journal entry a week
 
 **Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to the 12 downloaders
-who had had no email. Issue 1 is built in MailerLite as a draft campaign for Tuesday 2026-11-24,
-15:00 UTC (7:00 AM Pacific); it is not scheduled until Stephen says go. Issues 2 to 4 are drafts.
+who had had no email. Issue 1 is scheduled in MailerLite for Tuesday 2026-11-24, 15:00 UTC
+(7:00 AM Pacific), on Stephen's go. Issues 2 to 4 are drafts.
 
 ## The promise
 
