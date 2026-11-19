@@ -31,6 +31,8 @@ The same topic is that week's article and KDesk Short, so one piece of work feed
 - No CPA wording anywhere (the licence is inactive).
 - No tax or legal advice. These are accounting mechanics with the standard cited.
 - Entries balance, and every number in the prose matches the entry.
+- People who get the one-time note stay out of the MailerLite automation group unless they sign up,
+  so "you will not hear from me again" stays true.
 - No recipient addresses in this repo. The list for the one-time note lives in
   `~/kdesk-analytics/private/`.
 
@@ -38,7 +40,7 @@ The same topic is that week's article and KDesk Short, so one piece of work feed
 
 | # | File | Topic | Fact-check |
 |---|---|---|---|
-| 1 | `issue-01-accrue-and-reverse.md` | An accrual with no invoice, and its reversal | pending |
-| 2 | `issue-02-fixed-asset-sold-at-a-loss.md` | Disposal of a fixed asset below book value | pending |
-| 3 | `issue-03-operating-lease-month-one.md` | Month one of an operating lease under ASC 842 | pending |
-| 4 | `issue-04-capitalizing-a-commission.md` | Capitalizing and amortizing a sales commission under ASC 340-40 | pending |
+| 1 | `issue-01-accrue-and-reverse.md` | An accrual with no invoice, and its reversal | 2026-11-19: FIX FIRST, fixed, re-check pending |
+| 2 | `issue-02-fixed-asset-sold-at-a-loss.md` | Disposal of a fixed asset below book value | 2026-11-19: PASS |
+| 3 | `issue-03-operating-lease-month-one.md` | Month one of an operating lease under ASC 842 | 2026-11-19: PASS |
+| 4 | `issue-04-capitalizing-a-commission.md` | Capitalizing and amortizing a sales commission under ASC 340-40 | 2026-11-19: FIX FIRST, fixed, re-check pending |

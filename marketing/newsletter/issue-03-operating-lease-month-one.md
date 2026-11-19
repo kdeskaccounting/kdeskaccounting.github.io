@@ -3,7 +3,7 @@ issue: 3
 subject: "Month one of an operating lease under ASC 842"
 preview: "A 36-month office lease at $5,000 a month. One number drives the entry."
 status: draft
-fact_check: pending
+fact_check: "2026-11-19 PASS"
 ---
 
 **The situation**
@@ -40,7 +40,7 @@ Dr  Lease liability             4,178.22
 
 With level payments made at month-end and no incentives or direct costs, the right-of-use asset and
 the lease liability stay equal every month. Both are $160,176.86 at January 31. If they drift apart
-on a lease like this one, something was posted to the wrong side.
+on a lease like this one, an entry has the wrong amount or the wrong side.
 
 The standard: ASC 842-20-25-6, a single lease cost recognized on a straight-line basis.
 

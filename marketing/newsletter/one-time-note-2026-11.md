@@ -14,17 +14,17 @@ workbooks.
 
 Two things, and then I will leave you alone.
 
-**For people who downloaded the free ASC 606 workbook:**
-1. A few input cells in that file were locked by mistake. It is fixed. Download it again from your
-   Gumroad library and the yellow cells will take your numbers.
+1. *(People who downloaded the free ASC 606 workbook get this line.)* A few input cells in that file
+   were locked by mistake. It is fixed. Download it again from your Gumroad library and the yellow
+   cells will take your numbers.
 
-**For everyone else:**
-1. If anything in it did not tie out, or did not fit how you close, reply and tell me. I fix what
-   people report. Last week a controller's questions turned into version 2 of the lease workbook.
+   *(Everyone else gets this line.)* If anything in it did not tie out, or did not fit how you close,
+   reply and tell me. I fix what people report. In November a controller's questions turned into
+   version 2 of the lease workbook.
 
-2. I am starting a short weekly email: one worked journal entry, with the numbers and the tie-out.
-   The first one is the accrual you reverse on day one. If you would like it, sign up here:
-   https://kdeskaccounting.com/#newsletter
+2. *(Everyone.)* I am starting a short weekly email: one worked journal entry, with the numbers and
+   the tie-out. The first one is the accrual you reverse on day one. If you would like it, sign up
+   here: https://kdeskaccounting.com/#newsletter
 
 If not, you will not hear from me again.
 

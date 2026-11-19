@@ -3,7 +3,7 @@ issue: 1
 subject: "The accrual you reverse on day one"
 preview: "A $7,500 legal bill with no invoice at month-end, in three entries."
 status: draft
-fact_check: pending
+fact_check: "2026-11-19 FIX FIRST (product claim), fixed; re-check pending"
 ---
 
 **The situation**
@@ -49,7 +49,7 @@ Before you close November, list every accrual with its amount and what it is for
 list equals the balance in Accrued liabilities for these items. On December 1, after the reversals,
 last month's list is at zero. Anything still sitting there has no reversal and needs a reason.
 
-The month-end close checklist has a tab for that list:
+The month-end close checklist compares that list's total to the general ledger on its Reconciliations tab:
 https://kdeskaccounting.com/templates/month-end-close/
 
 Stephen

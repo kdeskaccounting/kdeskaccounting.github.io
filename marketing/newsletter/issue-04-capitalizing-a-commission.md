@@ -3,14 +3,14 @@ issue: 4
 subject: "The commission you do not expense in January"
 preview: "An $18,000 commission on a new customer, capitalized and amortized over 36 months."
 status: draft
-fact_check: pending
+fact_check: "2026-11-19 FIX FIRST (contract term and renewal facts missing), fixed; re-check pending"
 ---
 
 **The situation**
 
-A rep closes a new customer in January and earns an $18,000 commission. The commission would not
-have been paid without the contract, and you expect to recover it. You estimate the customer
-relationship will last three years.
+A rep closes a new customer in January and earns an $18,000 commission. The contract runs one year,
+and renewals pay no commission. The commission would not have been paid without the contract, and
+you expect to recover it. You estimate the customer relationship will last three years.
 
 **January: capitalize it**
 
@@ -39,8 +39,8 @@ judgment, and auditors ask to see how you made it.
 
 **The tie-out**
 
-At December 31 the asset is $18,000 less twelve months at $500, or $12,000: $6,000 current and
-$6,000 noncurrent. The rollforward reads beginning balance, plus capitalized, less amortization,
+At December 31 the asset is $18,000 less twelve months at $500, or $12,000. Many companies present
+$6,000 of it as current and $6,000 as noncurrent. The rollforward reads beginning balance, plus capitalized, less amortization,
 equals ending, and the ending balance totals by contract in the subledger.
 
 The standard: ASC 340-40-25-1 for capitalizing, 340-40-35-1 for amortizing, and the practical

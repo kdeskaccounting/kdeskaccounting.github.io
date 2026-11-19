@@ -3,7 +3,7 @@ issue: 2
 subject: "Selling a van for less than it is worth on the books"
 preview: "Cost $48,000, sold for $12,000 after 42 months. Two entries and a $2,400 loss."
 status: draft
-fact_check: pending
+fact_check: "2026-11-19 PASS"
 ---
 
 **The situation**
