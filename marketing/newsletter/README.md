@@ -1,7 +1,8 @@
 # The weekly email: one worked journal entry a week
 
-**Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to the 12 downloaders
-who had had no email. Issue 1 is scheduled in MailerLite for Tuesday 2026-11-24, 15:00 UTC
+**Status (2026-11-19):** the sign-up is live on `main`. The one-time note went to 16 downloaders
+who had had no email (12 in the morning, 4 more in the afternoon; 2 early ASC 606 downloaders are
+held for a wording decision). Issue 1 is scheduled in MailerLite for Tuesday 2026-11-24, 15:00 UTC
 (7:00 AM Pacific), on Stephen's go. Issues 2 to 4 are drafts.
 
 ## The promise
@@ -42,6 +43,9 @@ The same topic is that week's article and KDesk Short, so one piece of work feed
 - Entries balance, and every number in the prose matches the entry.
 - People who get the one-time note stay out of the MailerLite automation group unless they sign up,
   so "you will not hear from me again" stays true.
+- Some people who got the note are members of the "Gumroad free downloaders" group but never entered
+  its follow-up sequence. When that automation is reactivated in MailerLite, always choose "No, only
+  add new subscribers". Adding existing members would break the promise above.
 - No recipient addresses in this repo. The list for the one-time note lives in
   `~/kdesk-analytics/private/`.
 
