@@ -8,6 +8,10 @@ tags: ["LeaseQuery alternative", "lease accounting software", "ASC 842", "lease 
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
+# Ranked first on /posts/ and the home page at Stephen's request, 2026-11-19 ("for now").
+# It shares weight 1 with the ASC 606 commissions guide; Hugo breaks the tie by date, newest first.
+# To drop it back down the list, delete the weight line.
+weight: 1
 product: asc842
 images: ["/images/og/asc842.png"]
 faq:
