@@ -93,10 +93,13 @@ async def run(post: str, seconds: tuple[int, ...]) -> tuple[int, dict]:
                 return 3, {"post": post, "error": "no retention chart"}
             y = chart["y"] + chart["h"] * 0.4
             hold: dict[int, float] = {}
-            # Sweep the first third of the chart in small steps: early seconds sit close together.
-            steps = 60
+            # Sweep the first third of the chart in small steps: early seconds sit close together. Asked for seconds
+            # past 3 (ParkSheet 2026-11-19: seconds 1-10, the only per-second view of the 4 s YouTube hides), sweep
+            # further: 10 s of a 29 s post sits at 34% of the width.
+            late = max(seconds) > 3
+            frac, steps = (0.6, 160) if late else (0.35, 60)
             for i in range(steps + 1):
-                x = chart["x"] + 1 + chart["w"] * 0.35 * i / steps
+                x = chart["x"] + 1 + chart["w"] * frac * i / steps
                 await tab.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
                 await asyncio.sleep(0.12)
                 found = pair_near(await tab.js(JS_LABELS) or [], x, y)
@@ -117,7 +120,7 @@ async def run(post: str, seconds: tuple[int, ...]) -> tuple[int, dict]:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--post", required=True, help="TikTok post id")
-    ap.add_argument("--seconds", default="1,2,3", help="whole seconds to read (default 1,2,3)")
+    ap.add_argument("--seconds", default="1,2,3", help="whole seconds to read (default 1,2,3; ParkSheet reads 1-10)")
     args = ap.parse_args(argv)
     if not args.post.isdigit() or not re.fullmatch(r"\d+(,\d+)*", args.seconds):
         ap.print_usage()
