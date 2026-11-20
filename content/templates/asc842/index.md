@@ -3,7 +3,7 @@ title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-
 description: "ASC 842 lease accounting in Excel, without enterprise software: a free 3-lease template and the full 20-lease workbook. Operating, finance and short-term leases, escalating rent and free rent, journal entries, rollforward and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, escalating rent and free rent, period journal entries, balance sheet rollforward, and disclosure table — in a single Excel file you can trace and tie out."
 date: 2026-03-16
-lastmod: 2026-11-18
+lastmod: 2026-11-19
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -37,7 +37,7 @@ faq:
   - q: "Does it work on a Mac?"
     a: "Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
   - q: "What if I need to modify a lease mid-term?"
-    a: "Modifications aren't automated. A modification is remeasured at the modification date, and changing a lease's inputs recalculates its whole history, so keep a copy of your closed periods before editing a lease."
+    a: "Modifications aren't automated. A modification that isn't accounted for as a separate contract is remeasured as of its effective date, and changing a lease's inputs recalculates its whole history, so keep a copy of your closed periods before editing a lease."
   - q: "Can I use it for IFRS 16?"
     a: "The underlying PV math and amortization logic is identical. Classify all leases as Finance and the workbook produces depreciation and interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same."
   - q: "What if I have more than 20 leases?"
@@ -210,7 +210,7 @@ Yes. Each lease in Lease Data has a type dropdown: operating, finance or short-t
 Yes. The workbook uses pure Excel formulas — no VBA macros, no Windows-only features. It works on Excel 2016, Excel 365, and Excel for Mac.
 
 **What if I need to modify a lease mid-term?**
-Update the inputs in Lease Data (new term, new payment, new IBR as of the modification date). The schedule recalculates from that point. You handle the remeasurement journal entry in your accounting system using the output from the JE Generator.
+Modifications aren't automated. A modification that isn't accounted for as a separate contract is remeasured as of its effective date, and changing a lease's inputs recalculates its whole history, so keep a copy of your closed periods before editing a lease.
 
 **Can I use it for IFRS 16?**
 The underlying PV math and amortization logic is identical. Classify all leases as "Finance" and the workbook produces depreciation + interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same.
