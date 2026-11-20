@@ -177,6 +177,8 @@ Mark a lease as "Short-term Exempt" in Lease Data and the workbook skips ROU ass
 
 This workbook is designed for companies with up to 20 leases. If you have 50–100+ leases, purpose-built lease accounting software (iLease, LeaseQuery, Occupier) is the right tool. This workbook does not handle lessor accounting, sale-leaseback accounting, or real-time system integration. It is a standalone Excel file — there is no cloud sync, no API, no subscription.
 
+Not sure which side you are on? [LeaseQuery or Excel: how to tell which your portfolio needs](/posts/leasequery-alternative-excel/).
+
 ---
 
 ## Technical Specifications
