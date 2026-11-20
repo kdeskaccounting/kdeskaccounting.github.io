@@ -10,7 +10,7 @@
 
 | Product | Paid | With UPGRADE20 |
 |---|---|---|
-| **SaaS Controller Bundle (all 5, $249 vs $371)** | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle/UPGRADE20 |
+| **SaaS Controller Bundle (all 5, $599 vs $693)** | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle | https://kdeskaccounting.gumroad.com/l/saas-controller-bundle/UPGRADE20 |
 | ASC 842 Lease Accounting Workbook | https://kdeskaccounting.gumroad.com/l/phxigq | https://kdeskaccounting.gumroad.com/l/phxigq/UPGRADE20 |
 | ASC 606 Commission Accrual Workbook | https://kdeskaccounting.gumroad.com/l/mwmwpe | https://kdeskaccounting.gumroad.com/l/mwmwpe/UPGRADE20 |
 | Fixed Asset Rollforward Workbook | https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward | https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward/UPGRADE20 |

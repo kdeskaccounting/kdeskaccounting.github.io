@@ -38,6 +38,15 @@ refuses a Gmail sender on campaigns. The DNS side, in Cloudflare: a CNAME `lites
 `include:_spf.mx.cloudflare.net` for Email Routing), and a `mailerlite-domain-verification` TXT
 record at the root.
 
+Every automation email carries its own sender address, set on the email step in the workflow
+editor (Sender email). Setting the account's default sender does not change them. On 2026-11-20
+MailerLite disabled the Gumroad follow-up automation ("Needs repair: The email domain is not
+authenticated") because its three emails still used the Gmail address; all four automation emails
+(three follow-ups and the welcome email) now use `hello@kdeskaccounting.com`. If it happens again:
+fix the sender on each email step, save, and activate. People whose send failed do not restart by
+being re-added to the group; use the automation's Activity page, filter Failed, tick them, then
+Actions, "Re-add to the sequence", "last step that they failed".
+
 The same topic is that week's article and KDesk Short, so one piece of work feeds three places.
 
 ## Rules
