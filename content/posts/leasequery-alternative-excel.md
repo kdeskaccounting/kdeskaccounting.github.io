@@ -12,7 +12,7 @@ product: asc842
 images: ["/images/og/asc842.png"]
 faq:
   - q: "Is there a LeaseQuery alternative for a small lease portfolio?"
-    a: "Two are worth a look. LeaseGuru is FinQuery's own product for small portfolios: free for up to 2 leases, with paid plans for 10 and 15 leases. An Excel workbook is the other. The KDesk ASC 842 workbook covers up to 20 leases for a one-time $249. Software gives you a hosted system with the vendor's controls; a workbook gives you formulas you can read and no subscription."
+    a: "Two are worth a look. LeaseGuru is FinQuery's own product for small portfolios: free for up to 2 leases, with paid plans for 10 and 15 leases. An Excel workbook is the other. The KDesk ASC 842 workbook covers up to 20 leases for a one-time $249. Software gives you a hosted system; a workbook gives you formulas you can read and no subscription."
   - q: "Can I do ASC 842 lease accounting in Excel?"
     a: "Yes, if the portfolio is small and stable. Excel handles the present value, the amortization schedule, the journal entries and the rollforward. What it does not give you is a system audit trail, role-based access or automatic handling of lease modifications, so those become your own review and version-control steps."
   - q: "Will an Excel workbook match the numbers from my lease accounting software?"
