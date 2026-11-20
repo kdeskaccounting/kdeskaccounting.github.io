@@ -34,6 +34,7 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen holds 
 - `content/calculator/` — free browser-side calculator (zero-friction lead magnet)
 - `content/rsu-tax-calculator/` — free RSU withholding-gap calculator (Stream A lead magnet, live 2026-09-05). Tax core in `static/js/rsu-tax.js` (ESM, tested: `node --test --test-reporter=tap tests/js/*.test.mjs`; TABLE_2026 pinned to Rev. Proc. 2025-32 / Pub 15). Any change to tax numbers or copy goes through the second-agent fact-check first (T3).
 - `content/about/`, `content/search/` — standard pages
+- **Link-preview (Open Graph) images:** `static/images/og/*.png`, 1200x627, rendered by `scripts/make_og_images.py` in the current brand. A page opts in with front matter `images: ["/images/og/<slug>.png"]` (the lease page does); every other page falls back to `params.images` in `hugo.toml` (`default.png`). Without one, LinkedIn picks whatever picture it finds on the page — it was showing the September video poster. After changing a card, re-scrape the URL in LinkedIn's Post Inspector. The video posters and walkthrough videos themselves are still the pre-restyle design.
 
 ## Custom layouts (the bits to know)
 
