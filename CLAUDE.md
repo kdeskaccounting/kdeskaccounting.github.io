@@ -20,6 +20,7 @@ A Hugo + PaperMod static site at **https://kdeskaccounting.com**. Stephen holds 
 - **Framework:** Hugo (extended, 0.147+), PaperMod theme (submodule under `themes/PaperMod/`)
 - **Hosting:** GitHub Pages from `kdeskaccounting/kdeskaccounting.github.io` repo
 - **Domain:** kdeskaccounting.com (Cloudflare DNS, NOT proxied — resolves to GH Pages IPs)
+- **Mail DNS (2026-11-19):** inbound via Cloudflare Email Routing; Brevo DKIM (Gmail send-as) and MailerLite DKIM (`litesrv._domainkey`) both live; one SPF record includes Cloudflare and `_spf.mlsend.com`. MailerLite sends From `hello@kdeskaccounting.com`.
 - **CNAME:** `static/CNAME` → `kdeskaccounting.com`
 - **Deploy:** push to `main` → GH Actions `.github/workflows/deploy.yml` → live in ~30s
 - **Scheduled Actions:** `data-weekly.yml` (Mon 15:15 UTC — the four snapshot pulls + a CRM dry run, commits the JSONL rows) and `daily-publish.yml` (14:00 UTC — publishes the day's asset from the newest `media-daily-*` release, digest into the run summary). Shape pinned by `tests/test_workflows.py`; secrets and the Mac-only list are in `marketing/runbooks/automation-2026-09.md`.

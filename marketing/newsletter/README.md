@@ -31,9 +31,12 @@ which keeps a month of buffer between the promise and the next deadline.
    the footer's postal address from MailerLite's account settings at build time, so the address
    is never written here. Send a test to the account's own inbox before scheduling.
 
-MailerLite has no authenticated sending domain yet, so the From line shows a `mailerlite.eu`
-address with replies going to the KDesk inbox. Authenticating `kdeskaccounting.com` there (DNS
-records) would let the email come from `hello@kdeskaccounting.com`.
+`kdeskaccounting.com` is an authenticated sending domain in MailerLite (2026-11-19), so campaigns
+and automations go out From `hello@kdeskaccounting.com`, signed by the domain. MailerLite now
+refuses a Gmail sender on campaigns. The DNS side, in Cloudflare: a CNAME `litesrv._domainkey` to
+`litesrv._domainkey.mlsend.com`, `include:_spf.mlsend.com` added to the one SPF record (keep
+`include:_spf.mx.cloudflare.net` for Email Routing), and a `mailerlite-domain-verification` TXT
+record at the root.
 
 The same topic is that week's article and KDesk Short, so one piece of work feeds three places.
 
