@@ -367,7 +367,7 @@ def test_a_2xx_decodes_the_mp3_it_was_handed(tmp_path, monkeypatch):
     seen = {}
     monkeypatch.setattr(N, "_post_tts", lambda v, k, b, **kw: (200, _timestamped()))
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S:
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S, **kw:
                         seen.update(content=content, path=path) or (3.25, None))
     cfg = N.tts_config(spec_with(tts=EL))
     assert N.synth_elevenlabs(cfg, "Hello.", tmp_path / "scene_00.wav", FAKE_KEY) == (3.25, None)
@@ -694,7 +694,7 @@ def test_a_transport_error_falls_back_per_scene_when_allowed(drive, monkeypatch)
 
     monkeypatch.setattr(N, "_post_tts", flaky)
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S:
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S, **kw:
                         (pathlib.Path(path).write_bytes(b"RIFF"), (3.0, None))[1])
     assert drive.run("--allow-fallback") == 0
     assert calls == ["First scene.", "Third scene."]
@@ -974,7 +974,7 @@ def test_synth_elevenlabs_returns_the_seconds_and_the_words(tmp_path, monkeypatc
     seen = {}
     monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S: (
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S, **kw: (
                             seen.update(content=content, alignment=alignment)
                             or (3.25, [{"text": "Magic"}])))
     cfg = N.tts_config(spec_with(tts=EL))
@@ -1082,11 +1082,82 @@ def test_the_elevenlabs_path_hands_its_lead_in_down_to_the_decode(tmp_path, monk
     seen = {}
     monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
     monkeypatch.setattr(N, "decode_to_wav",
-                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S: (
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S, **kw: (
                             seen.update(lead_in_s=lead_in_s) or (3.25, None)))
     cfg = N.tts_config(spec_with(tts=dict(EL, lead_in_s=0.05)))
     N.synth_elevenlabs(cfg, "Magic now.", tmp_path / "scene_00.wav", FAKE_KEY)
     assert seen["lead_in_s"] == pytest.approx(0.05)
+
+
+# --- tts.tempo: a post-decode stretch that carries the word timings with it ------------------
+
+def test_tempo_defaults_to_one_and_is_never_sent_to_the_api():
+    cfg = N.tts_config(spec_with(tts=EL))
+    assert cfg.tempo == 1.0
+    fast = N.tts_config(spec_with(tts=dict(EL, tempo=1.2)))
+    assert fast.tempo == pytest.approx(1.2)
+    assert "tempo" not in fast.voice_settings()
+    assert "tempo" not in N.request_body(fast, "hello")["voice_settings"]
+
+
+@pytest.mark.parametrize("bad", [0.5, 0.79, 1.31, 2.0])
+def test_a_tempo_outside_the_range_is_refused_by_name(bad):
+    with pytest.raises(SystemExit) as excinfo:
+        N.tts_config(spec_with(tts=dict(EL, tempo=bad)))
+    assert "tts.tempo" in str(excinfo.value)
+
+
+def test_tempo_one_leaves_every_existing_cache_key_alone():
+    """Scenes cached before tempo existed must stay hits, or every build re-bills."""
+    plain = N.tts_config(spec_with(tts=EL))
+    explicit = N.tts_config(spec_with(tts=dict(EL, tempo=1.0)))
+    assert N.cache_hash(plain, "hello") == N.cache_hash(explicit, "hello")
+
+
+def test_a_tempo_other_than_one_changes_the_key_because_the_cached_wav_is_stretched():
+    plain = N.tts_config(spec_with(tts=EL))
+    fast = N.tts_config(spec_with(tts=dict(EL, tempo=1.2)))
+    faster = N.tts_config(spec_with(tts=dict(EL, tempo=1.25)))
+    keys = {N.cache_hash(c, "hello") for c in (plain, fast, faster)}
+    assert len(keys) == 3
+
+
+def test_scaling_words_divides_every_timing_and_keeps_the_text():
+    words = [{"text": "Magic", "start": 0.6, "end": 1.2}, {"text": "now.", "start": 1.2, "end": 2.4}]
+    out = N.scale_words(words, 1 / 1.2)
+    assert [w["text"] for w in out] == ["Magic", "now."]
+    assert out[0]["start"] == pytest.approx(0.5) and out[0]["end"] == pytest.approx(1.0)
+    assert out[1]["end"] == pytest.approx(2.0)
+    assert N.scale_words(None, 0.5) is None
+
+
+def test_the_tempo_command_stretches_with_atempo_and_keeps_the_pipeline_format(tmp_path):
+    cmd = N.tempo_cmd(tmp_path / "a.wav", tmp_path / "b.wav", 1.2)
+    assert cmd[cmd.index("-filter:a") + 1] == "atempo=1.2"
+    assert cmd[cmd.index("-ar") + 1] == str(N.SR)
+    assert cmd[cmd.index("-ac") + 1] == "1"
+    assert cmd[-1] == str(tmp_path / "b.wav")
+
+
+def test_the_elevenlabs_path_hands_its_tempo_down_to_the_decode(tmp_path, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(N, "_post_tts", lambda *a, **k: (200, _timestamped()))
+    monkeypatch.setattr(N, "decode_to_wav",
+                        lambda content, path, alignment=None, lead_in_s=N.LEAD_IN_S, tempo=1.0: (
+                            seen.update(tempo=tempo) or (3.25, None)))
+    cfg = N.tts_config(spec_with(tts=dict(EL, tempo=1.2)))
+    N.synth_elevenlabs(cfg, "Magic now.", tmp_path / "scene_00.wav", FAKE_KEY)
+    assert seen["tempo"] == pytest.approx(1.2)
+
+
+def test_the_meta_records_a_tempo_only_when_one_was_applied(drive):
+    drive.spec["tts"] = dict(EL, tempo=1.2)
+    drive.key = FAKE_KEY
+    assert drive.run() == 0
+    assert drive.meta(0)["tempo"] == pytest.approx(1.2)
+    drive.spec["tts"] = dict(EL)
+    assert drive.run() == 0
+    assert "tempo" not in drive.meta(0)
 
 
 def test_a_changed_spec_lead_in_is_re_padded_locally_from_the_cache_with_no_request(drive):

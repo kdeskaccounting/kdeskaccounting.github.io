@@ -16,8 +16,18 @@ Keep `style: 0` on any captioned spec. ElevenLabs documents that a `style` above
 makes the delivery speed unstable, and caption word timings come from the same request's
 character alignment, so an unstable rate shows up as captions drifting off the voice. Set
 the rate with `speed` (inside voice_settings, honoured by eleven_multilingual_v2 and ignored
-by eleven_v3), never with an ffmpeg `atempo` afterwards, which would move the audio away
-from the timings.
+by eleven_v3 and eleven_v4), never with a bare ffmpeg `atempo` afterwards, which would move
+the audio away from the timings.
+
+`tts.tempo` (2026-11-23) is the one exception, and it is done here so the timings move WITH the
+audio. It is for a model that ignores `speed` (ParkSheet's own-voice clone is trained on
+eleven_v4 only, and v4 reads at one rate whatever `speed` says): the provider's audio is
+time-stretched by ffmpeg `atempo` (pitch kept) right after decoding and BEFORE the silence
+trim, and the provider's word timings are divided by the same factor at the same moment. A
+uniform stretch moves every instant by the same ratio, so the captions stay on the voice; the
+lead-in silence and any opening sting are added afterwards and are not stretched. Range
+0.8-1.3; 1.0 (the default) touches nothing. ElevenLabs only. It is in the cache key only when it
+is not 1.0, because the cached WAV is the stretched audio: changing it re-synthesizes.
 
 Lead-in: `tts.lead_in_s` is the silence before every scene's first word; a scene may set its
 own `lead_in_s:` (e.g. scene 0 of a Short whose opening sting lands before the first word).
@@ -152,6 +162,9 @@ class TTSConfig:
     #: provider bills for identical audio either way, and only the local silence changes.
     #: An unknown key inside voice_settings is a 422, so it is carried here instead.
     lead_in_s: float = LEAD_IN_S
+    #: Post-decode time-stretch (`tts.tempo`), ElevenLabs only. NOT a voice setting (the API
+    #: would 422 on it) and in the cache key only when it is not 1.0 -- see the module docstring.
+    tempo: float = 1.0
 
     def voice_settings(self) -> dict:
         return dict(self.settings)
@@ -172,6 +185,22 @@ def _lead_in(block: dict) -> float:
         raise SystemExit(f"tts.lead_in_s must be in [0, 1.0]; got {lead!r}. It is the "
                          f"silence prepended to every scene, and the word timings carry it.")
     return lead
+
+
+TEMPO_RANGE = (0.8, 1.3)
+
+
+def _tempo(block: dict) -> float:
+    """The `tts.tempo` a spec asks for, or 1.0. Refuses one outside TEMPO_RANGE."""
+    value = block.get("tempo")
+    if value is None:
+        return 1.0
+    tempo = float(value)
+    if not TEMPO_RANGE[0] <= tempo <= TEMPO_RANGE[1]:
+        raise SystemExit(f"tts.tempo must be in [{TEMPO_RANGE[0]:g}, {TEMPO_RANGE[1]:g}]; got "
+                         f"{tempo!r}. It time-stretches the voice after synthesis (1.2 = 20% "
+                         f"faster) and the word timings with it.")
+    return tempo
 
 
 def scene_lead_in(scene: dict, cfg: TTSConfig) -> float:
@@ -268,7 +297,7 @@ def tts_config(spec: dict, voice: str | None = None, speed: float = 1.0) -> TTSC
                      model=str(block.get("model") or DEFAULT_EL_MODEL),
                      settings=tuple(sorted(settings.items())),
                      kokoro_voice=str(legacy_voice or DEFAULT_KOKORO_VOICE),
-                     lead_in_s=_lead_in(block))
+                     lead_in_s=_lead_in(block), tempo=_tempo(block))
 
 
 def narration_text(scene: dict) -> str:
@@ -357,6 +386,10 @@ def cache_hash(cfg: TTSConfig, text: str) -> str:
         # the top-level speed — only voice_settings["speed"], which is already in the payload —
         # so including it here would invalidate the cache and re-bill for identical bytes.
         payload["speed"] = float(cfg.speed)
+    if float(cfg.tempo) != 1.0:
+        # The cached WAV is the STRETCHED audio, so a different tempo is different bytes. Only
+        # when it is not 1.0, so every scene cached before tempo existed keeps its key.
+        payload["tempo"] = float(cfg.tempo)
     return hashlib.sha1(json.dumps(payload, sort_keys=True,
                                    separators=(",", ":")).encode("utf-8")).hexdigest()
 
@@ -612,6 +645,17 @@ def shift_words(words, offset: float):
     return out
 
 
+def scale_words(words, factor: float):
+    """Multiply every timing by `factor` (1/tempo after a stretch). `None` in, `None` out.
+
+    Not rounded: shift_words rounds once, after the trim offset, so the error never stacks.
+    """
+    if words is None:
+        return None
+    return [dict(word, start=float(word["start"]) * factor, end=float(word["end"]) * factor)
+            for word in words]
+
+
 # ------------------------------------------------------------------------------- audio plumbing
 
 def run(cmd: list) -> None:
@@ -626,6 +670,12 @@ def ffmpeg_cmd(mp3: pathlib.Path, wav: pathlib.Path) -> list:
     """ElevenLabs MP3 -> the pipeline's format: 24 kHz, mono, 16-bit PCM WAV."""
     return [FFMPEG, "-y", "-loglevel", "error", "-i", str(mp3),
             "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", "-f", "wav", str(wav)]
+
+
+def tempo_cmd(src: pathlib.Path, dst: pathlib.Path, tempo: float) -> list:
+    """Time-stretch a decoded WAV by `tempo` (pitch kept), staying in the pipeline's format."""
+    return [FFMPEG, "-y", "-loglevel", "error", "-i", str(src), "-filter:a", f"atempo={tempo:g}",
+            "-ac", "1", "-ar", str(SR), "-c:a", "pcm_s16le", "-f", "wav", str(dst)]
 
 
 def trim_bounds(audio) -> tuple[int, int]:
@@ -669,25 +719,37 @@ def write_wav(path: pathlib.Path, audio) -> None:
 
 def decode_to_wav(mp3_bytes: bytes, wav_path: pathlib.Path,
                   alignment: dict | None = None,
-                  lead_in_s: float = LEAD_IN_S) -> tuple[float, list | None]:
-    """MP3 bytes -> a finished scene WAV. Returns (seconds, word timings or None)."""
+                  lead_in_s: float = LEAD_IN_S,
+                  tempo: float = 1.0) -> tuple[float, list | None]:
+    """MP3 bytes -> a finished scene WAV. Returns (seconds, word timings or None).
+
+    A `tempo` other than 1.0 stretches the decoded audio before the trim and divides the
+    provider's timings by it at the same moment (module docstring, `tts.tempo`).
+    """
     import soundfile as sf  # lazy: absent outside the TTS venv
     wav_path = pathlib.Path(wav_path)
     mp3 = wav_path.with_suffix(".mp3")
     raw = wav_path.with_suffix(".raw.wav")
+    stretched = wav_path.with_suffix(".tempo.wav")
     mp3.write_bytes(mp3_bytes)
     try:
         run(ffmpeg_cmd(mp3, raw))
-        audio, sr = sf.read(str(raw), dtype="float32")
+        words = fold_alignment(alignment)
+        source = raw
+        if float(tempo) != 1.0:
+            run(tempo_cmd(raw, stretched, float(tempo)))
+            source = stretched
+            words = scale_words(words, 1.0 / float(tempo))
+        audio, sr = sf.read(str(source), dtype="float32")
         if sr != SR:
             raise TTSError(f"ffmpeg produced {sr} Hz audio, expected {SR} Hz")
         if getattr(audio, "ndim", 1) > 1:
             audio = audio.mean(axis=1)
-        audio, words = finish_with_words(audio, fold_alignment(alignment), lead_in_s)
+        audio, words = finish_with_words(audio, words, lead_in_s)
         write_wav(wav_path, audio)
         return len(audio) / SR, words
     finally:
-        for scratch in (mp3, raw):
+        for scratch in (mp3, raw, stretched):
             try:
                 scratch.unlink()
             except OSError:
@@ -759,7 +821,7 @@ def synth_elevenlabs(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
     if not content:
         raise TTSError("ElevenLabs: HTTP 200 with an empty body — no audio to decode")
     audio, alignment = parse_timestamped_response(content, key)
-    return decode_to_wav(audio, wav_path, alignment, cfg.lead_in_s)
+    return decode_to_wav(audio, wav_path, alignment, cfg.lead_in_s, tempo=cfg.tempo)
 
 
 def synth_scene(cfg: TTSConfig, text: str, wav_path: pathlib.Path,
@@ -989,6 +1051,9 @@ def main(argv: list | None = None) -> int:
                                     "provider_used": scene_cfg.provider,
                                     "model": scene_cfg.model, "speed": scene_cfg.speed,
                                     "lead_in_s": scene_cfg.lead_in_s,
+                                    **({"tempo": scene_cfg.tempo}
+                                       if scene_cfg.provider == ELEVENLABS
+                                       and scene_cfg.tempo != 1.0 else {}),
                                     "text": text,
                                     **({"shown": shown} if shown != text else {})}))
         print(f"scene {i:02d}: {seconds:.1f}s  [{scene_cfg.provider}]", flush=True)
