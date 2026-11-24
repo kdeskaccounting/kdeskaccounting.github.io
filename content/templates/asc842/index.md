@@ -16,7 +16,7 @@ video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/release
 video_poster: "/images/products/asc842-poster.png"
 video_caption: "Watch the 5-minute walkthrough, recorded in Excel: every tab, real numbers, no login."
 images: ["/images/og/asc842.png"]
-youtube_url: "https://youtu.be/5lkrHbWlb4c"
+youtube_url: "https://youtu.be/ZFIgf4MAS5Q"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
 compare:
   free_name: "Free 3-lease version"
