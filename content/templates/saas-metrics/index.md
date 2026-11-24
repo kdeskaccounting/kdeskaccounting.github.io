@@ -2,7 +2,7 @@
 title: "SaaS Metrics & ARR Dashboard Excel Template"
 description: "Board-ready SaaS metrics in one Excel workbook. Enter monthly MRR movements and customer counts; MRR, ARR, Net New MRR, gross churn, NRR, ARPA, CAC, LTV, LTV:CAC, CAC payback, and Magic Number calculate automatically across 24 months. No macros, no BI tool, no subscription."
 summary: "The SaaS Metrics & ARR Dashboard turns monthly MRR movements and customer counts into a board-ready KPI dashboard — MRR, ARR, NRR, churn, CAC, LTV, and CAC payback — with formulas your finance team controls and can reconcile to the P&L."
-lastmod: 2026-09-03
+lastmod: 2026-11-24
 date: 2026-09-01
 author: "KDesk Accounting"
 ShowToc: true
@@ -21,20 +21,20 @@ compare:
   full_name: "Full workbook"
   rows:
     - ["Months of data", "6", "24"]
-    - ["Metrics", "9", "11 (adds Magic Number and the 24-month trend table)"]
+    - ["Metrics", "11", "12 (adds Magic Number)"]
     - ["Setup, Monthly Data and Metrics tabs", "yes", "yes"]
-    - ["Board-ready dashboard", "no", "yes"]
-    - ["12 months of sample data", "no", "yes"]
+    - ["Dashboard: seven KPI cards + 24-month trend table", "no", "yes"]
+    - ["Sample data", "6 months", "12 months"]
     - ["4-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Can I add more than 24 months?"
-    a: "The workbook supports 24 months out of the box. You can extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly."
+    a: "The workbook supports 24 months out of the box. You can extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly. Enter the Month for each row: rows without a Month stay blank."
   - q: "What if I don't track sales and marketing spend?"
-    a: "Leave the S&M Spend column blank. MRR, ARR, churn, NRR, and ARPA still calculate. CAC, LTV:CAC, and CAC payback show 0 for those months instead of an error."
+    a: "Leave the S&M Spend column blank. MRR, ARR, churn, NRR, and ARPA still calculate. CAC, LTV:CAC, and CAC payback show blank for those months (n/a on the Dashboard cards) instead of an error."
   - q: "Does this connect to Stripe or my billing system?"
     a: "No. This is a standalone Excel file. You enter monthly totals manually or paste them from your billing system export — which is exactly what keeps the numbers auditable and reconcilable to your revenue schedules."
   - q: "How is the free version different?"
-    a: "The free version supports 6 months of data and 9 metrics. The full version supports 24 months, adds the Magic Number (sales efficiency) metric and a 24-month trend table, and ships with 12 months of sample data pre-loaded."
+    a: "The free version supports 6 months of data and 11 metrics on the Metrics tab, with 6 months of sample data. The full version supports 24 months, adds the Magic Number (sales efficiency) metric and the Dashboard tab (seven KPI cards and a 24-month trend table), and ships with 12 months of sample data pre-loaded."
   - q: "Does it work on a Mac?"
     a: "Yes. Pure Excel formulas, no VBA macros, no Windows-only features. Works on Excel 2016, Excel 365, and Excel for Mac."
   - q: "Is this a one-time purchase?"
@@ -45,7 +45,7 @@ If your board deck's ARR number and your income statement disagree two days befo
 
 [Get the Workbook ($67) →](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard)
 
-Not ready to buy? [Try the free 6-month version](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free) — same structure, 6 months of capacity.
+Not ready to buy? [Try the free 6-month version](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free) — the same Setup, Monthly Data and Metrics tabs for 6 months, without the Dashboard or the Magic Number.
 
 ---
 
@@ -55,11 +55,11 @@ Five tabs. You enter data in Setup and Monthly Data; everything else calculates.
 
 ### Setup
 
-Company name, gross margin %, fiscal year start, and the period selector that drives the Dashboard. Change the selected period once and all six KPI cards move with it.
+Company name, gross margin %, and the period selector that drives the Dashboard. Change the selected period once and all seven KPI cards move with it.
 
 ### Monthly Data (24-month capacity)
 
-One row per month. Inputs: New MRR, Expansion MRR, Contraction MRR, Churned MRR, new customers, churned customers, and sales & marketing spend. Beginning MRR and beginning customer count auto-chain from the prior month's ending balances, so there is nothing to carry forward by hand.
+One row per month. Inputs: the Month (any date in the month), New MRR, Expansion MRR, Contraction MRR, Churned MRR, new customers, churned customers, and sales & marketing spend. Beginning MRR and beginning customer count auto-chain from the prior month's ending balances, so there is nothing to carry forward by hand.
 
 ### Metrics
 
@@ -75,20 +75,20 @@ Every calculated metric in one table, one row per month:
 | Net Revenue Retention (annualized) | Monthly NRR ^ 12 |
 | ARPA | Ending MRR ÷ ending customers |
 | CAC | S&M spend ÷ new customers |
-| LTV | ARPA × gross margin ÷ monthly churn rate |
+| LTV | ARPA × gross margin ÷ gross MRR churn rate (blank in a month with no churn) |
 | LTV:CAC | LTV ÷ CAC |
 | CAC payback (months) | CAC ÷ (ARPA × gross margin) |
-| Magic Number *(full version)* | (Net New ARR in quarter) ÷ prior-quarter S&M spend |
+| Magic Number *(full version)* | (Net New MRR of the last 3 months × 12) ÷ prior-quarter S&M spend |
 
-Null-safe throughout: months with no data show blank, not `#DIV/0!`.
+Null-safe throughout: months with no data show blank, not `#DIV/0!`. The Magic Number shows n/a until there are 6 consecutive months of data and S&M spend for all 3 prior-quarter months.
 
 ### Dashboard
 
-Six KPI cards for the selected period — Ending MRR, ARR, Net New MRR, NRR, Gross Churn, LTV:CAC — plus a 24-month trend table. Screenshot it straight into the board deck, or insert a native Excel chart from the trend table.
+Seven KPI cards for the selected period — Ending MRR, ARR, Net New MRR, NRR (annualized), Gross Churn, LTV:CAC, Magic Number — plus a 24-month trend table. Screenshot it straight into the board deck, or insert a native Excel chart from the trend table.
 
 ### Instructions
 
-Quick start, field reference, and metric definitions with the benchmarks investors actually use (NRR above 100%, LTV:CAC of 3:1 or better, CAC payback under 12–18 months).
+Quick start, field reference, and metric definitions with the benchmarks investors actually use (NRR above 100%, gross churn under 5%, LTV:CAC above 3x, CAC payback under 18 months, Magic Number above 0.75).
 
 ---
 
@@ -106,6 +106,8 @@ Beginning MRR $100,000 across 80 customers. During the month: $12,000 new MRR fr
 | Ending customers | 86 |
 | ARPA | $1,297 |
 | CAC | $5,000 |
+| LTV | $22,473 |
+| LTV:CAC | 4.5x |
 | CAC payback | 4.9 months |
 
 You enter seven numbers; the workbook produces the rest, and next month's beginning balances are already populated.
@@ -136,8 +138,8 @@ This is a single-product, single-currency monthly model. It does not do cohort-l
 | Specification | Detail |
 |---------------|---------|
 | Data capacity | 24 months (free version: 6) |
-| Metrics | 11 (free version: 9) |
-| Sample data | 12 months pre-loaded |
+| Metrics | 12 (free version: 11) |
+| Sample data | 12 months pre-loaded (free version: 6) |
 | Excel version | 2016, 365, Mac (no macros) |
 | File format | .xlsx |
 | Formula protection | Locked formula cells, unlocked yellow input cells |
@@ -149,23 +151,23 @@ This is a single-product, single-currency monthly model. It does not do cohort-l
 
 [**Get the Workbook ($67) →**](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard)
 
-Not ready to buy? [Try the free 6-month version](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free) first. Same tabs, same formulas, 6 months of capacity.
+Not ready to buy? [Try the free 6-month version](https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free) first. The same Setup, Monthly Data and Metrics tabs and formulas for 6 months; no Dashboard or Magic Number.
 
 ---
 
 ## Frequently Asked Questions
 
 **Can I add more than 24 months?**
-The workbook supports 24 months out of the box. Extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly.
+The workbook supports 24 months out of the box. Extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly. Enter the Month for each row: rows without a Month stay blank.
 
 **What if I don't track sales and marketing spend?**
-Leave the S&M Spend column blank. MRR, ARR, churn, NRR, and ARPA still calculate. CAC, LTV:CAC, and CAC payback show 0 for those months instead of an error.
+Leave the S&M Spend column blank. MRR, ARR, churn, NRR, and ARPA still calculate. CAC, LTV:CAC, and CAC payback show blank for those months (n/a on the Dashboard cards) instead of an error.
 
 **Does this connect to Stripe or my billing system?**
 No. It is a standalone Excel file. Enter monthly totals or paste them from your billing export — that is what keeps the numbers auditable and reconcilable to your revenue schedules.
 
 **How is the free version different?**
-The free version supports 6 months of data and 9 metrics. The full version supports 24 months, adds the Magic Number metric and a 24-month trend table, and ships with 12 months of sample data.
+The free version supports 6 months of data and 11 metrics on the Metrics tab, with 6 months of sample data. The full version supports 24 months, adds the Magic Number metric and the Dashboard tab (seven KPI cards and a 24-month trend table), and ships with 12 months of sample data.
 
 **Does it work on a Mac?**
 Yes. Pure Excel formulas, no VBA, no Windows-only features. Excel 2016, 365, and Excel for Mac.

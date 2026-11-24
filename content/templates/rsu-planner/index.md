@@ -4,7 +4,7 @@ description: "Excel workbook that lays out every RSU grant and vest for 2026–2
 summary: "Every grant, every vest, five years — the April shortfall before April, the safe-harbor amount, and what it would take per quarter or per paycheck to reach it. Tax mechanics on compensation, not advice."
 draft: false
 date: 2026-09-05
-lastmod: 2026-09-07
+lastmod: 2026-11-24
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -54,17 +54,17 @@ Restricted stock units are taxed as ordinary income when they vest, and most emp
 
 ## Eight sheets
 
-- **Setup** — filing status, salary and growth, pre-tax deductions, planning date, state rates, prior-year tax for the safe-harbor alternative, default share price, selected year.
+- **Setup** — filing status, salary and growth, pre-tax deductions, planning date, state rates, prior-year tax and whether prior-year AGI was over $150,000 (for the safe-harbor alternative), supplemental wages already paid this year, default share price, selected year.
 - **Grants** — up to 20 grants: shares, first vest, frequency, number of vests, optional price override.
 - **Vest Schedule** — every vest: date, shares, income, federal withholding at 22% (37% over the $1 million supplemental line, tracked cumulatively), state, Social Security to the wage base, Medicare and Additional Medicare by payroll rule, shares sold to cover, net shares delivered, and each vest's share of the year's gap.
 - **Tax Year Summary** (2026–2030) — taxable income, federal tax by bracket, tax on the RSU slice and its effective rate, what payroll withholds, the federal and state gap, the 90% and prior-year safe-harbor tests, additional payments that would reach them, and a per-paycheck W-4 Step 4(c) equivalent.
-- **Quarterly Plan** — the selected year's safe-harbor amount as four equal installments against cumulative withholding, with the April 15 / June 15 / September 15 / January 15 due dates.
+- **Quarterly Plan** — the selected year's safe-harbor amount as four equal installments, against withholding credited evenly across the four due dates (the IRS default for withholding), with the April 15 / June 15 / September 15 / January 15 due dates moved to the next business day for weekends and legal holidays.
 - **Dashboard** — the year's shortfall, effective rate, withheld vs. owed chart by year, next vest, and employer-stock concentration shown as a fact.
 - **Instructions** and a hidden **_Lists** sheet holding every rate and bracket, with its source.
 
 ## Built on verified parameters
 
-Federal brackets and standard deductions are tax-year-2026 values from IRS Rev. Proc. 2025-32; the 22% and 37% supplemental rates, the $184,500 Social Security wage base and the Medicare rates are from Publication 15 (2026). The release build is recalculated in LibreOffice and checked against the same worked examples the free calculator publishes — $180,000 of salary plus $120,000 of vests produces $36,200.25 of tax on the RSU slice, $26,400 withheld, and a $9,800.25 gap.
+Federal brackets and standard deductions are tax-year-2026 values from IRS Rev. Proc. 2025-32; the 22% and 37% supplemental rates, the $184,500 Social Security wage base and the Medicare rates are from Publication 15 (2026). The release build is recalculated in Excel and LibreOffice and checked against the same worked examples the free calculator publishes. That example is the sample the workbook opens with: $180,000 of salary plus a $120,000 vest produces $36,200.25 of tax on the RSU slice, $26,400 withheld, and a $9,800.25 gap — and, to reach the federal safe harbor, four installments of $746.71 or about $129.86 per remaining paycheck.
 
 ## What it does not do
 

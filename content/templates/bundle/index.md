@@ -3,7 +3,7 @@ title: "SaaS Controller Bundle — All Five KDesk Excel Workbooks"
 description: "All five KDesk workbooks in one purchase for $599 instead of $693: ASC 842 lease accounting, ASC 606 commission capitalization, fixed asset rollforward, SaaS metrics dashboard, and startup runway calculator, plus the free month-end close checklist. Pure Excel, no macros, no subscription."
 summary: "The five technical-accounting workbooks a SaaS controller maintains every close — leases, commissions, fixed assets, SaaS metrics, runway — at $599 instead of $693, plus the close checklist that ties them together."
 date: 2026-09-01
-lastmod: 2026-09-06
+lastmod: 2026-11-24
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -26,7 +26,7 @@ faq:
     a: "Yes. Every workbook is pure Excel formulas — no VBA macros, no Windows-only features. Excel 2016, Excel 365, and Excel for Mac."
 ---
 
-If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that each need to tie to the general ledger every close. These are the five workbooks that do it — formula-complete and reconciled to $0 — in one purchase. **$599 one-time instead of $693. No subscription. No macros.**
+If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast in Excel, you are maintaining five schedules that feed the close every month. These are the five workbooks that do it — formula-complete, with the three accounting schedules reconciling to $0 — in one purchase. **$599 one-time instead of $693. No subscription. No macros.**
 
 [Get the Bundle ($599) →](https://kdeskaccounting.gumroad.com/l/saas-controller-bundle)
 
@@ -37,11 +37,11 @@ If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast 
 | Workbook | What it does | Sold alone |
 |---|---|---|
 | [ASC 842 Lease Accounting Workbook](/templates/asc842/) | 20 leases, operating and finance, 120-month schedules, JE Generator, rollforward, disclosure maturity table, reconciliation | $249 |
-| [ASC 606 Commission Accrual Workbook](/templates/asc606/) | 50 deals, three amortization bases, 60-month waterfall, JE Generator, deferred asset rollforward, reconciliation | $249 |
-| [Fixed Asset Rollforward Workbook](/templates/fixed-assets/) | 50 assets, four depreciation methods, JE presets for QuickBooks / NetSuite / Sage / Xero, disposal log, five-way reconciliation | $79 |
-| [SaaS Metrics & ARR Dashboard](/templates/saas-metrics/) | 24 months, MRR / ARR / NRR / churn / CAC / LTV / payback / Magic Number, board-ready dashboard | $67 |
-| [Startup Runway Calculator](/templates/runway/) | 12 to 48-month cash forecast, Base / Optimistic / Pessimistic scenarios, runway and cash-zero date | $49 |
-| [Month-End Close Checklist + Tie-Out](/templates/month-end-close/) | 42-task close calendar, 18 reconciliations, JE tracker, sign-off page — the scaffolding that holds the other five together | Free |
+| [ASC 606 Commission Accrual Workbook](/templates/asc606/) | 50 deals, three amortization bases, cancellations and clawbacks, 60-month schedule, JE Generator, deferred asset rollforward, reconciliation | $249 |
+| [Fixed Asset Rollforward Workbook](/templates/fixed-assets/) | 50 assets, four depreciation methods, JE presets for QuickBooks / NetSuite / Sage Intacct / Xero, disposal log, rollforward, reconciliation to your GL balances | $79 |
+| [SaaS Metrics & ARR Dashboard](/templates/saas-metrics/) | 24 months, 12 metrics (MRR / ARR / NRR / churn / CAC / LTV / payback / Magic Number and more), seven-card board-ready dashboard | $67 |
+| [Startup Runway Calculator](/templates/runway/) | 12 to 48-month cash forecast, Base / Optimistic / Pessimistic scenarios, runway, cash-zero date, breakeven and capital required | $49 |
+| [Month-End Close Checklist + Tie-Out](/templates/month-end-close/) | 42-task close calendar, 18 reconciliations with a tie-out tolerance, JE tracker with a per-entry balance check, sign-off page — the scaffolding that holds the other five together | Free |
 | **Bundle** | | **$599** |
 
 Each product page has a four-minute walkthrough video of the workbook, tab by tab, on its real sample data.
@@ -52,8 +52,8 @@ Each product page has a four-minute walkthrough video of the workbook, tab by ta
 
 The month-end close checklist's reconciliation tab has a row for deferred commissions, a row for lease liabilities, a row for accumulated depreciation. Each of those rows ties to a schedule — and each schedule is one of the workbooks in this bundle. Buy them together and the JE tracker's source dropdown, the reconciliation rows, and the technical schedules all name the same files.
 
-- **Same conventions everywhere.** Yellow input cells, a Setup tab with one period selector, a JE Generator with your GL codes, a rollforward, and a reconciliation that reads $0 when everything ties.
-- **Same audit posture.** Every workbook was built around the question an auditor asks first: show me the schedule that supports this balance, and show me that it ties.
+- **Same conventions everywhere.** Yellow input cells and a Setup tab in every file. The three accounting workbooks (leases, commissions, fixed assets) each add a JE Generator with your GL codes, a rollforward, and a reconciliation that reads $0 when everything ties; SaaS Metrics and Runway are models, so they have no journal entries to reconcile.
+- **Same audit posture.** The accounting workbooks were built around the question an auditor asks first: show me the schedule that supports this balance, and show me that it ties.
 - **One purchase, six library entries.** Gumroad delivers each workbook into your library as its own product, so every file's updates and receipt stay with that workbook.
 
 ---

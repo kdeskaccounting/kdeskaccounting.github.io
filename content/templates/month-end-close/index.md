@@ -1,8 +1,9 @@
 ---
 title: "Month-End Close Checklist + Tie-Out Workbook (Free Excel Template)"
-description: "Free Excel workbook for SaaS controllers: 42-task close calendar across 5 phases, 18 subledger-to-GL reconciliations with materiality flag, 50-row JE tracker with debit=credit sanity check, and a printable sign-off page that auto-tabulates close metrics. Built by a SaaS accounting practitioner. No macros."
+description: "Free Excel workbook for SaaS controllers: 42-task close calendar across 5 phases, 18 subledger-to-GL reconciliations with a tie-out tolerance flag, 50-row JE tracker that checks every entry balances, and a printable sign-off page that auto-tabulates close metrics. Built by a SaaS accounting practitioner. No macros."
 summary: "A free 5-tab Excel workbook that holds your entire month-end close in one place — 42 pre-populated tasks, 18 standard subledger reconciliations, JE log with sanity check, and printable sign-off with auto-tabulated close metrics."
 date: 2026-05-26
+lastmod: 2026-11-24
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -23,11 +24,11 @@ faq:
   - q: "Why is this free when your other workbooks are paid?"
     a: "This workbook is structural — it holds your close together but does not compute the technical accounting schedules. Our paid workbooks (ASC 606 Commission Accrual at $249, ASC 842 Lease Accounting at $249, Fixed Asset Rollforward at $79) handle the math-heavy areas that take controllers the longest. The free Close Checklist is the scaffolding; the paid workbooks are the engines."
   - q: "Can I customize the pre-populated task list?"
-    a: "Yes. The 42 tasks are starter content drawn from a typical SaaS controller's close. Add rows for tasks specific to your company (board reporting, KPI calculations, cap-table updates), delete rows that don't apply, change Owner/Due Date for your team. The Sign-Off summary counts whatever's in the Calendar."
-  - q: "How does the materiality flag on Reconciliations work?"
-    a: "You set a Performance Materiality dollar amount on the Setup tab (default $50,000). Each reconciliation calculates Variance = GL minus Subledger, then the 'Within Materiality?' column shows 'OK' (green) when ABS(Variance) is at or below your threshold, or 'FLAG' (red) when it exceeds it. The Sign-Off page counts total flags so you see at a glance if any tie-out needs investigation."
+    a: "Yes. The 42 tasks are starter content drawn from a typical SaaS controller's close. Add rows for tasks specific to your company (board reporting, KPI calculations, cap-table updates), delete rows that don't apply, change Owner/Due Date for your team. Type extra tasks in the blank rows below the list, or insert rows anywhere up to row 200; the Sign-Off summary counts them."
+  - q: "How does the tie-out flag on Reconciliations work?"
+    a: "You set a Tie-Out Tolerance on the Setup tab (default $1.00; a subledger should agree to the GL to the cent, so raise it only for rounding). Each reconciliation calculates Variance = GL minus Subledger, then the 'Within Tolerance?' column shows 'OK' (green) when ABS(Variance) is at or below the tolerance, or 'FLAG' (red) when it exceeds it. A row stays blank until both balances are entered, and reads 'INCOMPLETE' if only one is. The Sign-Off page counts total flags so you see at a glance if any tie-out needs investigation."
   - q: "What's the JE Tracker for?"
-    a: "It's a log of every journal entry posted during the close — Date, JE Number, Description, Account, Debit, Credit, Source (Manual / KDesk workbook / GL system / Other), Preparer, Reviewer, Status. The Source dropdown helps you track entries that came from your scheduled workbooks (FA depreciation, ASC 606 amortization, ASC 842 monthly entries) separately from manual adjustments. The sanity check at the bottom catches any one-sided entry — Sum(Debits) must equal Sum(Credits)."
+    a: "It's a log of every journal entry posted during the close — Date, JE Number, Description, Account, Debit, Credit, Source (Manual / FA, ASC 606 or ASC 842 workbook / GL System Auto / Other), Preparer, Reviewer, Status, and Entry Check. The Source dropdown helps you track entries that came from your scheduled workbooks (FA depreciation, ASC 606 amortization, ASC 842 monthly entries) separately from manual adjustments. Entry Check tests each JE # on its own, so a one-sided entry is flagged even when another entry happens to offset it; the check at the bottom confirms the whole log balances."
   - q: "Can I share this with my team?"
     a: "Yes — free for individual and team use within your company. Multiple accountants can work the same file (one prepares, one reviews) or each team member can hold their own copy with their assigned tasks. Please don't redistribute or resell — share the kdeskaccounting.com link with colleagues instead."
   - q: "Does this replace FloQast / BlackLine / Numeric?"
@@ -48,7 +49,9 @@ Five tabs. You enter data on Setup, Close Calendar, Reconciliations, and JE Trac
 
 ### README + Setup
 
-The first tab. Six-step quickstart and the inputs that drive everything else: Company Name, Current Period, Fiscal Year End, Performance Materiality threshold, Reporting Currency, Period Locked status. Yellow cells are your inputs; every other tab reads from these via defined names.
+The first tab. Six-step quickstart and the inputs that drive everything else: Company Name, Fiscal Year End, Current Period, Period End Date, Tie-Out Tolerance, Reporting Currency, Period Locked status. Yellow cells are your inputs; every other tab reads from these via defined names.
+
+The file opens part-way through a May 2026 close for a fictional company (Acme Corp.), so you can see every check working. The README lists exactly which cells to clear before your first close.
 
 ### Close Calendar
 
@@ -60,9 +63,9 @@ The first tab. Six-step quickstart and the inputs that drive everything else: Co
 - **Day 4-5 — Equity, Tax & Other** (4 tasks) — stock comp, tax provision, FX revaluation, intercompany
 - **Day 5+ — Statements & Review** (6 tasks) — trial balance, financial statements, flux analysis, management review, period lock, close package
 
-Each task has Owner, Due Date, Status (Not Started / In Progress / Done / Blocked / N/A), and Notes. Status dropdown drives conditional formatting — completed tasks turn green, blocked turn red, in-progress turn yellow, N/A grays out. The footer summary tells you at a glance: "32 tasks total | 28 done | 2 in progress | 1 blocked | 1 N/A."
+Each task has Owner, Due Date, Status (Not Started / In Progress / Done / Blocked / N/A), and Notes. Due dates default to business days after the Period End Date (overwrite any of them). Status dropdown drives conditional formatting — completed tasks turn green, blocked turn red, in-progress turn yellow, N/A grays out. The totals line at the top tells you at a glance — on the sample data: "42 tasks total | 27 done | 3 in progress | 1 blocked | 1 N/A."
 
-Add or delete rows for your team. The Sign-Off summary counts whatever's in the Calendar.
+Add tasks in the blank rows below the list, or insert rows anywhere up to row 200; the totals and the Sign-Off summary count them.
 
 ### Reconciliations (Subledger → GL Tie-Out)
 
@@ -73,7 +76,7 @@ Add or delete rows for your team. The Sign-Off summary counts whatever's in the 
 - **GL Balance** — what your GL says (input)
 - **Sub / Schedule Balance** — what the supporting workpaper says (input)
 - **Variance** — GL minus Sub (formula)
-- **Within Materiality?** — "OK" (green) if ABS(Variance) ≤ your Setup materiality threshold, "FLAG" (red) if above
+- **Within Tolerance?** — "OK" (green) if ABS(Variance) ≤ your Setup tie-out tolerance, "FLAG" (red) if above, "INCOMPLETE" (yellow) if only one balance is entered
 - **Status** — Not Started / In Progress / Done / Blocked / N/A
 - **Preparer / Reviewer / Notes** — sign-off and documentation
 
@@ -96,25 +99,26 @@ Footer row sums total GL, total Sub, total Variance, and FLAG count.
 
 ### JE Tracker
 
-**50-row journal entry log.** Columns: Date, JE Number, Description, Account, Debit, Credit, Source (dropdown: Manual / FA Workbook / ASC 606 Workbook / ASC 842 Workbook / GL System Auto / Other), Preparer, Reviewer, Status (Pending / Posted / Reversed / Voided).
+**50-row journal entry log, one row per JE line.** Columns: Date, JE Number, Description, Account, Debit, Credit, Source (dropdown: Manual / FA Workbook / ASC 606 Workbook / ASC 842 Workbook / GL System Auto / Other), Preparer, Reviewer, Status (Pending / Posted / Reversed / Voided), and **Entry Check** — which tests each JE # on its own and reads OK, Out of balance, or No JE #.
 
 Two safeguards at the bottom:
 1. **Sum of Debits** vs **Sum of Credits** vs **Difference** — three running totals so you see your aggregate exposure
-2. **"Balanced?" flag** — formula evaluates `IF(ROUND(Difference,2)=0, "✓ Debits = Credits", "✗ OUT OF BALANCE")`. Conditional formatting turns the cell green when balanced, red when not. A one-sided JE shows up immediately.
+2. **"Balanced?" flag** — "✓ Debits = Credits" only when the difference is zero *and* every line passes Entry Check; otherwise "✗ OUT OF BALANCE" ("No entries yet" on an empty log). Conditional formatting turns the cell green when balanced, red when not. A one-sided JE shows up immediately, even if another entry happens to offset it in the totals.
 
 The Source dropdown lets you track which workbook produced which entry — useful if you're using our paid ASC 606 / ASC 842 / FA workbooks and want to keep their auto-generated entries separate from manual adjustments.
 
 ### Sign-Off
 
-**Printable certification page.** Header shows Company, Period, Period End Date — all pulled from Setup. Then 9 close metrics that auto-tabulate from the other tabs:
+**Printable sign-off page.** Header shows Company, Period, Period End Date, Fiscal Year End and Reporting Currency — all pulled from Setup. Then 10 close metrics that auto-tabulate from the other tabs:
 
 - Tasks total / completed / in progress / blocked / N/A
 - Reconciliation flags (count of FLAGs)
 - Reconciliations done (count of Done status)
-- JE entries posted (count of Posted status)
-- JE debit = credit? (Yes / No — investigate)
+- JE entries posted (count of distinct JE numbers with a Posted line)
+- JE lines failing Entry Check
+- JE debit = credit? (Yes / No — investigate / No entries yet)
 
-Plus three close gates: Period Locked in GL? • Financial statements attached? • Close package distributed? — each a Yes/No/N/A dropdown.
+Plus three close gates: Period Locked in GL? (pulled from Setup) • Financial statements attached? • Close package distributed? — each a Yes/No/N/A dropdown.
 
 Then an exception list (6 rows for unresolved items, post-close follow-ups), and a signature block for Preparer, Reviewer, and Controller / CFO with Name, Date, Signature columns.
 
@@ -128,7 +132,7 @@ Set up for portrait fit-to-page printing. Print it, sign it, file it.
 
 **Day 1-3:** Your team works through Day 1-3 tasks. Each person updates their Status column as they go. Blocked items go red — visible in the Sunday status meeting.
 
-**Day 3-4:** Technical accountants work the ASC 606 / ASC 842 / FA schedules (in those workbooks if you have them). As JEs get posted, log them in the JE Tracker. The Source dropdown distinguishes workbook-generated entries from manual ones. Sanity check stays green.
+**Day 3-4:** Technical accountants work the ASC 606 / ASC 842 / FA schedules (in those workbooks if you have them). As JEs get posted, log them in the JE Tracker. The Source dropdown distinguishes workbook-generated entries from manual ones. The Balanced? check stays green.
 
 **Day 4-5:** Once all subledger JEs are posted, run Reconciliations. Pull GL balance from your accounting system; pull Sub/Schedule balance from each supporting workpaper. The FLAG column tells you where to investigate.
 
@@ -154,7 +158,7 @@ If you're tired of rebuilding the technical schedules from scratch each month:
 |---|---|---|
 | **[ASC 606 Commission Accrual Workbook](/templates/asc606/)** | Capitalizes and amortizes sales commissions under ASC 340-40. 50 deals, three amortization methods, JE generator, rollforward, reconciliation. | $249 |
 | **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** | ROU asset, lease liability, amortization schedule for operating + finance leases. 20 leases, six-category JE generator. | $249 |
-| **[Fixed Asset Rollforward Workbook](/templates/fixed-assets/)** | 50 capitalized assets, four depreciation methods, JE generator with GL system presets, five-way reconciliation. | $79 |
+| **[Fixed Asset Rollforward Workbook](/templates/fixed-assets/)** | 50 capitalized assets, four depreciation methods, JE generator with GL dimension presets, reconciliation to your GL balances. | $79 |
 
 Or run them all on a free browser-based estimate first: **[Free Amortization Calculator →](/calculator/)**
 

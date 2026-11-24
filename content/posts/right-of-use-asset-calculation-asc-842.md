@@ -177,7 +177,7 @@ No. The initial ROU asset is calculated the same way for both. The difference is
 
 After commencement, the ROU asset amortizes to zero over the lease term — see [how to build the amortization schedule](/posts/asc-842-amortization-schedule-excel/) that tracks it period by period.
 
-The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles the full calculation — ROU asset opening balance including IDC, prepaid, and incentives; 120-month amortization schedule per lease; period journal entry aggregation — for up to 20 leases in a single file.
+The [ASC 842 Lease Accounting Workbook](/templates/asc842/) handles the full calculation — ROU asset at commencement including IDC (prepaid rent goes in with it) and incentives, with the commencement journal entry; 120-month amortization schedule per lease; period journal entry aggregation — for up to 20 leases in a single file.
 
 [**Get the Workbook ($249) →**](https://kdeskaccounting.gumroad.com/l/phxigq)
 

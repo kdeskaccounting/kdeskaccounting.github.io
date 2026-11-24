@@ -211,11 +211,11 @@ The [**Startup Runway Calculator**](/templates/runway/) ($49) gives you a month-
 
 - Scenario toggles (pessimistic / base / optimistic) that update every output instantly
 - Two-rate revenue growth modeling for companies with changing growth trajectories
-- Fixed and variable cost categories with start/end month controls for planned hires, contract changes, and one-time expenses
+- Fixed and variable cost lines with start months, occurrences and frequencies for planned hires, contract changes, and one-time expenses
 - Automatic cash-zero date calculation and monthly burn tracking
-- Dashboard with key metrics: months of runway, cash-zero date, average burn, peak cash
+- Dashboard with key metrics: months of runway, cash-zero date, month 1 burn, peak cash, breakeven, capital required
 
-If you want to test the layout before purchasing, grab the [**free version**](https://kdeskaccounting.gumroad.com/l/runway-calculator-free) — it includes the core model with limited scenarios.
+If you want to test the layout before purchasing, grab the [**free version**](https://kdeskaccounting.gumroad.com/l/runway-calculator-free) — it includes the core model with a 12-month window, 5 rows per tab and the Base scenario.
 
 For companies that also need to track the accounting side of their spending decisions, the [ASC 606 Commission Capitalization Workbook](/templates/asc606/) ($249) handles commission expense amortization under ASC 340-40, and the [ASC 842 Lease Accounting Workbook](/templates/asc842/) ($249) handles the lease liability and ROU asset schedules for any office space decisions.
 

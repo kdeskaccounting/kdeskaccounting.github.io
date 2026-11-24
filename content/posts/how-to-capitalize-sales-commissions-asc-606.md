@@ -182,13 +182,14 @@ If you are in the "too many deals for manual, too early for enterprise software"
 The [ASC 606 Commission Accrual Workbook](/templates/asc606/) handles everything in this guide:
 
 - **50-deal capacity** with all three amortization bases — contract term, expected customer life, practical expedient
-- **Month-by-month amortization waterfall** with dynamic period selection
+- **Month-by-month amortization schedule** with dynamic period selection
+- **Cancellations and clawbacks** — Cancel Date and Clawback % on the deal row, with the release and recovery posted automatically
 - **Automated journal entries** with GL account mapping
 - **Rollforward schedule** that ties to your amortization detail, split current and non-current
 - **Reconciliation tab** — all variances should show $0
 - **No macros** — pure Excel formulas, works on Windows and Mac
 
-$79, one time. No subscription. [Get it here →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
+$249, one time. No subscription. [Get it here →](https://kdeskaccounting.gumroad.com/l/mwmwpe)
 
 Or [try the free 5-deal version](https://kdeskaccounting.gumroad.com/l/cjexre) before you buy — same tabs, same formulas, limited to 5 deals and 24 months.
 

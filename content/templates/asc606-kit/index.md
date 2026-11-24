@@ -1,10 +1,10 @@
 ---
 title: "ASC 340-40 Commission Capitalization Kit — Memo Template, Policies and Auditor PBC Package"
 description: "The documentation auditors ask for on capitalized sales commissions: a technical accounting memorandum template with a completed example, an amortization-basis decision framework, a clawback and reversal policy with journal entries, a month-end close procedure, and an auditor PBC package with a disclosure footnote template — plus the ASC 606 Commission Accrual Workbook. Editable DOCX and PDF."
-summary: "Everything a controller has to document to capitalize commissions under ASC 340-40 and survive the audit, built to match the workbook and drawn from the fact-checked guides on this site. Templates for the company's own analysis, not advice."
+summary: "What a controller has to document to capitalize commissions under ASC 340-40 and support it for the audit, built to match the workbook and drawn from the fact-checked guides on this site. Templates for the company's own analysis, not advice."
 draft: false
 date: 2026-09-05
-lastmod: 2026-09-10
+lastmod: 2026-11-24
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -22,7 +22,7 @@ compare:
   free_name: "Workbook alone"
   full_name: "Commission Capitalization Kit"
   rows:
-    - ["ASC 606 Commission Accrual Workbook — 50 deals, three amortization bases, 60-month waterfall, JE Generator, rollforward, reconciliation", "yes", "yes"]
+    - ["ASC 606 Commission Accrual Workbook — 50 deals, three amortization bases, cancellations and clawbacks, 60-month schedule, JE Generator, rollforward, reconciliation", "yes", "yes"]
     - ["Technical accounting memorandum template (ASC 340-40) with every fill-in bracketed", "no", "yes"]
     - ["Illustrative completed memorandum for a fictional SaaS company", "no", "yes"]
     - ["Amortization-basis decision framework + estimated-period-of-benefit worksheet", "no", "yes"]
@@ -35,11 +35,11 @@ faq:
   - q: "Is this a memo written for my company?"
     a: "No. It is a template for the company's own technical accounting memorandum, with prompts for each judgment and an illustrative completed example to write against. The company's preparer and reviewer complete and sign it. No calls or custom drafting are included."
   - q: "Which standards and interpretive materials does it cover?"
-    a: "ASC 340-40 (recognition, amortization, impairment and disclosure of costs to obtain a contract), the related paragraphs of ASC 250 and ASC 450, FASB TRG Agenda Ref 23 and TRG Memo 57, ASU 2014-09 paragraph BC309, and FASB Revenue Recognition Implementation Q&A No. 74 on employer payroll taxes. Citations paraphrase the Codification; confirm them against the current text before relying on them."
+    a: "ASC 340-40 (recognition, amortization, impairment and disclosure of costs to obtain a contract, including the private-company disclosure elections), the related paragraphs of ASC 250, ASC 710 and ASC 450, FASB TRG Agenda Ref 23 and TRG Memo 57, ASU 2014-09 paragraph BC309, and FASB Revenue Recognition Implementation Q&As No. 74 (employer payroll taxes) and No. 78. Citations paraphrase the Codification; confirm them against the current text before relying on them."
   - q: "Does it handle renewal commissions and the 'commensurate' question?"
-    a: "Yes. The decision framework's step four is the commensurate test: where the renewal commission is reasonably proportional to the initial commission the asset is amortized over the contract term; where it is lower or absent, over the expected period of benefit including anticipated renewals, supported by the cohort worksheet."
+    a: "Yes. The decision framework's step three is the commensurate test: where the renewal commission is reasonably proportional to the initial commission the asset is amortized over the contract term; where it is lower or absent, over the expected period of benefit including anticipated renewals, supported by the cohort worksheet."
   - q: "What about clawbacks and cancellations?"
-    a: "The clawback and reversal policy works one illustration through a full clawback, a partial clawback, a cancellation with no clawback right, a downgrade, and a miscalculated commission — with the entries, the non-recoverable payroll-tax component, and presentation and collectibility rules."
+    a: "The clawback and reversal policy works one illustration through a full clawback, a partial clawback, a cancellation with no clawback right, a downgrade, and a miscalculated commission — with the entries, the non-recoverable payroll-tax component, and presentation and collectibility rules. The workbook handles cancellations the same way (Cancel Date and Clawback % on the deal row, posted as JE-004), and the policy ends with the figures the workbook reproduces for its full, partial and no-clawback cases."
   - q: "Is this accounting advice?"
     a: "No. Every document is a template for the company's own analysis and carries that disclaimer. It does not consider your facts, and it may not fit them; the company's own accounting judgment and its auditors decide."
 ---
@@ -52,11 +52,11 @@ Capitalizing sales commissions under ASC 606 / ASC 340-40 is where a SaaS close 
 
 1. **Technical Accounting Memorandum — template.** Purpose and scope, background, issues, guidance (ASC 340-40-25, -35 and -50 with the TRG and Q&A materials), analysis prompts for each judgment — incremental costs, amortization period and pattern, the practical expedient, impairment, presentation, disclosure — conclusion, and an approvals block. Every fill-in is bracketed.
 2. **Technical Accounting Memorandum — illustrative example.** The same memo completed for a fictional SaaS company with Enterprise, Mid-Market and SMB plans, so the judgments have a worked model.
-3. **Amortization-Basis Decision Framework.** A six-step decision tree from "is it incremental?" to "has the expected timing changed?", the evidence to retain at each branch, and a cohort worksheet for the estimated period of benefit that maps to the workbook's Setup sheet.
-4. **Clawback and Reversal Policy.** One illustration ($6,000 commission, $459 employer tax, 36-month period) carried through five cases with journal entries.
-5. **Month-End Close Procedure.** Earned → accrued → capitalized → amortized → true-up → payout, a fully worked month, the identity *capitalized cost = unamortized asset + cumulative amortization*, and the review evidence to keep.
-6. **Auditor PBC Package.** An eleven-item request list with owners and frequency, a disclosure footnote template built on ASC 340-40-50-2 and 50-3, and a sample-selection tie-out sheet.
-7. **The ASC 606 Commission Accrual Workbook** — the same file sold separately.
+3. **Amortization-Basis Decision Framework.** A six-step decision tree from "is it incremental?" to "has the expected timing changed?", the evidence to retain at each branch, and a cohort worksheet for the estimated period of benefit that maps to the workbook's default benefit period on Setup and the per-deal Benefit Period Override.
+4. **Clawback and Reversal Policy.** One illustration ($6,000 commission, $459 employer tax, 36-month period) carried through five cases with journal entries, and a table showing how to reproduce the cases in the workbook.
+5. **Month-End Close Procedure.** Earned → accrued → capitalized → amortized → true-up → payout, a fully worked month, the identity *capitalized cost = unamortized asset + cumulative amortization*, and the review evidence to keep. The workbook carries the capitalized asset; the accrual and payouts stay in your commission and payroll systems, and the procedure says which figures the workbook reproduces.
+6. **Auditor PBC Package.** An eleven-item request list with owners and frequency, a disclosure footnote template built on ASC 340-40-50-2 and 50-3 (with the private-company elections), and a sample-selection tie-out sheet.
+7. **The ASC 606 Commission Accrual Workbook (v10)** — the same file sold separately, including the cancellation and clawback columns.
 
 ## How it was built
 

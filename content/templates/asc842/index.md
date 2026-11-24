@@ -3,7 +3,7 @@ title: "ASC 842 Lease Accounting Excel Template (Free 3-Lease Version + Full 20-
 description: "ASC 842 lease accounting in Excel, without enterprise software: a free 3-lease template and the full 20-lease workbook. Operating, finance and short-term leases, escalating rent and free rent, journal entries, rollforward and disclosure table. No macros, no subscription."
 summary: "The ASC 842 Lease Accounting Workbook handles your full lease portfolio — ROU asset calculation, lease liability amortization, escalating rent and free rent, period journal entries, balance sheet rollforward, and disclosure table — in a single Excel file you can trace and tie out."
 date: 2026-03-16
-lastmod: 2026-11-19
+lastmod: 2026-11-24
 author: "KDesk Accounting"
 ShowToc: true
 TocOpen: true
@@ -41,6 +41,10 @@ faq:
     a: "Modifications aren't automated. A modification that isn't accounted for as a separate contract is remeasured as of its effective date, and changing a lease's inputs recalculates its whole history, so keep a copy of your closed periods before editing a lease."
   - q: "Can I use it for IFRS 16?"
     a: "The underlying PV math and amortization logic is identical. Classify all leases as Finance and the workbook produces depreciation and interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same."
+  - q: "Does it calculate ASC 842 transition (adoption) entries?"
+    a: "No. Each lease is measured from its commencement date, and the JE Generator books the commencement entry (JE-008) in the month a lease starts. Transition adjustments — remaining payments at adoption, prepaid or accrued rent moved into the ROU asset — are made by hand."
+  - q: "Does it depreciate a finance lease over the asset's useful life?"
+    a: "Not yet. Finance lease ROU assets are depreciated over the lease term. When ownership transfers or a purchase option is reasonably certain to be exercised, ASC 842-20-35-8 uses the asset's useful life instead; adjust those leases by hand. The Instructions tab says so."
   - q: "What if I have more than 20 leases?"
     a: "Email hello@kdeskaccounting.com — we can discuss a custom build."
 ---
@@ -85,15 +89,15 @@ Pick any lease from the dropdown to see its amortization table for the first 120
 
 ### JE Generator
 
-Aggregated journal entries for the Selected Period, using your GL codes: operating lease cost, interest and ROU amortization; finance lease depreciation, interest and principal; short-term lease expense, including the straight-line adjustment to accrued or prepaid rent when a short-term lease has free rent or an escalation. Debits equal credits, and a lease-by-lease detail table below shows where each number comes from.
+Aggregated journal entries for the Selected Period, using your GL codes: the commencement entry for a lease that starts in the period (JE-008: ROU asset and lease liability, with initial direct costs and incentives); operating lease cost, interest and ROU amortization; finance lease depreciation, interest and principal; short-term lease expense, including the straight-line adjustment to accrued or prepaid rent when a short-term lease has free rent or an escalation. Debits equal credits, and a lease-by-lease detail table below shows where each number comes from.
 
 ### Rollforward
 
-Beginning balance, additions, reductions and ending balance for operating and finance lease liabilities, ROU assets and short-term accrued rent. Current versus long-term split of the liability at period end, and the ASC 842-20-50 maturity analysis: undiscounted payments by year for five years and thereafter, less imputed interest, back to the present value of the liability.
+Beginning balance, additions (new leases at commencement, plus interest), reductions and ending balance for operating and finance lease liabilities, ROU assets and short-term accrued rent. Current versus long-term split of the liability at period end, and the ASC 842-20-50 maturity analysis: undiscounted payments by year for five years and thereafter, less imputed interest, back to the present value of the liability; plus the weighted-average remaining lease term and discount rate.
 
 ### Reconciliation
 
-Ties the JE Generator to the lease schedules for the Selected Period: interest, payments, total expense, cash paid against the Payment Schedule, and the short-term accrued rent movement. Every variance should read $0; anything else points you to the problem.
+Ties the JE Generator to the lease schedules for the Selected Period: interest, payments, total expense, cash paid against the Payment Schedule, the short-term accrued rent movement, the commencement entry against Lease Data, and the ending liability against the lease schedules. Every variance should read $0; anything else points you to the problem.
 
 ### Dashboard
 
@@ -121,9 +125,12 @@ To make the mechanics concrete: a 36-month office lease at $5,000/month paid at 
 | ROU asset amortization | $4,178 |
 | Ending ROU balance | $160,177 |
 
-**JE Generator output for Month 1:**
+**JE Generator output for Month 1** — the commencement entry (JE-008), then the month's lease cost:
 
 ```
+DR  Right-of-Use Asset        164,355
+    CR  Lease Liability                 164,355
+
 DR  Lease Expense               5,000
 DR  Lease Liability             4,178
     CR  Cash                              5,000
@@ -144,7 +151,7 @@ Example: $2,500/month equipment lease, 48 months, 7% IBR.
 - Monthly depreciation = $104,401 ÷ 48 = $2,175
 - Month 1 interest = $104,401 × 7%/12 = $609
 
-Month 1 JE Generator output:
+Month 1 JE Generator output, after the commencement entry (DR Right-of-Use Asset 104,401 / CR Lease Liability 104,401):
 
 ```
 DR  Depreciation Expense        2,175
@@ -154,7 +161,7 @@ DR  Lease Liability             1,891
     CR  Cash                              2,500
 ```
 
-The workbook generates separate depreciation and interest lines for finance leases automatically. No manual split required.
+The workbook generates separate depreciation and interest lines for finance leases automatically. No manual split required. Depreciation runs over the lease term; if ownership transfers or a purchase option is reasonably certain, ASC 842-20-35-8 calls for the asset's useful life, which you adjust by hand for now.
 
 ---
 
@@ -176,7 +183,7 @@ Mark a lease as "Short-term Exempt" in Lease Data and the workbook skips ROU ass
 
 ## What It Is Not
 
-This workbook is designed for companies with up to 20 leases. If you have 50–100+ leases, purpose-built lease accounting software (iLease, LeaseQuery, Occupier) is the right tool. This workbook does not handle lessor accounting, sale-leaseback accounting, or real-time system integration. It is a standalone Excel file — there is no cloud sync, no API, no subscription.
+This workbook is designed for companies with up to 20 leases. If you have 50–100+ leases, purpose-built lease accounting software (iLease, LeaseQuery, Occupier) is the right tool. This workbook does not handle lessor accounting, sale-leaseback accounting, ASC 842 transition (adoption) adjustments, automated lease modifications, or real-time system integration. It is a standalone Excel file — there is no cloud sync, no API, no subscription.
 
 Not sure which side you are on? [LeaseQuery or Excel: how to tell which your portfolio needs](/posts/leasequery-alternative-excel/).
 
@@ -191,7 +198,7 @@ Not sure which side you are on? [LeaseQuery or Excel: how to tell which your por
 | Lease types | Operating, finance and short-term exempt |
 | Excel version | 2016, 365, Mac (no macros) |
 | File format | .xlsx |
-| Inputs | Yellow input cells; everything else is a formula |
+| Inputs | Yellow input cells; formula cells protected (no password) so they can't be overwritten by accident |
 | Price | $249 one-time |
 
 ---
@@ -217,6 +224,12 @@ Modifications aren't automated. A modification that isn't accounted for as a sep
 
 **Can I use it for IFRS 16?**
 The underlying PV math and amortization logic is identical. Classify all leases as "Finance" and the workbook produces depreciation + interest output consistent with IFRS 16 treatment. Income statement presentation and cash flow classification differ between ASC 842 and IFRS 16, but the schedule mechanics are the same.
+
+**Does it calculate ASC 842 transition (adoption) entries?**
+No. Each lease is measured from its commencement date, and the JE Generator books the commencement entry (JE-008) in the month a lease starts. Transition adjustments — remaining payments at adoption, prepaid or accrued rent moved into the ROU asset — are made by hand.
+
+**Does it depreciate a finance lease over the asset's useful life?**
+Not yet. Finance lease ROU assets are depreciated over the lease term. When ownership transfers or a purchase option is reasonably certain to be exercised, ASC 842-20-35-8 uses the asset's useful life instead; adjust those leases by hand. The Instructions tab says so.
 
 **What if I have more than 20 leases?**
 Email [hello@kdeskaccounting.com](mailto:hello@kdeskaccounting.com) — we can discuss a custom build.

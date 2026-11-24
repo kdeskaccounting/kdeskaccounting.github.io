@@ -399,12 +399,12 @@ If you'd rather not build all of this from scratch, the [**Fixed Asset Rollforwa
 
 - Four depreciation methods (Straight-Line, Double-Declining Balance with auto-switch, Sum-of-Years, Units of Production)
 - Mid-month and full-month conventions, applied per asset
-- In-service date distinct from acquisition date (depreciation starts when *placed in service*, not invoiced — ASC 360-10-30-1)
+- In-service date distinct from acquisition date (depreciation starts when *placed in service*, not invoiced)
 - Leasehold Improvements automatically capped at the shorter of useful life or remaining lease term
 - Disposal Log with gain/loss math + evidence trail (Authorization, Evidence Type, Counterparty)
 - ASC 250 Change Log for useful-life and method revisions
 - JE Generator with GL system presets (Generic / QuickBooks / NetSuite / Sage Intacct / Xero)
-- Five-way reconciliation tab — Schedule = JE = Rollforward = Register = GL — with a diagnostic sub-section that ranks likely variance causes
+- Reconciliation tab — Schedule = JE = Rollforward = Register = the GL balances you enter — with a diagnostic sub-section that lists likely variance causes
 - Print-ready Audit Confirmation Export tab for the auditor's PBC sample
 
 [**Get the Workbook ($79) →**](https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward)
@@ -419,7 +419,7 @@ If you are building out your accounting infrastructure in Excel, these templates
 
 - **[ASC 606 Commission Capitalization Workbook](/templates/asc606/)** ($249) —Automates commission capitalization, amortization, and journal entries under ASC 340-40. If you are capitalizing sales commissions, this saves hours every month-end.
 - **[ASC 842 Lease Accounting Workbook](/templates/asc842/)** ($249) —Full lease accounting schedule with ROU asset, lease liability, amortization, and journal entries. Handles both operating and finance leases.
-- **[Startup Runway Calculator](/templates/runway/)** ($49) —Cash flow forecasting with two-rate revenue growth, departmental hiring plans, and scenario modeling for board-ready runway analysis.
+- **[Startup Runway Calculator](/templates/runway/)** ($49) —Cash flow forecasting with two-rate revenue growth, fixed and variable cost lines, and scenario modeling for board-ready runway analysis.
 
 ---
 

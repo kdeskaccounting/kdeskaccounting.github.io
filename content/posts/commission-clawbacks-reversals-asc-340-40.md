@@ -116,7 +116,7 @@ The employer payroll taxes on a commission were capitalized with it because they
 
 ## The Excel Register and Rollforward
 
-Clawbacks are where hand-built commission schedules break, because the waterfall keeps amortizing a row whose status changed. The [ASC 606 Commission Capitalization Workbook](/templates/asc606/) handles it with three columns on the register and one line on the rollforward; a hand-built schedule needs the same:
+Clawbacks are where hand-built commission schedules break, because the waterfall keeps amortizing a row whose status changed. The [ASC 606 Commission Capitalization Workbook](/templates/asc606/) handles it with Cancel Date and Clawback % on the deal row, calculated release and clawback columns beside them, and a "Released on Cancellation" line on the rollforward; a hand-built schedule needs the same:
 
 - **Status** (active, cancelled, clawed back, corrected) and **status month**: amortization stops in the status month; the waterfall formula checks both.
 - **Clawback %** and **recovered amount**: drives the receivable entry and the split between recovery and impairment.

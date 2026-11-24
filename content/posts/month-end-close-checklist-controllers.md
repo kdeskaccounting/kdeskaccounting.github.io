@@ -233,7 +233,7 @@ The goal is a 5-day close where Day 6 is review, not catch-up.
 Five of the most time-consuming finance tasks — close orchestration, deferred commission accounting, lease accounting, fixed asset depreciation, and cash runway modeling — are handled by our workbooks:
 
 **[Month-End Close Checklist + Tie-Out Workbook](/templates/month-end-close/)** — **Free**
-A 5-tab Excel workbook that holds your entire close in one place: 42 pre-populated tasks, 18 subledger reconciliations with materiality flag, JE tracker, and printable sign-off. Pay What You Want, $0 minimum.
+A 5-tab Excel workbook that holds your entire close in one place: 42 pre-populated tasks, 18 subledger reconciliations with a tie-out tolerance flag, JE tracker, and printable sign-off. Pay What You Want, $0 minimum.
 
 **[ASC 606 Commission Accrual Workbook](https://kdeskaccounting.gumroad.com/l/mwmwpe)** — $249
 Handles 50 deals with three amortization methods, automated journal entries, rollforward, and reconciliation.

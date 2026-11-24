@@ -248,11 +248,11 @@ Everything described above —the input panel, dynamic growth rates, monthly/qua
 
 What you get:
 
-- **Setup sheet** with all assumptions in one place (starting cash, expenses, revenue, two-phase growth rates, reporting frequency)
+- **Separate input tabs** for financing (including starting cash), revenue, fixed and variable expenses and CapEx, with two-phase growth rates and monthly / quarterly / annual / one-time frequencies
 - **Monthly projection** that compounds expenses and revenue separately, with a cash waterfall that flags exactly when you hit zero
-- **Dashboard** with gross burn, net burn, runway in months, and a month-by-month schedule
+- **Dashboard** with runway in months, cash-zero date, month 1 burn, peak cash, breakeven and capital required, plus a month-by-month schedule (gross burn is on the Forecast Summary)
 - **Pre-built formulas** with null-safety, error handling, and locked formula cells so your team cannot accidentally break the model
-- **Works in Excel and Google Sheets** —no macros, no plugins
+- **Works in Excel 2016+, Microsoft 365 and Excel for Mac** —no macros, no plugins
 
 **Price: $49** —less than one hour of controller time to build it from scratch.
 
