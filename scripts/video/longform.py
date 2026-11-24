@@ -21,6 +21,7 @@ Top level (assemble.py reads it; build_video.py preflights it before any narrati
       max_picture_s: 12.0    # backstop: no beat may be on screen longer, after rescale (12.0)
       bed_crossfade: 3.0     # seconds of crossfade where the bed loops (default 3.0; 0 = butt)
       bed_loop_in: 0.0       # repeats of the bed start here (skip a long intro); default 0
+      chapter_sfx: {src: 'bundle:whoosh', gain_db: -16, lead: 0.2}   # default; null = silent
 
     Unknown `landscape:` keys are refused by name.
 
@@ -28,13 +29,14 @@ Top level (assemble.py reads it; build_video.py preflights it before any narrati
       bed: 'pool:<id>'       # or `rotate`, or a mapping {src, lufs, target_lufs, fade_in, fade_out}
       duck: {threshold, ratio, attack, release}            # optional, make_short's defaults
       master: {lufs: -16, tp: -1.5, lra: 11}               # optional; the final loudnorm
-      sfx: {events: {pop: <src>, whoosh: {src, gain_db}}}  # optional; callout sounds only
+      sfx: {events: {...}, on_tag: {...}, on_verdict: {good, bad}, min_gap}   # the Shorts block
     bed_pool: [...]          # top level, as the Shorts template has it (beds.py)
 
     The audio block is make_short.audio_settings() verbatim (same refusals: a bed needs its
     measured `lufs`, the gain target - lufs must be within +/-30 dB, a missing file refuses,
-    duck/master/sfx without a bed refuse). The landscape path additionally refuses any
-    `audio.sfx` key but `events` (no whoosh-on-cut, cues, opening sting or grammar sounds).
+    duck/master/sfx without a bed refuse). The landscape path reads events, on_tag,
+    on_verdict and min_gap under `audio.sfx`, drops null `on_cut`/`opening`, and refuses a
+    live whoosh-on-cut, opening sting, cue or camera-move sound (longform_overlay.py).
     The bed is trimmed to its audible span (a silent lead-in or tail would be a dip at every
     seam; the pool's feeling-good starts with 2 s under -50 dBFS, its-playtime and
     ukulele-girls end with 3 s of it), looped to the episode's length with an equal-power
@@ -79,28 +81,22 @@ Per `kind: media` scene (every key optional except `src`, which beats may stand 
            Studio attribution zone for ANY source shape (see earth_zones). Each chapter's
            start time is written to build/<slug>/chapters.json for the description's
            timestamps. `number` is optional (no number, no kicker, unless `kicker:` is given).
-  callouts Type `sticker` only (badge, arrow, circle, text and hoot are Shorts-only here and
-           are refused by name). `src` a transparent PNG (its transparent margin is trimmed);
-           exactly one of `when:` (a word reference {word, nth?, edge?, offset?} as in the
-           Shorts, or seconds) or `at:` (seconds); `anchor: {x, y}` the sticker's centre as
-           fractions of the 1920x1080 frame (0..1); `size` (default 0.42) the sticker's LONGER
-           side as a fraction of the frame HEIGHT; `seconds` on screen (default: `callout_s`,
-           cut short at the next beat cut when that comes 1 s or more after it lands);
-           `offset_ms` after the word (default 80 for a word, 0 for seconds); `enter_from`
-           bottom|left|right|top (default: the nearest of bottom/left/right); `label:` a string
-           (drawn on the sticker low and centred) or {text, x, y, size, color, ink, rotate};
-           `labels:` a list of those (the Shorts schema). It slides in over 300 ms (ease-out
-           cubic) and snaps out. `sfx:` (pop|chime|hit|whoosh|ding) is mixed at its landing
-           when `audio.sfx.events` has that role; otherwise it is skipped with a note. A
-           sticker that would cover an Earth Studio attribution zone is refused.
+  callouts make_short's own `callouts:` schema, every type: sticker, badge, text, arrow, circle
+           and hoot (Hoot), plus the landscape spellings `at:` (seconds), `seconds:` (hold)
+           and `label:`. Timing, sizes, eases, sounds and Hoot's placement are documented in
+           scripts/video/longform_overlay.py. A sticker's `size` is its LONGER side (after its
+           transparent margin is trimmed) as a fraction of the frame HEIGHT, default 0.42; it
+           slides in from the nearest edge. Every callout is refused over an Earth Studio zone.
+  fx       The scene's verdict washes/grades (grammar.py `fx:`), on the picture under every
+           graphic, with `audio.sfx.on_verdict` sounds (longform_overlay.py).
 
   Refused on a landscape media scene (each is a Shorts render key this path would silently
-  drop): overlay, elements, scrim, blur, fx, tail_s, crashzoom, still_of, steps. `chapter:`,
-  `callouts:`, `beats:` and `in:` on a non-media scene are refused too (a card/title/sheet
+  drop): overlay, elements, scrim, blur, tail_s, crashzoom, still_of, steps. `chapter:`,
+  `callouts:`, `beats:`, `in:` and `fx:` on a non-media scene are refused too (a card/title/sheet
   scene still renders through assemble's old 2400x1350 still path, fades included).
 
-Not built for 16:9 (episode 1 does not need them): Hoot, verdict badges/washes, arrows,
-circles, text stamps, whoosh-on-cut, payoff cues, the opening sting, xfade joins.
+Not built for 16:9: overlay `elements:` (tags, emoji, figures, calendars), whoosh-on-cut
+(off for the Shorts too), payoff cues, the opening sting, camera-move sounds, xfade joins.
 
 Pure string/geometry work and the standard library, except the PNG drawing (`chapter_png`,
 `sticker_png`), which imports PIL inside the function, and `render_bed_loop`, which runs
@@ -122,7 +118,7 @@ FONT_ROUNDED = HERE / "fonts" / "Nunito-Variable.ttf"
 # --- landscape: options -----------------------------------------------------------------------
 
 LANDSCAPE_KEYS = ("captions", "join", "scene_pad", "chapter_card_s", "callout_s",
-                  "max_picture_s", "bed_crossfade", "bed_loop_in")
+                  "max_picture_s", "bed_crossfade", "bed_loop_in", "chapter_sfx")
 CAPTION_KEYS = ("enabled", "style", "position")
 CAPTION_POSITIONS = ("lower-third", "top")
 JOINS = ("cut", "fade")
@@ -208,10 +204,10 @@ def options(spec: dict) -> Options | None:
 
 #: Shorts render keys the landscape path does not draw. Refused rather than ignored: a key
 #: that parses and does nothing reads, in the spec, as applied.
-REFUSED_SCENE_KEYS = ("overlay", "elements", "scrim", "blur", "fx", "tail_s", "crashzoom",
+REFUSED_SCENE_KEYS = ("overlay", "elements", "scrim", "blur", "tail_s", "crashzoom",
                       "still_of", "steps")
 #: Keys only a `kind: media` scene may carry on a landscape spec.
-MEDIA_ONLY_KEYS = ("chapter", "callouts", "beats", "in")
+MEDIA_ONLY_KEYS = ("chapter", "callouts", "beats", "in", "fx")
 
 
 def normalise_spec(spec: dict) -> dict:
@@ -558,16 +554,12 @@ def chapter_overlay(x: int, y: int, w: int, t0: float, t1: float) -> str:
 
 # --- callouts -----------------------------------------------------------------------------
 
-CALLOUT_KEYS = ("type", "src", "when", "at", "anchor", "size", "seconds", "label", "labels",
-                "enter_from", "offset_ms", "sfx")
 STICKER_SIZE = 0.42
 SLIDE_S = 0.30
-WORD_OFFSET_MS = 80.0
 EDGES = ("bottom", "left", "right", "top")
 LABEL_KEYS = ("text", "x", "y", "size", "color", "ink", "rotate")
 LABEL_DEFAULT = {"x": 0.5, "y": 0.80, "size": 0.14}
 LABEL_SIZE = 0.12
-SHORTS_ONLY_TYPES = ("badge", "arrow", "circle", "text", "hoot")
 
 
 def _label(raw, tag) -> dict:
@@ -593,102 +585,12 @@ def _label(raw, tag) -> dict:
     return lab
 
 
-def check_callouts(scene: dict, where: str = "scene") -> list:
-    """A landscape scene's `callouts:`, validated and normalised (srcs NOT yet resolved)."""
-    import callouts as shorts_callouts
-    import illustrate
-    raw = (scene or {}).get("callouts")
-    if raw is None:
-        return []
-    if not isinstance(raw, list) or not raw:
-        raise SystemExit(f"{where}: `callouts:` must be a non-empty list")
-    out = []
-    for i, c in enumerate(raw):
-        tag = f"{where} callouts[{i}]"
-        if not isinstance(c, dict):
-            raise SystemExit(f"{tag}: a callout is a mapping, got {c!r}")
-        kind = c.get("type")
-        if kind in SHORTS_ONLY_TYPES:
-            raise SystemExit(f"{tag}: type {kind!r} is Shorts-only; the 16:9 path draws "
-                             f"`type: sticker` (Hoot and badges are not built for long-form)")
-        if kind != "sticker":
-            raise SystemExit(f"{tag}: `type` must be sticker, got {kind!r}")
-        unknown = set(c) - set(CALLOUT_KEYS)
-        if unknown:
-            raise SystemExit(f"{tag}: unknown key(s) {', '.join(sorted(unknown))}; known: "
-                             f"{', '.join(CALLOUT_KEYS)}")
-        src = c.get("src")
-        if not isinstance(src, str) or not src.strip():
-            raise SystemExit(f"{tag}: a sticker needs `src` (a transparent PNG cut-out)")
-        if ("when" in c) == ("at" in c):
-            raise SystemExit(f"{tag}: give exactly one of `when:` (a word reference or "
-                             f"seconds) or `at:` (seconds)")
-        when = c.get("when", c.get("at"))
-        if illustrate.is_wordref(when):
-            if "at" in c:
-                raise SystemExit(f"{tag}: `at:` is seconds; a word goes in `when: {{word: ...}}`")
-            if not isinstance(when.get("word"), str) or not when["word"].strip():
-                raise SystemExit(f"{tag}: `when.word` must be a word of the narration")
-        else:
-            _number(when, f"{tag} {'at' if 'at' in c else 'when'}", 0.0, 3600.0)
-        anchor = c.get("anchor")
-        if not isinstance(anchor, dict) or set(anchor) - {"x", "y"}:
-            raise SystemExit(f"{tag}: needs `anchor: {{x, y}}`, the sticker's centre as "
-                             f"fractions of the 16:9 frame")
-        ax = _number(anchor.get("x"), f"{tag} anchor.x", 0.0, 1.0)
-        ay = _number(anchor.get("y"), f"{tag} anchor.y", 0.0, 1.0)
-        size = _number(c.get("size", STICKER_SIZE), f"{tag} size", 0.05, 1.0)
-        seconds = (None if c.get("seconds") is None
-                   else _number(c["seconds"], f"{tag} seconds", 0.3, 60.0))
-        offset = c.get("offset_ms")
-        if offset is not None:
-            offset = _number(offset, f"{tag} offset_ms", -1000.0, 1000.0)
-        edge = c.get("enter_from") or shorts_callouts.nearest_edge(ax, ay)
-        if edge not in EDGES:
-            raise SystemExit(f"{tag}: `enter_from` must be one of {', '.join(EDGES)}")
-        sfx = c.get("sfx")
-        if sfx is not None and sfx not in shorts_callouts.SFX:
-            raise SystemExit(f"{tag}: `sfx` must be one of {', '.join(shorts_callouts.SFX)} "
-                             f"or null")
-        labels = []
-        if "label" in c:
-            labels.append(_label(c["label"], f"{tag} label"))
-        if "labels" in c:
-            if not isinstance(c["labels"], list) or not c["labels"]:
-                raise SystemExit(f"{tag}: `labels` must be a non-empty list")
-            labels += [_label(lab, f"{tag} labels[{j}]") for j, lab in enumerate(c["labels"])]
-        out.append({"src": src.strip(), "when": when, "anchor": (ax, ay), "size": size,
-                    "seconds": seconds, "offset_ms": offset, "enter_from": edge, "sfx": sfx,
-                    "labels": labels})
-    return out
-
-
-def callout_window(c: dict, rows, dur: float, cuts, callout_s: float, tag: str) -> tuple:
-    """(t0, t1) scene-local: when the sticker lands and when it snaps off.
-
-    t0 = the word (illustrate.resolve_time: nth/edge/offset) + `offset_ms` (80 ms by default
-    after a word, 0 after seconds). t1 = t0 + `seconds`, or by default t0 + callout_s cut short
-    at the next picture cut when that cut is 1 s or more after t0; never past the scene.
-    """
-    import illustrate
-    word = illustrate.is_wordref(c["when"])
-    try:
-        at = illustrate.resolve_time(c["when"], rows, tag, "when")
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from None
-    offset = c["offset_ms"] if c["offset_ms"] is not None else (WORD_OFFSET_MS if word else 0.0)
-    t0 = max(0.0, float(at) + offset / 1000.0)
-    if t0 >= float(dur) - 0.1:
-        raise SystemExit(f"{tag}: lands at {t0:.2f}s, at or after its scene ends "
-                         f"({float(dur):.2f}s)")
-    if c["seconds"] is not None:
-        t1 = t0 + c["seconds"]
-    else:
-        t1 = t0 + float(callout_s)
-        nxt = next((t for t in sorted(cuts or ()) if t >= t0 + 1.0), None)
-        if nxt is not None:
-            t1 = min(t1, nxt)
-    return round(t0, 3), round(min(t1, float(dur)), 3)
+def check_callouts(scene: dict, where: str = "scene", spec: dict | None = None,
+                   spec_path=None) -> list:
+    """A landscape scene's `callouts:`, in make_short's own schema (callouts.check), with the
+    landscape spellings `at`, `seconds`, `label` folded in (longform_overlay.check)."""
+    import longform_overlay
+    return longform_overlay.check((scene or {}).get("callouts"), where, spec, spec_path)
 
 
 def _sticker_image(src, size: float, h: int = H):
@@ -763,27 +665,20 @@ def sticker_overlay(box, edge: str, t0: float, t1: float, w: int = W, h: int = H
 
 # --- sound ------------------------------------------------------------------------------------
 
-AUDIO_SFX_KEYS = ("events",)
-
-
 def audio_mix(spec: dict, spec_path):
     """make_short.audio_settings() for a landscape spec, or None with no `audio:` block.
 
-    Only `events` (the callout sounds) is accepted under `audio.sfx`: the whoosh-on-cut, the
-    payoff cues, the opening sting and the grammar sounds are Shorts timing that this path
-    does not place, and accepting them would read as applied.
+    `audio.sfx` is the Shorts block: events, on_tag, on_verdict and min_gap are read; a null
+    `on_cut` / `opening` (as the v6 template writes them) is dropped; a non-null whoosh-on-cut,
+    opening sting, cue, camera-move sound or legacy whoosh key is refused by name
+    (longform_overlay.REFUSED_SFX), because accepting it would read as applied.
     """
+    import longform_overlay
     import make_short
-    block = (spec or {}).get("audio")
-    if block is None:
+    if (spec or {}).get("audio") is None:
         return None
-    sfx = block.get("sfx") if isinstance(block, dict) else None
-    if isinstance(sfx, dict):
-        extra = set(sfx) - set(AUDIO_SFX_KEYS)
-        if extra:
-            raise SystemExit(f"audio.sfx: {', '.join(sorted(extra))} is Shorts-only; the 16:9 "
-                             f"path mixes the bed and `audio.sfx.events` (callout sounds) only")
-    return make_short.audio_settings(spec, spec_path)
+    longform_overlay.check_sfx_block(spec)
+    return make_short.audio_settings(longform_overlay.strip_nulls(spec), spec_path)
 
 
 def bed_copies(first_s: float, runtime: float, xfade: float, loop_s: float | None = None) -> int:
@@ -950,29 +845,14 @@ def scene_pictures(scene: dict, spec_path, max_s: float = MAX_PICTURE_S,
     return out
 
 
-def resolve_callouts(scene: dict, spec_path, where: str) -> list:
-    """check_callouts() with every sticker `src` resolved and checked to be a PNG."""
-    import illustrate
-    import media
-    out = []
-    for k, c in enumerate(check_callouts(scene, where)):
-        try:
-            src = str(media.resolve_src(spec_path, c["src"]))
-        except (ValueError, FileNotFoundError) as exc:
-            raise SystemExit(f"{where} callouts[{k}]: {exc}") from None
-        if illustrate.png_size(src) is None:
-            raise SystemExit(f"{where} callouts[{k}]: {src} is not a PNG; a sticker is a "
-                             f"transparent PNG cut-out")
-        out.append({**c, "src": src})
-    return out
-
-
 def preflight(spec: dict, spec_path) -> Options | None:
     """Everything the 16:9 path can refuse, checked before a frame or a word is rendered.
 
     None (and nothing checked) without a `landscape:` block. Run AFTER normalise_spec() and
     media.validate_spec(), which build_video does in that order.
     """
+    import grammar
+    import longform_overlay
     opts = options(spec)
     if opts is None:
         return None
@@ -983,21 +863,30 @@ def preflight(spec: dict, spec_path) -> Options | None:
             continue
         pictures = scene_pictures(scene, spec_path, opts.max_picture_s, where)
         chapter_of(scene, where)
-        calls = resolve_callouts(scene, spec_path, where)
+        try:
+            grammar.parse_fx_list(scene, where)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from None
+        calls = longform_overlay.check(scene.get("callouts"), where, spec, spec_path)
         earth = [p for p in pictures if p["earth"]]
         if calls and earth:
             zones = [z for p in earth for z in earth_zones(probe_size(p["src"]))]
             for k, c in enumerate(calls):
+                if c["type"] != "sticker" or c.get("anchor") is None:
+                    continue                    # the rest are checked where they are drawn
                 try:
-                    dims = sticker_dims(c["src"], c["size"])
+                    dims = sticker_dims(c["src"], c.get("size", STICKER_SIZE))
                 except ImportError:
                     break                       # no PIL here; assemble checks it at render
-                if overlaps_any(sticker_box(c["anchor"], *dims), zones):
+                anchor = (c["anchor"].get("x"), c["anchor"].get("y"))
+                if overlaps_any(sticker_box(anchor, *dims), zones):
                     raise SystemExit(
-                        f"{where} callouts[{k}]: the sticker at {c['anchor']} would cover the "
+                        f"{where} callouts[{k}]: the sticker at {anchor} would cover the "
                         f"Earth Studio attribution zone of this scene's Earth footage. Move its "
                         f"anchor up or left, or make it smaller.")
     audio_mix(spec, spec_path)
+    longform_overlay.chapter_sound((spec or {}).get("landscape"),
+                                   lambda src: longform_overlay.resolve_sound(src, spec_path))
     return opts
 
 
