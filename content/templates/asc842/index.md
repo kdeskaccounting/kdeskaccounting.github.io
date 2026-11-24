@@ -12,8 +12,9 @@ price: 249
 buy_url: "https://kdeskaccounting.gumroad.com/l/phxigq"
 free_url: "https://kdeskaccounting.gumroad.com/l/gljxc"
 free_label: "Try free 3-lease version"
-video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc842.mp4"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/asc842.mp4"
 video_poster: "/images/products/asc842-poster.png"
+video_caption: "Watch the 5-minute walkthrough, recorded in Excel: every tab, real numbers, no login."
 images: ["/images/og/asc842.png"]
 youtube_url: "https://youtu.be/5lkrHbWlb4c"
 tags: ["ASC 842", "lease accounting", "Excel template", "ROU asset", "lease amortization"]
@@ -30,7 +31,7 @@ compare:
     - ["Balance sheet rollforward", "no", "yes"]
     - ["Disclosure maturity table", "no", "yes"]
     - ["Reconciliation that ties to $0", "no", "yes"]
-    - ["4-minute walkthrough video", "yes", "yes"]
+    - ["5-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle both operating and finance leases?"
     a: "Yes. Each lease in Lease Data has a type dropdown: operating, finance or short-term exempt. The amortization schedule, JE Generator, and rollforward all adjust automatically."
