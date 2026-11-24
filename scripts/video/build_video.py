@@ -81,7 +81,10 @@ def main():
     if a.frames_only: return
     subprocess.run([str(VENV_PY), str(HERE / "narrate.py"), "--spec", a.spec, "--out", str(build / "audio")], check=True)
     final = build / f"{slug}.mp4"
-    subprocess.run([sys.executable, str(HERE / "assemble.py"), "--build", str(build), "--out", str(final)], check=True)
+    # --spec lets assemble render `kind: media` scenes from their sources when the spec opts in
+    # with a top-level `landscape:` block; without that block assemble ignores it.
+    subprocess.run([sys.executable, str(HERE / "assemble.py"), "--build", str(build), "--out", str(final),
+                    "--spec", a.spec], check=True)
 
 if __name__ == "__main__":
     main()
