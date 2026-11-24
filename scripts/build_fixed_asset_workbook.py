@@ -10,9 +10,12 @@ Build the KDesk Accounting Fixed Asset Rollforward Workbook (paid + free).
 
 Source of truth: marketing/products/fixed-asset-rollforward-spec.md (v2).
 
-Produces:
-- dist/templates/fixed-asset-rollforward-v1.xlsx   (paid: 50 assets x 120 months)
-- dist/templates/fixed-asset-rollforward-free-v1.xlsx (free: 5 assets x 36 months)
+Produces (v1.1, 2026-11-24 audit fixes FA-1..FA-21):
+- dist/templates/fixed-asset-rollforward-v1.1.xlsx       (paid: 50 assets x 120 months)
+- dist/templates/fixed-asset-rollforward-free-v1.1.xlsx  (free, lean: README, Setup,
+  Asset Register, Schedule + a "Free vs Full" tab; 5 assets x 36 months). This replaces
+  the old two-step route (build free-v1 here, then ~/kdeskaccountingtemplates/
+  make_lean_free.py), so the free file is reproducible from this one script.
 
 Invocation:
     uv run scripts/build_fixed_asset_workbook.py                  # build both
@@ -23,8 +26,9 @@ Function library restricted to Excel 2016/365/Mac safe set (no XLOOKUP, LET,
 LAMBDA, IFS, OFFSET, INDIRECT, dynamic-array spills). All formulas tested for
 syntactic round-trip via openpyxl re-load.
 
-Sheet protection password: kdesk2026
-Opening Accum Depr (Register col S) sub-password: kdesk-opening-2026
+Sheet protection password: kdesk2026 (printed in the README on purpose: protection
+guards against accidental overwrites, it is not a secret). Opening Accum Depr (Register
+col S) is an ordinary unlocked input since v1.1 -- there is no second password.
 """
 from __future__ import annotations
 
@@ -59,7 +63,10 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 DIST = REPO_ROOT / "dist" / "templates"
 
 SHEET_PW = "kdesk2026"
-OPENING_PW = "kdesk-opening-2026"
+VERSION = "1.1"
+WALKTHROUGH_URL = "https://youtu.be/I-VAym73C-M"
+PAID_URL = "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward"
+PAGE_URL = "https://kdeskaccounting.com/templates/fixed-assets/"
 
 # Colors
 COLOR_HEADER_BG = "FF1F4E78"     # navy
@@ -114,16 +121,19 @@ POLICY = [
 #  Opening Accum Depr, Opening Period, LHI Lease End, LHI Renewal Y/N,
 #  Revised Useful Life, Revision Effective Period, Tax Memo, Notes)
 EXAMPLES_PAID = [
-    ("FA-0001", "MacBook Pro M3 14\"",        "Computer Equipment",    "Engineering", "Apple Inc.",         "INV-10142", "PO-2026-001", "S. Michels", dt.date(2026, 1, 5), dt.date(2026, 1, 10), dt.date(2026, 1, 15), 2599.00, 0.0,     36, "Straight-Line", None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "Bonus dep §168(k) on tax side", "Engineering laptop"),
-    ("FA-0002", "Conference Room Table",      "Furniture & Fixtures",  "G&A",         "Herman Miller",      "INV-887",   "PO-2026-002", "S. Michels", dt.date(2026, 1, 14), dt.date(2026, 1, 20), dt.date(2026, 2, 1),  4200.00, 0.0,     84, "Straight-Line", None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "",                              "HQ conference room"),
+    ("FA-0001", "MacBook Pro M3 14\"",        "Computer Equipment",    "Engineering", "Apple Inc.",         "INV-10142", "PO-2026-001", "Controller", dt.date(2026, 1, 5), dt.date(2026, 1, 10), dt.date(2026, 1, 15), 2599.00, 0.0,     36, "Straight-Line", None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "Bonus dep §168(k) on tax side", "Engineering laptop"),
+    ("FA-0002", "Conference Room Table",      "Furniture & Fixtures",  "G&A",         "Herman Miller",      "INV-887",   "PO-2026-002", "Controller", dt.date(2026, 1, 14), dt.date(2026, 1, 20), dt.date(2026, 2, 1),  4200.00, 0.0,     84, "Straight-Line", None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "",                              "HQ conference room"),
     ("FA-0003", "Office Buildout — 5th floor", "Leasehold Improvements","G&A",         "Pacific Contractors","INV-2201",  "PO-2026-003", "CFO Sign-off", dt.date(2025, 11, 10), dt.date(2025, 12, 1), dt.date(2026, 1, 1),  85000.00, 0.0,     60, "Straight-Line", None,   None,  "Mid-Month", 0.0, dt.date(2026, 1, 1), dt.date(2030, 12, 31), "Y", None, None, "",            "Lease ends 2030-12; LHI life = MIN(60, months-to-lease-end)"),
-    ("FA-0004", "Server Rack — Colo Cabinet", "Machinery",             "Engineering", "ServerMonkey",       "INV-50301", "PO-2026-004", "S. Michels", dt.date(2026, 2, 1), dt.date(2026, 2, 5), dt.date(2026, 2, 10), 18500.00, 1500.00, 84, "DDB",           None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "",                                       "Demonstrates DDB method"),
+    ("FA-0004", "Server Rack — Colo Cabinet", "Machinery",             "Engineering", "ServerMonkey",       "INV-50301", "PO-2026-004", "Controller", dt.date(2026, 2, 1), dt.date(2026, 2, 5), dt.date(2026, 2, 10), 18500.00, 1500.00, 84, "DDB",           None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "",                                       "Demonstrates DDB method"),
     ("FA-0005", "Delivery Vehicle — Ford Transit", "Vehicles",          "Operations",  "Ford Auto Group",    "INV-VEH-77","PO-2026-005", "COO Sign-off", dt.date(2026, 2, 12), dt.date(2026, 2, 18), dt.date(2026, 3, 1),  42000.00, 4200.00, 60, "SYD",           None,   None,  "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "Sec §179 partial on tax side; book SYD", "SYD method, salvage 10%"),
     ("FA-0006", "CNC Mill — Production Line",  "Machinery",             "Operations",  "Haas Automation",    "INV-CNC-1", "PO-2026-006", "COO Sign-off", dt.date(2026, 3, 5), dt.date(2026, 3, 12), dt.date(2026, 3, 15), 87000.00, 7000.00, 96, "UoP",           None,   100000, "Full Month", 0.0, dt.date(2026, 1, 1), None, "Y", None, None, "",                                       "UoP method; 100k unit lifetime"),
 ]
+# Re-review R2: the free samples sit in rows 2-3, and blank rows auto-number
+# "FA-" & ROW()-1, so the DDB sample must be FA-0002 (it was FA-0004, which row 5's
+# auto-number duplicated).
 EXAMPLES_FREE = [
-    EXAMPLES_PAID[0],  # SL Computer
-    EXAMPLES_PAID[3],  # DDB Machinery
+    EXAMPLES_PAID[0],                       # SL Computer, FA-0001
+    ("FA-0002",) + EXAMPLES_PAID[3][1:],    # DDB Machinery, renumbered
 ]
 
 # Disposal Log examples
@@ -133,6 +143,10 @@ DISPOSALS_PAID = [
     ("FA-0005", dt.date(2027, 6, 15), "Sale", "N/A", 32000.00, "COO Sign-off", dt.date(2027, 6, 14), "Bill of Sale", "BoS-2027-08", "Acme Delivery LLC", "Sold mid-life; gain calc"),
 ]
 DISPOSALS_FREE: list = []
+
+# FA-20: sample units for the UoP example (FA-0006), months 1..10 of its schedule
+# (Mar-Dec 2026). 100,000-unit lifetime, (87,000 - 7,000) / 100,000 = 0.80 per unit.
+UOP_SAMPLE_UNITS = [800, 1100, 1250, 1300, 1200, 1350, 1400, 1250, 1300, 1450]
 
 
 # Schedule depth by variant
@@ -208,20 +222,28 @@ def build_readme(wb: Workbook, variant: str):
 
     ws["B2"] = "KDesk Accounting — Fixed Asset Rollforward Workbook"
     ws["B2"].font = TITLE_FONT
-    ws["B3"] = f"Version 1.0  |  {'Free (5 assets x 36 months)' if variant=='free' else 'Paid (50 assets x 120 months)'}  |  US GAAP (ASC 360) — Book Depreciation"
+    ws["B3"] = f"Version {VERSION}  |  {'Free (5 assets x 36 months)' if variant=='free' else 'Paid (50 assets x 120 months)'}  |  US GAAP (ASC 360) — Book Depreciation"
     ws["B3"].font = SMALL_FONT
 
     row = 5
-    ws[f"B{row}"] = "Quickstart (5 steps)"
+    ws[f"B{row}"] = "Quickstart (5 steps)" if variant == "paid" else "Quickstart (4 steps)"
     style_section(ws[f"B{row}"])
     row += 1
-    steps = [
-        "1. Open the Setup tab. Enter your company name, fiscal year start, reporting period, and performance materiality. Confirm or override the GL account codes and Policy table.",
-        "2. On the Asset Register, the first rows are EXAMPLE assets (gray-filled). Clear them before entering your own — your assets go in the white rows below.",
-        "3. Load your assets. Required fields are highlighted yellow. Category drives default useful life / method / salvage from the Policy table.",
-        "4. Log any disposals on the Disposal Log tab. Required: Asset ID, Disposal Date, Type, Proceeds, Authorization, Evidence Type/Reference.",
-        "5. On Setup, set the Reporting Period to the close period you want. Open the Reconciliation tab — every check should show TIES (green). Then export JE Generator to your GL.",
-    ]
+    if variant == "paid":
+        steps = [
+            "1. Open the Setup tab. Enter your company name, fiscal year start, reporting period (a month-end date), and performance materiality. Confirm or override the GL account codes and Policy table.",
+            "2. On the Asset Register, the first rows are EXAMPLE assets (gray-filled). Clear them before entering your own — your assets go in the yellow input rows below.",
+            "3. Load your assets in the yellow columns. Leasehold Improvements need a Lease End Date (the cell turns red until you enter one). Leave Opening Period blank unless you load an existing asset with Opening Accum Depr; then type the first month this file depreciates it. The Input Check column (AK) flags anything the Schedule cannot follow.",
+            "4. Log any disposals on the Disposal Log tab. Required: Asset ID, Disposal Date, Type, Proceeds, Authorization, Evidence Type/Reference.",
+            "5. On Setup, set the Reporting Period. On the Reconciliation tab, type your GL balances in the yellow cells; every check should show TIES (green). Then export the JE Generator to your GL.",
+        ]
+    else:
+        steps = [
+            "1. Open the Setup tab. Enter your company name, fiscal year start, reporting period (a month-end date), and performance materiality.",
+            "2. On the Asset Register, the first rows are EXAMPLE assets (gray-filled). Clear them before entering your own — your assets go in the yellow input rows below.",
+            "3. Load up to 5 assets in the yellow columns. Leasehold Improvements need a Lease End Date (the cell turns red until you enter one). Leave Opening Period blank unless you load an existing asset with Opening Accum Depr; then type the first month this file depreciates it. The Input Check column (AJ) flags anything the Schedule cannot follow.",
+            "4. Read the month-by-month depreciation on the Schedule tab. Journal entries, the rollforward, disposals and the reconciliation are in the full workbook (see the Free vs Full tab).",
+        ]
     for s in steps:
         ws[f"B{row}"] = s
         ws[f"B{row}"].alignment = Alignment(wrap_text=True, vertical="top")
@@ -229,10 +251,37 @@ def build_readme(wb: Workbook, variant: str):
         row += 1
 
     row += 1
+    ws[f"B{row}"] = "Conventions used"
+    style_section(ws[f"B{row}"])
+    row += 1
+    conv_notes = [
+        "* Full Month: a full month of depreciation in the in-service month and in the disposal month.",
+        "* Mid-Month: half a month of depreciation in the in-service month and in the disposal month, whatever the day.",
+        "* Time-based methods (SL, DDB, SYD) are trued up in the last month of the effective useful life, so the asset reaches salvage exactly at the end of its life (for leasehold improvements, the lease end).",
+        "* DDB: the annual rate is applied to the net book value at the start of each asset year and spread evenly over its 12 months; it switches to straight-line once SL on the remaining life is larger.",
+        "* SYD: years are counted from the in-service date; each month gets one twelfth of that year's fraction.",
+        "* DDB for an asset loaded with Opening Accum Depr part-way through an asset year: that first year's charge uses the opening NBV as its base, so it runs slightly low; the total is unchanged and later years are exact.",
+        "* Each asset keeps its own convention and Opening Period: changing the fiscal year or the Setup reference values never restates assets already entered.",
+        "* Units of Production is never halved: Mid-Month applies only to time-based methods.",
+        "* Closed Periods (Setup) are marked LOCKED on the Schedule. They are not frozen: changing an input recalculates closed months, so compare to what you booked before re-posting.",
+        "* Voided? = Y removes an asset from depreciation, the journal entries and every total.",
+    ]
+    if variant == "free":
+        conv_notes = [n for n in conv_notes if "Units of Production" not in n]
+        conv_notes = [n.replace(" and in the disposal month", "")
+                       .replace(", the journal entries and every total", " and from the Schedule")
+                      for n in conv_notes]
+    for s in conv_notes:
+        ws[f"B{row}"] = s
+        ws[f"B{row}"].alignment = Alignment(wrap_text=True, vertical="top")
+        row += 1
+
+    row += 1
     ws[f"B{row}"] = "Walkthrough video"
     style_section(ws[f"B{row}"])
     row += 1
-    ws[f"B{row}"] = "60-90 sec Loom walkthrough: https://www.loom.com/share/PLACEHOLDER  (URL added post-build)"
+    ws[f"B{row}"] = f"Walkthrough on YouTube: {WALKTHROUGH_URL}"
+    ws[f"B{row}"].hyperlink = WALKTHROUGH_URL
     row += 2
 
     ws[f"B{row}"] = "What this is NOT"
@@ -241,13 +290,19 @@ def build_readme(wb: Workbook, variant: str):
     out_of_scope = [
         "* MACRS / tax depreciation books — this is book GAAP only.",
         "* Bonus depreciation (§168(k)) and §179 elections — tax book is out of scope. Free-text memo column provided for cross-reference; this is not tax advice.",
-        "* Impairment testing (ASC 360-10-35-17 through -35) — manual write-down via Disposal Log only.",
-        "* Componentization (ASC 360-10-35-4) — single asset = single schedule.",
+        "* Impairment testing (ASC 360-10-35-17 through -35) — record any write-down yourself.",
+        "* Componentization — single asset = single schedule.",
         "* Asset Retirement Obligations (ASC 410-20).",
         "* Lessor accounting.",
         "* Asset transfers between categories — workflow is re-key the asset.",
         "* Asset revaluation upward — GAAP prohibits this for PP&E.",
+        "* Revised Useful Life / Revision Effective Period on the Register are memo fields: the Schedule does not recompute from them yet.",
     ]
+    if variant == "paid":
+        out_of_scope += [
+            "* Trade-ins: the Commercial Substance flag is recorded, but the JE Generator posts the standard sale entry either way; book the new asset separately.",
+            "* Department split of depreciation entries — the JE Generator aggregates by category.",
+        ]
     for s in out_of_scope:
         ws[f"B{row}"] = s
         ws[f"B{row}"].alignment = Alignment(wrap_text=True, vertical="top")
@@ -259,10 +314,10 @@ def build_readme(wb: Workbook, variant: str):
     row += 1
     ws[f"B{row}"] = f"Sheet protection password: {SHEET_PW}"
     row += 1
-    ws[f"B{row}"] = f"Opening Accum Depr (Register col S) sub-password: {OPENING_PW}"
-    row += 1
-    ws[f"B{row}"] = "Protection scope: formula cells are locked across all tabs; input cells are unlocked. Unprotect a sheet via Review > Unprotect Sheet."
+    ws[f"B{row}"] = ("Protection only guards formulas against accidental overwrites: formula cells are locked, input cells (yellow) "
+                     "are unlocked, including Opening Accum Depr. Unprotect a sheet via Review > Unprotect Sheet if you need to customize it.")
     ws[f"B{row}"].alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[row].height = 30
     row += 2
 
     ws[f"B{row}"] = "Support"
@@ -275,6 +330,19 @@ def build_readme(wb: Workbook, variant: str):
     style_section(ws[f"B{row}"])
     row += 1
     ws[f"B{row}"] = "v1.0 — 2026-05-12 — Initial release"
+    row += 1
+    if variant == "paid":
+        ws[f"B{row}"] = ("v1.1 — 2026-11-24 — Corrected sum-of-years-digits (monthly amount), mid-month convention, "
+                         "DDB (annual rate on year-opening NBV), opening balances for DDB/SYD, leasehold improvements "
+                         "without a lease end date, disposal-month depreciation, disposal status vs reporting period, "
+                         "voided assets; Opening Accum Depr unlocked; Reconciliation takes GL balances; Audit "
+                         "Confirmation takes pasted sample IDs.")
+    else:
+        ws[f"B{row}"] = ("v1.1 — 2026-11-24 — Corrected sum-of-years-digits (monthly amount), mid-month convention, "
+                         "DDB (annual rate on year-opening NBV), opening balances for DDB/SYD, leasehold improvements "
+                         "without a lease end date, voided assets; Opening Accum Depr unlocked.")
+    ws[f"B{row}"].alignment = Alignment(wrap_text=True, vertical="top")
+    ws.row_dimensions[row].height = 45
     row += 1
 
     # Lock everything; README has no inputs.
@@ -315,6 +383,9 @@ def build_setup(wb: Workbook, variant: str):
     ws["B4"] = dt.date(2026, 12, 31)
     ws["B4"].number_format = "yyyy-mm-dd"
     style_input(ws["B4"])
+    # FA-21: every period formula matches on month-end dates; flag anything else.
+    ws["C4"] = '=IF(AND(ISNUMBER(B4),B4=EOMONTH(B4,0)),"","<< must be a month-end date")'
+    ws["C4"].font = Font(bold=True, color="FFC00000")
 
     ws["A5"] = "Performance Materiality (USD)"
     ws["B5"] = 50000
@@ -326,11 +397,13 @@ def build_setup(wb: Workbook, variant: str):
     style_section(ws["A7"])
     ws.merge_cells("A7:F7")
 
-    ws["A8"] = "Default first-period convention"
+    # Re-review R1: not linked to the Register any more (a later change here used to
+    # restate every asset that inherited it). Each Register row carries its own value.
+    ws["A8"] = "Convention for new Register rows (reference)"
     ws["B8"] = "Full Month"
     style_input(ws["B8"])
 
-    ws["A9"] = "Default depreciation method"
+    ws["A9"] = "Default depreciation method (reference)"
     ws["B9"] = "Straight-Line"
     style_input(ws["B9"])
 
@@ -361,6 +434,9 @@ def build_setup(wb: Workbook, variant: str):
         ("Depreciation Expense", "6200", "GL_DeprExpense"),
         ("Gain on Disposal", "7300", "GL_DispGain"),
         ("Loss on Disposal", "7310", "GL_DispLoss"),
+        # v1.1 (FA-21): account codes for the lines that used to be plain text
+        ("Cash / Disposal Proceeds", "1010", "GL_Cash"),
+        ("Capitalization credit (Cash / AP)", "2000", "GL_CapCredit"),
     ]
     for i, (label, code, _name) in enumerate(gl_rows):
         r = 14 + i
@@ -370,7 +446,7 @@ def build_setup(wb: Workbook, variant: str):
 
     # Policy table
     pol_r0 = 14 + len(gl_rows) + 1
-    ws[f"A{pol_r0}"] = "Policy table (defaults pulled into Asset Register)"
+    ws[f"A{pol_r0}"] = "Policy table (your capitalization policy; the Register's Matches Policy? column compares each asset to it)"
     style_section(ws[f"A{pol_r0}"])
     ws.merge_cells(f"A{pol_r0}:F{pol_r0}")
 
@@ -392,7 +468,7 @@ def build_setup(wb: Workbook, variant: str):
 
     # Closed Periods
     cp_r0 = pol_r0 + 2 + len(POLICY) + 1
-    ws[f"A{cp_r0}"] = "Closed Periods"
+    ws[f"A{cp_r0}"] = "Closed Periods (marked LOCKED on the Schedule; inputs still recalculate them)"
     style_section(ws[f"A{cp_r0}"])
     ws.merge_cells(f"A{cp_r0}:F{cp_r0}")
     cp_hdr = ["Period (Month End)", "Closed Date", "Closed By"]
@@ -410,7 +486,7 @@ def build_setup(wb: Workbook, variant: str):
     # Pre-fill one example
     ws.cell(row=cp_r0 + 2, column=1, value=dt.date(2026, 1, 31)).number_format = "yyyy-mm-dd"
     ws.cell(row=cp_r0 + 2, column=2, value=dt.date(2026, 2, 12)).number_format = "yyyy-mm-dd"
-    ws.cell(row=cp_r0 + 2, column=3, value="Stephen Michels")
+    ws.cell(row=cp_r0 + 2, column=3, value="Controller")
 
     # Hidden category/method/convention lists (for data validations) — drop on the right
     list_col = 8  # column H
@@ -449,9 +525,21 @@ def build_setup(wb: Workbook, variant: str):
         gls_dv = DataValidation(type="list", formula1=f"=GLSystemList", allow_blank=True)
         gls_dv.add(ws["B11"])
         ws.add_data_validation(gls_dv)
-    fy_dv = DataValidation(type="list", formula1='"2026-01-01,2026-04-01,2026-07-01,2026-10-01"', allow_blank=True)
+    # FA-21: any fiscal-year start (first day of a month), not four hard-coded 2026 dates.
+    fy_dv = DataValidation(
+        type="custom", formula1="=AND(ISNUMBER(B3),DAY(B3)=1)", allow_blank=True,
+        showErrorMessage=True, errorTitle="Fiscal year start",
+        error="Enter the first day of a month, e.g. 2026-01-01.",
+    )
     fy_dv.add(ws["B3"])
     ws.add_data_validation(fy_dv)
+    rp_dv = DataValidation(
+        type="custom", formula1="=AND(ISNUMBER(B4),B4=EOMONTH(B4,0))", allow_blank=False,
+        showErrorMessage=True, errorTitle="Reporting Period",
+        error="Enter a month-end date, e.g. 2026-12-31.",
+    )
+    rp_dv.add(ws["B4"])
+    ws.add_data_validation(rp_dv)
 
     ws.protection.set_password(SHEET_PW)
     ws.protection.sheet = True
@@ -475,6 +563,8 @@ def build_setup(wb: Workbook, variant: str):
         "GL_DeprExpense": "B21",
         "GL_DispGain": "B22",
         "GL_DispLoss": "B23",
+        "GL_Cash": "B24",
+        "GL_CapCredit": "B25",
         "Policy_Cat_Start_Row": pol_r0 + 2,
         "Policy_Cat_End_Row": pol_r0 + 2 + len(POLICY) - 1,
         "ClosedPeriods_Start_Row": cp_r0 + 2,
@@ -504,7 +594,7 @@ REGISTER_HEADERS = [
     "Depr Start Date",                                                       # U
     "LHI Lease End Date", "LHI Renewal Reasonably Certain?",                # V W
     "Effective Useful Life (calc)",                                          # X
-    "Revised Useful Life", "Revision Effective Period",                     # Y Z
+    "Revised Useful Life (memo)", "Revision Effective Period (memo)",       # Y Z
     "Tax Book Differs Memo",                                                 # AA
     "Net Book Value (calc)", "Status (calc)",                                # AB AC
     "Significant Asset? (calc)", "Matches Policy? (calc)", "Notes",          # AD AE AF
@@ -512,18 +602,24 @@ REGISTER_HEADERS = [
     # downstream formulas referencing A..AF remain stable):
     "LHI Renewal Term (months)",   # AG (33) — read by Effective Useful Life when W="Y"
     "Voided? (Y/N)",               # AH (34) — soft-delete; gates Status/SUMIFS
+    # v1.1 (2026-11-24 audit) calc additions:
+    "Months In Service Before Depr Start (calc)",  # AI (35) — FA-17 offset for DDB/SYD
+    "Revision Logged in Change Log? (calc)",       # AJ (36) — FA-12, paid only
 ]
-# Columns A..AH = 34 columns. Sanity check
-assert len(REGISTER_HEADERS) == 34, f"Register columns must be 34, got {len(REGISTER_HEADERS)}"
+assert len(REGISTER_HEADERS) == 36, f"Register columns must be 36, got {len(REGISTER_HEADERS)}"
+# Re-review R1/R4/R5: last column (paid AK, free AJ) flags inputs the Schedule cannot honour.
+INPUT_CHECK_HEADER = "Input Check (calc)"
 
 # input/calc map by column index (1-based)
-REG_CALC_COLS = {21, 24, 28, 29, 30, 31}   # U=21, X=24, AB=28, AC=29, AD=30, AE=31
+REG_CALC_COLS = {21, 24, 28, 29, 30, 31, 35, 36, 37}   # U, X, AB, AC, AD, AE, AI, AJ, AK
 # unlocked input cols per spec: A-R (1-18), V (22), W (23), Y (25), Z (26), AA (27), AF (32),
 # plus v1.1 additions AG (33) renewal-term, AH (34) voided
 # S (19) is unlocked under separate password (Opening Accum Depr)
 # T (20) is unlocked input
-REG_INPUT_COLS = set(range(1, 19)) | {20, 22, 23, 25, 26, 27, 32, 33, 34}
-REG_OPENING_COL = 19  # Opening Accum Depr — locked except with separate password
+# v1.1 (FA-9): S (19) Opening Accum Depr is an ordinary unlocked input. The "separate
+# password" of v1.0 never existed in the file (no protectedRange), so the column was simply
+# locked and buyers with existing assets could not enter opening balances.
+REG_INPUT_COLS = set(range(1, 21)) | {22, 23, 25, 26, 27, 32, 33, 34}
 
 
 def build_register(wb: Workbook, variant: str):
@@ -539,11 +635,21 @@ def build_register(wb: Workbook, variant: str):
         "V": 14, "W": 14, "X": 14, "Y": 12, "Z": 14, "AA": 28,
         "AB": 14, "AC": 12, "AD": 14, "AE": 14, "AF": 30,
         "AG": 14, "AH": 10,  # v1.1: Renewal Term (months), Voided?
+        "AI": 14, "AJ": 16, "AK": 40,
     }
     set_col_widths(ws, widths)
 
-    # Header row
-    for j, h in enumerate(REGISTER_HEADERS, start=1):
+    # Header row (AJ, the Change Log check, only exists where there is a Change Log)
+    reg_headers = (REGISTER_HEADERS if variant == "paid" else REGISTER_HEADERS[:35]) + [INPUT_CHECK_HEADER]
+    if variant == "free":
+        # Re-review R8: UoP is a full-version method
+        reg_headers = [h if h != "Total Production Units" else "Total Production Units (full version only)"
+                       for h in reg_headers]
+    chk_col = len(reg_headers)
+    chk_letter = get_column_letter(chk_col)
+    depth = SCHED_DEPTH[variant]
+    n_reg_cols = len(reg_headers)
+    for j, h in enumerate(reg_headers, start=1):
         c = ws.cell(row=1, column=j, value=h)
         style_header(c)
     ws.row_dimensions[1].height = 32
@@ -599,7 +705,8 @@ def build_register(wb: Workbook, variant: str):
             put(17, total_units)
             put(18, conv)
             put(19, open_accum, "#,##0.00")
-            put(20, open_per, "yyyy-mm-dd")
+            # Re-review R1: Opening Period only for assets loaded with Opening Accum Depr
+            put(20, open_per if open_accum else None, "yyyy-mm-dd")
             put(22, lhi_end, "yyyy-mm-dd")
             put(23, lhi_renew)
             put(25, rev_life)
@@ -618,8 +725,13 @@ def build_register(wb: Workbook, variant: str):
             # Asset ID auto-suggestion formula (user can override)
             put(1, f'=IF(LEN(B{r})>0,"FA-"&TEXT(ROW()-1,"0000"),"")')
             put(19, 0, "#,##0.00")
-            put(20, "=Setup!$B$3", "yyyy-mm-dd")  # Opening Period default = FY start
-            put(18, "=Setup!$B$8")  # Convention default
+            # Re-review R1: v1.0/v1.1 defaulted T to =Setup!$B$3 (FY start) and R to =Setup!$B$8.
+            # Rolling the fiscal year forward then restarted every typed asset's schedule at the
+            # new FY start (prior-year depreciation silently dropped), and changing the default
+            # convention restated old assets. Now T is blank (= depreciate from in-service) and
+            # R is a plain value the buyer can change per asset.
+            ws.cell(row=r, column=20).number_format = "yyyy-mm-dd"
+            put(18, "Full Month")
             put(33, 0)               # default renewal-term months
             put(34, "N")             # default not voided
 
@@ -633,33 +745,34 @@ def build_register(wb: Workbook, variant: str):
         # ASC 842-20-35-12: LHI life capped at lease term INCLUDING reasonably-certain renewals.
         # Renewal handling added in v1.1: column AG holds renewal-term months; col W gates whether
         # the renewal is reasonably certain (Y/N).
+        # FA-10: a leasehold improvement with no Lease End Date keeps its input life (it used
+        # to collapse to a one-month life); the blank V cell is flagged red by a CF rule below.
         eff_life = (
             f'=IF(LEN(A{r})=0,"",'
-            f'IF(C{r}="Leasehold Improvements",'
+            f'IF(AND(C{r}="Leasehold Improvements",ISNUMBER(V{r}),V{r}>=K{r}),'
             f'MIN(N{r}, MAX(1,(YEAR(V{r})-YEAR(K{r}))*12+MONTH(V{r})-MONTH(K{r})+1'
             f'+IF(W{r}="Y",IF(ISNUMBER(AG{r}),AG{r},0),0))),'
             f'N{r}))'
         )
         put(24, eff_life)
-        # AB = NBV = Cost - SUMIFS(Schedule.H where Asset==A) - SUMIFS(Disposal.NBV where Asset==A)
-        # We'll use SUMIFS over the Schedule for total final depreciation; subtract Opening Accum included via running.
-        # NBV = Cost - (Opening Accum + Schedule depr through reporting period) - (any disposal write-off proceeds adjustment NOT applied here — disposal handling reduces NBV by removing future depr; we treat NBV as Cost - Opening - depr-to-date if not Disposed, else 0)
+        # AB = NBV at the Reporting Period.
+        # FA-3: "Disposed" only once the disposal date is on/before the Reporting Period
+        # (it used to test only whether the ID appeared in the Disposal Log).
+        # FA-15: a voided asset carries no NBV.
+        if variant == "paid":
+            disposed = f'COUNTIFS(Disposal_AssetID,A{r},Disposal_Date,"<="&Setup!$B$4)>0'
+        else:
+            disposed = 'FALSE'  # the free file has no Disposal Log
         nbv = (
             f'=IF(LEN(A{r})=0,"",'
-            f'IF(IFERROR(MATCH(A{r},Disposal_AssetID,0),0)>0,0,'
+            f'IF(OR(AH{r}="Y",{disposed}),0,'
             f'L{r}-S{r}-SUMIFS(Sched_DeprFinal,Sched_AssetID_Col,A{r},Sched_Period_Col,"<="&Setup!$B$4)))'
         )
         put(28, nbv, "#,##0.00")
-        # AC = Status
-        # v1.1: now reads Voided? input (AH) first. Order:
-        #   1) Voided?=Y  -> "Voided"
-        #   2) In Disposal Log -> "Disposed"
-        #   3) NBV <= Salvage -> "Fully Depreciated"
-        #   4) Else "Active"
         status = (
             f'=IF(LEN(A{r})=0,"",'
             f'IF(AH{r}="Y","Voided",'
-            f'IF(IFERROR(MATCH(A{r},Disposal_AssetID,0),0)>0,"Disposed",'
+            f'IF({disposed},"Disposed",'
             f'IF(AB{r}<=M{r}+0.01,"Fully Depreciated","Active"))))'
         )
         put(29, status)
@@ -683,15 +796,29 @@ def build_register(wb: Workbook, variant: str):
             f'),"Y","N"))'
         )
         put(31, pol_match)
+        # AI (FA-17): whole months between the in-service month and the first scheduled month
+        # (U = MAX(In-Service, Opening Period)). DDB/SYD use it so an asset loaded with opening
+        # accumulated depreciation continues its life instead of restarting at month 1.
+        put(35, f'=IF(LEN(A{r})=0,"",MAX(0,(YEAR(U{r})-YEAR(K{r}))*12+MONTH(U{r})-MONTH(K{r})))')
+        # AJ (FA-12): a Revised Useful Life entered with no Change Log row for the asset.
+        if variant == "paid":
+            put(36, f'=IF(OR(LEN(A{r})=0,LEN(Y{r})=0),"",IF(COUNTIF(ChangeLog_AssetID,A{r})>0,"OK","MISSING"))')
+        # Input Check (re-review R1, R4, R5)
+        life_msg = ("Life runs past the 120-month schedule. " if variant == "paid"
+                    else "Free version shows the first 36 months (full version: 120). ")
+        put(chk_col, (
+            f'=IF(LEN(A{r})=0,"",TRIM('
+            f'IF(AND(C{r}="Leasehold Improvements",OR(NOT(ISNUMBER(V{r})),V{r}<K{r})),'
+            f'"Lease end missing or before in-service. ","")'
+            f'&IF(AND(N(S{r})>0,NOT(ISNUMBER(T{r}))),"Opening Period needed for Opening Accum Depr. ","")'
+            f'&IF(N(X{r})-N(AI{r})>{depth},"{life_msg}","")))'
+        ))
 
         # Apply protection per column for this row
-        for col_idx in range(1, 35):
+        for col_idx in range(1, n_reg_cols + 1):
             cell = ws.cell(row=r, column=col_idx)
             cell.border = BORDER_ALL
             if col_idx in REG_CALC_COLS:
-                cell.protection = LOCKED
-            elif col_idx == REG_OPENING_COL:
-                # Opening Accum Depr — separate password (we lock it; user must unprotect with sub-password)
                 cell.protection = LOCKED
             elif col_idx in REG_INPUT_COLS:
                 cell.protection = UNLOCKED
@@ -702,7 +829,7 @@ def build_register(wb: Workbook, variant: str):
 
         # Re-apply gray fill OVER input pale-yellow for example rows
         if fill:
-            for col_idx in range(1, 35):
+            for col_idx in range(1, n_reg_cols + 1):
                 ws.cell(row=r, column=col_idx).fill = fill
 
     # Data validations
@@ -719,15 +846,23 @@ def build_register(wb: Workbook, variant: str):
     dv_id.add(f"A2:A{end_row}")
     ws.add_data_validation(dv_id)
 
-    dv_cat = DataValidation(type="list", formula1="=CategoryList", allow_blank=True)
+    dv_cat = DataValidation(type="list", formula1="=CategoryList", allow_blank=True,
+                            showErrorMessage=True, errorTitle="Category",
+                            error="Pick a category from the list.")
     dv_cat.add(f"C2:C{end_row}")
     ws.add_data_validation(dv_cat)
 
-    dv_method = DataValidation(type="list", formula1="=MethodList", allow_blank=True)
+    # FA-18: refuse methods not in this variant's list (the free file has no UoP; a typed
+    # "UoP" used to be accepted and silently produced zero depreciation).
+    dv_method = DataValidation(type="list", formula1="=MethodList", allow_blank=True,
+                               showErrorMessage=True, errorTitle="Method",
+                               error="Pick a method from the list.")
     dv_method.add(f"O2:O{end_row}")
     ws.add_data_validation(dv_method)
 
-    dv_conv = DataValidation(type="list", formula1="=ConventionList", allow_blank=True)
+    dv_conv = DataValidation(type="list", formula1="=ConventionList", allow_blank=True,
+                             showErrorMessage=True, errorTitle="Convention",
+                             error="Pick Full Month or Mid-Month.")
     dv_conv.add(f"R2:R{end_row}")
     ws.add_data_validation(dv_conv)
 
@@ -757,13 +892,18 @@ def build_register(wb: Workbook, variant: str):
     dv_salv.add(f"M2:M{end_row}")
     ws.add_data_validation(dv_salv)
 
+    # Re-review R5: the paid Schedule is 120 months per asset, so a longer life would stop
+    # depreciating at month 120. Paid: validation capped at 120. Free: the 36-month schedule
+    # is the free capacity limit (the sample DDB asset has an 84-month life), so lives up to
+    # 120 are accepted and the Input Check column says only 36 months are shown.
+    max_life = SCHED_DEPTH["paid"]
     dv_life = DataValidation(
         type="custom",
-        formula1=f"=AND(N2>=1,N2<=600,N2=INT(N2))",
+        formula1=f"=AND(N2>=1,N2<={max_life},N2=INT(N2))",
         allow_blank=True,
         showErrorMessage=True,
         errorTitle="Useful Life out of range",
-        error="Useful life must be an integer between 1 and 600 months.",
+        error=f"Useful life must be a whole number of months between 1 and {max_life}.",
     )
     dv_life.add(f"N2:N{end_row}")
     ws.add_data_validation(dv_life)
@@ -790,6 +930,18 @@ def build_register(wb: Workbook, variant: str):
     dv_ins.add(f"K2:K{end_row}")
     ws.add_data_validation(dv_ins)
 
+    # Re-review R4: lease end on/after in-service
+    dv_lease = DataValidation(
+        type="custom",
+        formula1="=AND(ISNUMBER(V2),V2>=K2)",
+        allow_blank=True,
+        showErrorMessage=True,
+        errorTitle="Lease End Date",
+        error="Lease End Date must be on or after the In-Service Date.",
+    )
+    dv_lease.add(f"V2:V{end_row}")
+    ws.add_data_validation(dv_lease)
+
     # v1.1: Renewal Term months (AG) — integer 0..600
     dv_renew = DataValidation(
         type="custom",
@@ -807,13 +959,42 @@ def build_register(wb: Workbook, variant: str):
     dv_void.add(f"AH2:AH{end_row}")
     ws.add_data_validation(dv_void)
 
+    # FA-10: required-field highlight — a Leasehold Improvement without a Lease End Date.
+    ws.conditional_formatting.add(f"V2:V{end_row}", FormulaRule(
+        formula=['AND($C2="Leasehold Improvements",OR(NOT(ISNUMBER($V2)),$V2<$K2))'], fill=RED_FILL,
+    ))
+    ws["V1"].comment = Comment(
+        "Required for Leasehold Improvements: the life is capped at the months from in-service "
+        "to this date (plus the renewal term when W = Y). Turns red while missing or before "
+        "the In-Service Date.", "KDesk")
+    # Re-review R1: Opening Period is required only with an Opening Accum Depr balance
+    ws.conditional_formatting.add(f"T2:T{end_row}", FormulaRule(
+        formula=['AND(N($S2)>0,NOT(ISNUMBER($T2)))'], fill=RED_FILL,
+    ))
+    ws["T1"].comment = Comment(
+        "Leave blank for assets depreciated in this workbook from their in-service date. "
+        "Only for an asset loaded with Opening Accum Depr: the first month this workbook "
+        "depreciates it (e.g. the first day of the fiscal year you started using the file). "
+        "Type a date; it does not move when you change Setup.", "KDesk")
+    # Red only for real problems; the free file's 36-month window note is informational
+    # (grey italic), since the free DDB sample itself has an 84-month life.
+    c2 = f"${chk_letter}2"
+    real = (f'OR(ISNUMBER(SEARCH("Lease end",{c2})),ISNUMBER(SEARCH("Opening Period",{c2})),'
+            f'ISNUMBER(SEARCH("Life runs past",{c2})))')
+    ws.conditional_formatting.add(f"{chk_letter}2:{chk_letter}{end_row}", FormulaRule(
+        formula=[real], fill=RED_FILL, stopIfTrue=True,
+    ))
+    ws.conditional_formatting.add(f"{chk_letter}2:{chk_letter}{end_row}", FormulaRule(
+        formula=[f'LEN({c2})>0'], font=Font(italic=True, color="FF7F7F7F"),
+    ))
+
     # Freeze header
     ws.freeze_panes = "C2"
 
     ws.protection.set_password(SHEET_PW)
     ws.protection.sheet = True
 
-    ws._anchors = {"end_row": end_row}
+    ws._anchors = {"end_row": end_row, "chk_letter": chk_letter}
 
 
 # ---------------------------------------------------------------------------
@@ -849,11 +1030,13 @@ SCHED_HEADERS_PAID = SCHED_HEADERS_BASE + [
     "Department (calc)",                 # Q
     "Cat-Dept-Period Key (calc)",        # R
     "Voided? (calc)",                    # S
+    "DDB Year-Opening NBV (calc)",       # T  (v1.1, FA-16)
 ]
 SCHED_HEADERS_FREE = SCHED_HEADERS_BASE + [
     "Department (calc)",                 # P
     "Cat-Dept-Period Key (calc)",        # Q
     "Voided? (calc)",                    # R
+    "DDB Year-Opening NBV (calc)",       # S  (v1.1, FA-16)
 ]
 
 
@@ -869,17 +1052,17 @@ def build_schedule(wb: Workbook, variant: str):
     # v1.1: column letters for new helper cols differ by variant
     # paid: Q=Dept, R=CatDeptKey, S=Voided ; free: P=Dept, Q=CatDeptKey, R=Voided
     if variant == "paid":
-        DEPT_COL_IDX, CDK_COL_IDX, VOID_COL_IDX = 17, 18, 19
-        DEPT_COL_LETTER, CDK_COL_LETTER, VOID_COL_LETTER = "Q", "R", "S"
+        DEPT_COL_IDX, CDK_COL_IDX, VOID_COL_IDX, YO_COL_IDX = 17, 18, 19, 20
+        DEPT_COL_LETTER, CDK_COL_LETTER, VOID_COL_LETTER, YO_COL_LETTER = "Q", "R", "S", "T"
     else:
-        DEPT_COL_IDX, CDK_COL_IDX, VOID_COL_IDX = 16, 17, 18
-        DEPT_COL_LETTER, CDK_COL_LETTER, VOID_COL_LETTER = "P", "Q", "R"
+        DEPT_COL_IDX, CDK_COL_IDX, VOID_COL_IDX, YO_COL_IDX = 16, 17, 18, 19
+        DEPT_COL_LETTER, CDK_COL_LETTER, VOID_COL_LETTER, YO_COL_LETTER = "P", "Q", "R", "S"
 
     # Column widths
     widths = {
         "A": 12, "B": 14, "C": 10, "D": 14, "E": 14, "F": 14, "G": 14,
         "H": 14, "I": 14, "J": 14, "K": 10, "L": 24, "M": 18, "N": 14, "O": 10,
-        "P": 14, "Q": 18, "R": 28, "S": 10,
+        "P": 14, "Q": 18, "R": 28, "S": 14, "T": 14,
     }
     set_col_widths(ws, widths)
 
@@ -925,19 +1108,38 @@ def build_schedule(wb: Workbook, variant: str):
             ws.cell(row=r, column=4, value=f'=IF(LEN(A{r})=0,"",J{r - 1})').number_format = "#,##0.00"
 
         # E: Method (locked) = INDEX(Register.O, K)
-        ws.cell(row=r, column=5, value=f"=\'Asset Register\'!O{reg_row}")
+        # FA-19: blank rows stay blank (used to print 0)
+        ws.cell(row=r, column=5, value=f"=IF(LEN(A{r})=0,\"\",\'Asset Register\'!O{reg_row})")
 
-        # O: Switch Flag (DDB)
-        # Once SL on remaining ≥ DDB in any period, "SL" forever after; else "DDB"
-        # SL_rem = (D - Salvage) / max(1, EffLife - PeriodIdx + 1)
-        # DDB_rate_monthly = (DDBOverride or 2/(EffLife/12))/12 ; we keep override on Register P; default 2/years
-        # Use: DDB_amt = D * effective_rate / 12 where rate = IF(P_blank, 2/(X/12), P)
-        # Compare SL_rem to DDB_amt
-        # Use Register col P for override, X for effective life
+        # v1.1 (FA-17): life position counted from the in-service month, not from the first
+        # scheduled month: Ceff = Period Index + months already in service before the schedule
+        # starts (Register AI). Identical to C for assets that start in the schedule.
+        c_eff = f"(C{r}+'Asset Register'!AI{reg_row})"
         eff_life_ref = f"'Asset Register'!X{reg_row}"
-        sl_amt_expr = f"IF({eff_life_ref}-C{r}+1>0,(D{r}-'Asset Register'!M{reg_row})/({eff_life_ref}-C{r}+1),0)"
-        ddb_rate_expr = f"IF(LEN('Asset Register'!P{reg_row})>0,'Asset Register'!P{reg_row},IF({eff_life_ref}>0,2/({eff_life_ref}/12),0))"
-        ddb_amt_expr = f"D{r}*({ddb_rate_expr})/12"
+        cost_ref = f"'Asset Register'!L{reg_row}"
+        salv_ref = f"'Asset Register'!M{reg_row}"
+        life_ref = eff_life_ref  # effective life including the LHI cap
+        total_units_ref = f"'Asset Register'!Q{reg_row}"
+
+        # DDB Year-Opening NBV (FA-16): NBV at the start of the current asset year. Resets on
+        # the schedule's first row and on every 12-month boundary counted from in-service.
+        yo = YO_COL_LETTER
+        if period_idx == 1:
+            yo_formula = f'=IF(LEN(A{r})=0,"",D{r})'
+        else:
+            yo_formula = f'=IF(LEN(A{r})=0,"",IF(MOD({c_eff}-1,12)=0,D{r},{yo}{r - 1}))'
+        ws.cell(row=r, column=YO_COL_IDX, value=yo_formula).number_format = "#,##0.00"
+
+        # O: Switch Flag (DDB) — once SL on the remaining life >= the DDB monthly amount, "SL"
+        # for good. SL_rem = (D - Salvage) / remaining months (Ceff-based).
+        # DDB monthly (FA-16) = year-opening NBV x annual rate / 12 (rate = override, else 2/years),
+        # i.e. the annual DDB charge spread evenly; this reproduces the textbook annual table
+        # (10,000 / 5 yrs -> 4,000, 2,400, 1,440, then SL 1,080, 1,080).
+        sl_amt_expr = (f"IF({eff_life_ref}-{c_eff}+1>0,(D{r}-{salv_ref})/({eff_life_ref}-{c_eff}+1),"
+                       f"D{r}-{salv_ref})")
+        ddb_rate_expr = (f"IF(LEN('Asset Register'!P{reg_row})>0,'Asset Register'!P{reg_row},"
+                         f"IF({eff_life_ref}>0,2/({eff_life_ref}/12),0))")
+        ddb_amt_expr = f"{yo}{r}*({ddb_rate_expr})/12"
         if period_idx == 1:
             sf_formula = (
                 f'=IF(LEN(A{r})=0,"",IF(E{r}<>"DDB","N/A",'
@@ -951,91 +1153,70 @@ def build_schedule(wb: Workbook, variant: str):
         ws.cell(row=r, column=15, value=sf_formula)
 
         # F: Depr This Period (raw)
-        # Branch by Method (E):
-        #   SL  -> (Cost - Salvage)/EffLife
-        #   DDB -> IF switch=SL -> SL_amt, else MAX(DDB_amt, SL_amt)
-        #   SYD -> closed form below
-        #   UoP -> (Cost-Salvage)/TotalUnits * UnitsProducedThisMonth  (only paid; col P present)
-        cost_ref = f"'Asset Register'!L{reg_row}"
-        salv_ref = f"'Asset Register'!M{reg_row}"
-        life_ref = eff_life_ref  # use effective life including LHI cap
-        total_units_ref = f"'Asset Register'!Q{reg_row}"
-
-        # Years and SYD anchor — SYD relative to In-Service Date (we anchor period index from Depr Start)
-        # LifeYrs = X/12
-        # SumDigits = LifeYrs*(LifeYrs+1)/2
-        # YearK = INT((C-1)/12)+1
-        # MonthInYr = MOD(C-1,12)+1
-        # Frac1 = (LifeYrs - YearK + 1) / SumDigits
-        # Frac2 = (LifeYrs - YearK) / SumDigits  (next year)
-        # Raw = (Cost-Salvage) * (Frac1*(13-MonthInYr) + Frac2*(MonthInYr-1)) / 12
+        #   SL  -> (Cost - Salvage) / EffLife
+        #   DDB -> SL_rem once switched, else MAX(DDB monthly, SL_rem)
+        #   SYD -> FA-1 fix: (Cost - Salvage) x (Years - k) / SumDigits / 12, k = INT((Ceff-1)/12)
+        #          (v1.0 charged the whole annual fraction every month)
+        #   UoP -> (Cost - Salvage) / TotalUnits x Units Produced This Month (paid only)
+        # Time-based methods: FA-2 Mid-Month = a flat half month in the in-service month (v1.0
+        # used (DAY-0.5)/days, which gave a Jan-1 asset 1/62 of a month); and a true-up in the
+        # last month of the effective life (Ceff >= life) so the asset lands on salvage at the
+        # end of its life (for leasehold improvements, at the lease end).
         sl_raw = f"({cost_ref}-{salv_ref})/MAX(1,{life_ref})"
-
         ddb_raw = f"IF(O{r}=\"SL\",{sl_amt_expr},MAX({ddb_amt_expr},{sl_amt_expr}))"
-
+        yrs = f"({life_ref}/12)"
         syd_block = (
-            f"(({cost_ref}-{salv_ref})*("
-            f"(({life_ref}/12)-INT((C{r}-1)/12)-1+1)/(({life_ref}/12)*(({life_ref}/12)+1)/2)"
-            f"*(13-MOD(C{r}-1,12)-1)"
-            f"+(({life_ref}/12)-INT((C{r}-1)/12)-1)/(({life_ref}/12)*(({life_ref}/12)+1)/2)"
-            f"*(MOD(C{r}-1,12)+1-1)"
-            f")/12)"
+            f"(({cost_ref}-{salv_ref})*MAX(0,{yrs}-INT(({c_eff}-1)/12))"
+            f"/({yrs}*({yrs}+1)/2)/12)"
         )
-
-        # P1-7 fix: Mid-Month convention proration on first period of capitalization.
-        # When C=1 AND Convention="Mid-Month", multiply the raw time-based depr by
-        # (DAY(in-service) - 0.5) / DAY(EOM(in-service)). UoP excluded — units-based
-        # methods prorate via the units-produced input itself.
-        in_svc_ref = f"'Asset Register'!K{reg_row}"
         conv_ref = f"'Asset Register'!R{reg_row}"
         first_pd_factor = (
-            f"IF(AND(C{r}=1,{conv_ref}=\"Mid-Month\"),"
-            f"(DAY({in_svc_ref})-0.5)/DAY(EOMONTH({in_svc_ref},0)),1)"
+            f"IF(AND(C{r}=1,'Asset Register'!AI{reg_row}=0,{conv_ref}=\"Mid-Month\"),0.5,1)"
         )
+        time_raw = (
+            f'IF({c_eff}>={life_ref},MAX(0,D{r}-{salv_ref}),'
+            f'IF(E{r}="Straight-Line",{sl_raw},IF(E{r}="DDB",{ddb_raw},{syd_block}))*{first_pd_factor})'
+        )
+        time_methods = f'OR(E{r}="Straight-Line",E{r}="DDB",E{r}="SYD")'
         if variant == "paid":
             uop_per_unit = f"IF({total_units_ref}>0,({cost_ref}-{salv_ref})/{total_units_ref},0)"
             uop_raw = f"({uop_per_unit})*IF(LEN(P{r})>0,P{r},0)"
-            # Time-based methods (SL/DDB/SYD) get the first-period factor; UoP does not.
             f_formula = (
                 f'=IF(LEN(A{r})=0,"",'
-                f'IF(E{r}="Straight-Line",({sl_raw})*({first_pd_factor}),'
-                f'IF(E{r}="DDB",({ddb_raw})*({first_pd_factor}),'
-                f'IF(E{r}="SYD",({syd_block})*({first_pd_factor}),'
-                f'IF(E{r}="UoP",{uop_raw},0)))))'
+                f'IF({time_methods},{time_raw},'
+                f'IF(E{r}="UoP",{uop_raw},0)))'
             )
         else:
             f_formula = (
                 f'=IF(LEN(A{r})=0,"",'
-                f'IF(E{r}="Straight-Line",({sl_raw})*({first_pd_factor}),'
-                f'IF(E{r}="DDB",({ddb_raw})*({first_pd_factor}),'
-                f'IF(E{r}="SYD",({syd_block})*({first_pd_factor}),0))))'
+                f'IF({time_methods},{time_raw},0))'
             )
         ws.cell(row=r, column=6, value=f_formula).number_format = "#,##0.00"
 
-        # G: Disposal Adjustment
-        # If asset not in Disposal Log, 0.
-        # If asset disposed and current period == EOMONTH(disp date), prorate per convention:
-        #   Mid-Month: F * ((DAY(disp) - 0.5) / DAY(B)) (effectively keep depr through disp day) — adjustment shrinks; we set G to amount that REDUCES F to that prorated amount.
-        #   Full Month: 0 (full month already)
-        # Adjustment definition: H = F + G. We want H = full F if Full Month; H = F * frac if Mid-Month.
-        # So G = F * (frac - 1) when Mid-Month, else 0.
-        # If after disposal month, zero out depr -> G = -F.
-        disp_date = f"IFERROR(INDEX(Disposal_Date,MATCH(A{r},Disposal_AssetID,0)),0)"
-        conv_ref = f"'Asset Register'!R{reg_row}"
-        g_formula = (
-            f'=IF(LEN(A{r})=0,"",'
-            f'IF({disp_date}=0,0,'
-            f'IF(B{r}<EOMONTH({disp_date},0),0,'
-            f'IF(B{r}>EOMONTH({disp_date},0),-F{r},'
-            f'IF({conv_ref}="Mid-Month",F{r}*((DAY({disp_date})-0.5)/DAY(B{r})-1),0)'
-            f'))))'
-        )
+        # G: Disposal Adjustment. Disposal month: Full Month keeps the full month, Mid-Month keeps
+        # half (FA-2, same flat half-month rule as the in-service month). After the disposal
+        # month: -F. The Disposal Log now includes the disposal month in Accum Depr at
+        # Disposal (FA-8), so this depreciation is removed with the asset.
+        if variant == "paid":
+            disp_date = f"IFERROR(INDEX(Disposal_Date,MATCH(A{r},Disposal_AssetID,0)),0)"
+            g_formula = (
+                f'=IF(LEN(A{r})=0,"",'
+                f'IF({disp_date}=0,0,'
+                f'IF(B{r}<EOMONTH({disp_date},0),0,'
+                f'IF(B{r}>EOMONTH({disp_date},0),-F{r},'
+                f'IF(AND({conv_ref}="Mid-Month",E{r}<>"UoP"),-0.5*F{r},0)'
+                f'))))'
+            )
+        else:
+            g_formula = f'=IF(LEN(A{r})=0,"",0)'  # the free file has no Disposal Log
         ws.cell(row=r, column=7, value=g_formula).number_format = "#,##0.00"
 
         # H: Final Depr — salvage floor wrapper
         # H = MIN(MAX(0, D - Salvage), F + G)
+        # FA-15: a voided asset (Register AH = "Y") books nothing.
         h_formula = (
-            f'=IF(LEN(A{r})=0,"",MIN(MAX(0,D{r}-\'Asset Register\'!M{reg_row}),F{r}+G{r}))'
+            f'=IF(LEN(A{r})=0,"",IF(\'Asset Register\'!AH{reg_row}="Y",0,'
+            f'MIN(MAX(0,D{r}-\'Asset Register\'!M{reg_row}),F{r}+G{r})))'
         )
         ws.cell(row=r, column=8, value=h_formula).number_format = "#,##0.00"
 
@@ -1070,6 +1251,11 @@ def build_schedule(wb: Workbook, variant: str):
             # Unlock if Method = UoP — we can't conditionally protect via formula, so unlock all P cells.
             cell.protection = UNLOCKED
             cell.fill = INPUT_FILL
+            # FA-20: sample units for the UoP example asset so it shows depreciation
+            if asset_idx < len(EXAMPLES_PAID) and EXAMPLES_PAID[asset_idx][14] == "UoP" \
+                    and period_idx <= len(UOP_SAMPLE_UNITS):
+                cell.value = UOP_SAMPLE_UNITS[period_idx - 1]
+                cell.fill = EXAMPLE_FILL
 
         # v1.1 helper columns (always populated; positions differ by variant)
         # Department (calc) — pulls Register col D ("" if blank so SUMIFS criteria match "" reliably)
@@ -1094,9 +1280,10 @@ def build_schedule(wb: Workbook, variant: str):
                 continue  # already set
             cell.protection = LOCKED
 
-    # Hide helper columns K, O, helper-block (Dept/CDK/Voided)
+    # Hide helper columns K and the helper block (Dept/CDK/Voided/Year-Opening NBV).
+    # FA-4: O (Switch Flag) stays VISIBLE; the product page points buyers to it.
     ws.column_dimensions["K"].hidden = True
-    ws.column_dimensions["O"].hidden = True
+    ws.column_dimensions[YO_COL_LETTER].hidden = True
     ws.column_dimensions[DEPT_COL_LETTER].hidden = True
     ws.column_dimensions[CDK_COL_LETTER].hidden = True
     ws.column_dimensions[VOID_COL_LETTER].hidden = True
@@ -1185,7 +1372,8 @@ def build_je_generator(wb: Workbook, variant: str):
         # Date = ReportingPeriodEnd
         ws.cell(row=row, column=1, value="=Setup!$B$4").number_format = "yyyy-mm-dd"
         # Account: GL code label for Depr Expense + descriptor
-        ws.cell(row=row, column=2, value=f'=Setup!$B$21&" - {cat}"')
+        # FA-21: Account column holds the GL code only (was "6200 - Computer Equipment")
+        ws.cell(row=row, column=2, value='=Setup!$B$21')
         ws.cell(row=row, column=3, value=f"Monthly depreciation — {cat}")
         # Debit = SUMIFS(Sched_DeprFinal, Sched_Period, Reporting Period, Sched_Cat, cat) where Sched_Cat is calc as Category period key startswith cat
         # We'll use sum on Sched_DeprFinal with Sched_CatKey starts with cat|YYYY-MM
@@ -1227,12 +1415,12 @@ def build_je_generator(wb: Workbook, variant: str):
             "Vehicles": "$B$18",
             "Other": "$B$19",
         }[cat]
-        ws.cell(row=row, column=2, value=f'=Setup!{gl_code}&" - {cat}"')
+        ws.cell(row=row, column=2, value=f'=Setup!{gl_code}')
         ws.cell(row=row, column=3, value=f"Capitalization — {cat}")
         # Debit = SUMIFS(Register.L, Register.K (InService) >= start of period, <= end of period, Register.C = cat)
         # We'll use SUMIFS with Register_Cost, Register_InServiceDate >= EOMONTH(ReportingPeriod,-1)+1 and <= ReportingPeriod, and Register_Category = cat
         debit_formula = (
-            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",'
+            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",Register_Voided,"<>Y",'
             f'Register_InServiceDate,">="&(EOMONTH(Setup!$B$4,-1)+1),'
             f'Register_InServiceDate,"<="&Setup!$B$4)'
         )
@@ -1243,12 +1431,12 @@ def build_je_generator(wb: Workbook, variant: str):
 
     # CR Cash/AP for capitalization
     ws.cell(row=row, column=1, value="=Setup!$B$4").number_format = "yyyy-mm-dd"
-    ws.cell(row=row, column=2, value="Cash / AP")
+    ws.cell(row=row, column=2, value="=Setup!$B$25")
     ws.cell(row=row, column=3, value="Capitalization — credit (cash or AP)")
     ws.cell(row=row, column=4, value=0).number_format = "#,##0.00"
     # Credit = SUMIFS Register_Cost with InServiceDate in period
     ws.cell(row=row, column=5, value=(
-        '=SUMIFS(Register_Cost,Register_InServiceDate,">="&(EOMONTH(Setup!$B$4,-1)+1),Register_InServiceDate,"<="&Setup!$B$4)'
+        '=SUMIFS(Register_Cost,Register_InServiceDate,">="&(EOMONTH(Setup!$B$4,-1)+1),Register_InServiceDate,"<="&Setup!$B$4,Register_Voided,"<>Y")'
     )).number_format = "#,##0.00"
     ws.cell(row=row, column=6, value='="CAP-"&TEXT(Setup!$B$4,"YYYY-MM")&"-CASH"')
     row += 2
@@ -1271,7 +1459,7 @@ def build_je_generator(wb: Workbook, variant: str):
                 f'EOMONTH(\'Disposal Log\'!B{disp_row},0)<>Setup!$B$4)')
         # DR Cash
         ws.cell(row=row, column=1, value=f'=IF({gate},"",\'Disposal Log\'!B{disp_row})').number_format = "yyyy-mm-dd"
-        ws.cell(row=row, column=2, value=f'=IF({gate},"","Cash / AR")')
+        ws.cell(row=row, column=2, value=f'=IF({gate},"",Setup!$B$24)')
         ws.cell(row=row, column=3, value=f'=IF({gate},"","Disposal — DR Cash (proceeds) for "&\'Disposal Log\'!A{disp_row})')
         ws.cell(row=row, column=4, value=f'=IF({gate},"",\'Disposal Log\'!E{disp_row})').number_format = "#,##0.00"
         ws.cell(row=row, column=5, value="")
@@ -1287,7 +1475,9 @@ def build_je_generator(wb: Workbook, variant: str):
         row += 1
         # CR Asset (cost)
         ws.cell(row=row, column=1, value=f'=IF({gate},"",\'Disposal Log\'!B{disp_row})').number_format = "yyyy-mm-dd"
-        ws.cell(row=row, column=2, value=f'=IF({gate},"","Asset (at cost)")')
+        ws.cell(row=row, column=2, value=(
+            f'=IF({gate},"",IFERROR(INDEX(Setup!$B$14:$B$19,'
+            f'MATCH(\'Disposal Log\'!P{disp_row},CategoryList,0)),"Asset (at cost)"))'))
         ws.cell(row=row, column=3, value=f'=IF({gate},"","Disposal — CR Asset at cost for "&\'Disposal Log\'!A{disp_row})')
         ws.cell(row=row, column=4, value="")
         ws.cell(row=row, column=5, value=f'=IF({gate},"",\'Disposal Log\'!K{disp_row})').number_format = "#,##0.00"
@@ -1398,13 +1588,13 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
     if key == "opening_cost":
         # Cost of assets in service before FY start (and not disposed before FY start)
         return (
-            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",'
+            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",Register_Voided,"<>Y",'
             f'Register_InServiceDate,"<"&({fy_start}))'
             f'-SUMIFS(Disposal_Cost,Disposal_Cat,"{cat}",Disposal_Date,"<"&({fy_start}))'
         )
     if key == "add_cost":
         return (
-            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",'
+            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",Register_Voided,"<>Y",'
             f'Register_InServiceDate,">="&({fy_start}),'
             f'Register_InServiceDate,"<="&({rp_end}))'
         )
@@ -1418,7 +1608,7 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
         # Reference the cells: row offsets relative to base
         # We'll express closing using same SUMIFS for clarity:
         return (
-            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",'
+            f'=SUMIFS(Register_Cost,Register_Category,"{cat}",Register_Voided,"<>Y",'
             f'Register_InServiceDate,"<="&({rp_end}))'
             f'-SUMIFS(Disposal_Cost,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end}))'
         )
@@ -1430,7 +1620,7 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
         return (
             f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
             f'Sched_CatKey,"<="&"{cat}|"&TEXT(EOMONTH({fy_start},-1),"YYYY-MM"))'
-            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
+            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}",Register_Voided,"<>Y")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<"&({fy_start}))'
         )
     if key == "depr_exp":
@@ -1448,18 +1638,18 @@ def _rollforward_cell_formula(key: str, cat: str, rp_end: str, fy_start: str) ->
         return (
             f'=SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
             f'Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
-            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
+            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}",Register_Voided,"<>Y")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end}))'
         )
     if key == "nbv":
         # Closing Cost - Closing AD, per category. Same lexical CatKey bounds as close_ad.
         return (
-            f'=(SUMIFS(Register_Cost,Register_Category,"{cat}",'
+            f'=(SUMIFS(Register_Cost,Register_Category,"{cat}",Register_Voided,"<>Y",'
             f'Register_InServiceDate,"<="&({rp_end}))'
             f'-SUMIFS(Disposal_Cost,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end})))'
             f'-(SUMIFS(Sched_DeprFinal,Sched_CatKey,">="&"{cat}|",'
             f'Sched_CatKey,"<="&"{cat}|"&TEXT({rp_end},"YYYY-MM"))'
-            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}")'
+            f'+SUMIFS(Register_Opening_AD,Register_Category,"{cat}",Register_Voided,"<>Y")'
             f'-SUMIFS(Disposal_AD,Disposal_Cat,"{cat}",Disposal_Date,"<="&({rp_end})))'
         )
     return ""
@@ -1525,9 +1715,11 @@ def build_disposal_log(wb: Workbook, variant: str):
         ws.cell(row=r, column=11, value=(
             f'=IF(LEN(A{r})=0,"",IFERROR(INDEX(Register_Cost,MATCH(A{r},Register_AssetID,0)),0))'
         )).number_format = "#,##0.00"
-        # L: Accum Depr at Disposal = SUMIFS(Sched_DeprFinal, Sched_AssetID_Col, A, Sched_Period_Col, <=B) + Opening AD
+        # L: Accum Depr at Disposal = depreciation through the END of the disposal month + Opening AD.
+        # FA-8: Schedule periods are month-ends, so "<="&B (a mid-month date) dropped the disposal
+        # month's depreciation, which the Schedule still books — leaving negative NBV.
         ws.cell(row=r, column=12, value=(
-            f'=IF(LEN(A{r})=0,"",SUMIFS(Sched_DeprFinal,Sched_AssetID_Col,A{r},Sched_Period_Col,"<="&B{r})'
+            f'=IF(LEN(A{r})=0,"",SUMIFS(Sched_DeprFinal,Sched_AssetID_Col,A{r},Sched_Period_Col,"<="&EOMONTH(B{r},0))'
             f'+IFERROR(INDEX(Register_Opening_AD,MATCH(A{r},Register_AssetID,0)),0))'
         )).number_format = "#,##0.00"
         # M: NBV at Disposal = K - L
@@ -1565,6 +1757,7 @@ def build_disposal_log(wb: Workbook, variant: str):
     dv_type.add(f"C2:C{end_row}")
     ws.add_data_validation(dv_type)
 
+    # Recorded for the trade-in memo; no formula reads it (the JE posts the standard sale entry).
     dv_cs = DataValidation(type="list", formula1='"Y,N,N/A"', allow_blank=True)
     dv_cs.add(f"D2:D{end_row}")
     ws.add_data_validation(dv_cs)
@@ -1642,6 +1835,7 @@ def build_change_log(wb: Workbook, variant: str):
 
     ws.protection.set_password(SHEET_PW)
     ws.protection.sheet = True
+    ws._anchors = {"end_row": end_row}
 
 
 # ---------------------------------------------------------------------------
@@ -1649,12 +1843,19 @@ def build_change_log(wb: Workbook, variant: str):
 # ---------------------------------------------------------------------------
 
 def build_reconciliation(wb: Workbook, variant: str):
+    """Reconciliation v1.1.
+
+    FA-11: v1.0 had no GL input at all, and checks 4 and 5 compared a number with the same
+    number computed twice. v1.1 keeps the three internal tie-outs, replaces the two
+    tautologies with a Register-vs-Rollforward NBV check, and adds three GL checks against
+    balances the buyer types in (yellow cells). Blank GL cells read "ENTER GL BALANCE".
+    """
     ws = wb.create_sheet("Reconciliation")
     ws.sheet_properties.tabColor = "FFE2EFDA"
 
-    set_col_widths(ws, {"A": 4, "B": 44, "C": 18, "D": 18, "E": 18, "F": 22, "G": 60})
+    set_col_widths(ws, {"A": 4, "B": 58, "C": 18, "D": 18, "E": 18, "F": 22, "G": 60})
 
-    ws["B1"] = "Five-Way Reconciliation — Reporting Period"
+    ws["B1"] = "Five-Way Reconciliation — Schedule · JE · Rollforward · Register · GL"
     ws["B1"].font = TITLE_FONT
     ws["F1"] = "=Setup!$B$4"
     ws["F1"].number_format = "yyyy-mm-dd"
@@ -1664,126 +1865,135 @@ def build_reconciliation(wb: Workbook, variant: str):
         c = ws.cell(row=3, column=j, value=h)
         style_header(c)
 
-    # 5 checks
-    # Check 1: Schedule Depr Total (this month) = JE Depr Total (sum of category DR rows on JE Generator)
-    # Check 2: Schedule Accum Total (running through RP) = Rollforward Closing Accum TOTAL
-    # Check 3: Register Cost = Rollforward Cost Closing TOTAL
-    # Check 4: Register Disposal Adjustment = Disposal Log net (NBV)
-    # Check 5: NBV Math: Cost Closing - Accum Closing - Rollforward NBV TOTAL = 0
     rp_end = "Setup!$B$4"
-    fy_start = "Setup!$B$3"
     base = 4
 
-    # Helper: Rollforward references — we need to read total column of specific rows.
-    # In Rollforward we set base_r=4, so:
-    #   row 4: opening_cost
-    #   row 5: add_cost
-    #   row 6: disp_cost
-    #   row 7: close_cost
-    #   row 8: opening_ad
-    #   row 9: depr_exp
-    #   row 10: disp_ad
-    #   row 11: close_ad
-    #   row 12: nbv
-    # TOTAL is in column 2 + len(CATEGORIES) = column 8 (H)
+    # Rollforward TOTAL column rows: 7 close_cost, 9 depr_exp, 11 close_ad, 12 nbv
     total_col = get_column_letter(2 + len(CATEGORIES))
     rf = f"Rollforward!${total_col}$"
     rf_close_cost = f"{rf}7"
     rf_depr_exp = f"{rf}9"
     rf_close_ad = f"{rf}11"
     rf_nbv = f"{rf}12"
+    reg_end = wb["Asset Register"]._anchors["end_row"]
+
+    # GL inputs sit below the checks; their rows are fixed here so the checks can point at them.
+    n_checks = 7
+    gl_r0 = base + n_checks + 2           # section header row
+    gl_cost, gl_ad, gl_exp = gl_r0 + 1, gl_r0 + 2, gl_r0 + 3
 
     checks = [
-        {
-            "name": "Schedule Depr (period) = JE Generator Depr",
-            "side_a": f'=SUMIFS(Sched_DeprFinal,Sched_Period_Col,{rp_end})',
-            "side_b": f'=SUMIFS(\'JE Generator\'!D5:D{4 + len(CATEGORIES)},'
-                      f'\'JE Generator\'!A5:A{4 + len(CATEGORIES)},{rp_end})',
-        },
-        {
-            "name": "Schedule Accum Closing = Rollforward Closing Accum TOTAL",
-            "side_a": (
-                f'=SUMIFS(Sched_DeprFinal,Sched_Period_Col,"<="&{rp_end})'
-                f'+SUM(Register_Opening_AD)'
-                f'-SUMIFS(Disposal_AD,Disposal_Date,"<="&{rp_end})'
-            ),
-            "side_b": f"={rf_close_ad}",
-        },
-        {
-            "name": "Register Cost (not disposed) = Rollforward Cost Closing TOTAL",
-            "side_a": (
-                f'=SUMIFS(Register_Cost,Register_InServiceDate,"<="&{rp_end})'
-                f'-SUMIFS(Disposal_Cost,Disposal_Date,"<="&{rp_end})'
-            ),
-            "side_b": f"={rf_close_cost}",
-        },
-        {
-            "name": "Disposal NBV total (in-period) = Disposal Log Σ(NBV at Disposal)",
-            "side_a": f'=SUM(\'Disposal Log\'!Q2:Q{wb["Disposal Log"]._anchors["end_row"]})',
-            "side_b": (
-                f'=SUMIFS(Disposal_Cost,Disposal_Date,"<="&{rp_end})'
-                f'-SUMIFS(Disposal_AD,Disposal_Date,"<="&{rp_end})'
-            ),
-        },
-        {
-            "name": "NBV math: Cost Closing − Accum Closing = Rollforward NBV TOTAL",
-            "side_a": f"={rf_close_cost}-{rf_close_ad}",
-            "side_b": f"={rf_nbv}",
-        },
+        ("1. Schedule depreciation (period) = JE Generator depreciation",
+         f'=SUMIFS(Sched_DeprFinal,Sched_Period_Col,{rp_end})',
+         f"=SUMIFS('JE Generator'!D5:D{4 + len(CATEGORIES)},'JE Generator'!A5:A{4 + len(CATEGORIES)},{rp_end})",
+         False),
+        ("2. Schedule accumulated depreciation = Rollforward closing accumulated depreciation",
+         (f'=SUMIFS(Sched_DeprFinal,Sched_Period_Col,"<="&{rp_end})'
+          f'+SUMIFS(Register_Opening_AD,Register_Voided,"<>Y")'
+          f'-SUMIFS(Disposal_AD,Disposal_Date,"<="&{rp_end})'),
+         f"={rf_close_ad}", False),
+        ("3. Register cost (in service, not disposed, not voided) = Rollforward closing cost",
+         (f'=SUMIFS(Register_Cost,Register_InServiceDate,"<="&{rp_end},Register_Voided,"<>Y")'
+          f'-SUMIFS(Disposal_Cost,Disposal_Date,"<="&{rp_end})'),
+         f"={rf_close_cost}", False),
+        ("4. Register net book value (Σ NBV column) = Rollforward closing NBV",
+         f"=SUMIFS(Register_NBV,Register_InServiceDate,\"<=\"&{rp_end})",
+         f"={rf_nbv}", False),
+        ("5. Rollforward closing cost = GL fixed asset cost balance",
+         f"={rf_close_cost}", f"=$D${gl_cost}", True),
+        ("6. Rollforward closing accumulated depreciation = GL accumulated depreciation balance",
+         f"={rf_close_ad}", f"=$D${gl_ad}", True),
+        ("7. Rollforward depreciation expense (fiscal YTD) = GL depreciation expense YTD",
+         f"={rf_depr_exp}", f"=$D${gl_exp}", True),
     ]
+    assert len(checks) == n_checks
 
-    for i, ch in enumerate(checks):
+    for i, (name, side_a, side_b, is_gl) in enumerate(checks):
         r = base + i
-        ws.cell(row=r, column=2, value=ch["name"])
-        ws.cell(row=r, column=3, value=ch["side_a"]).number_format = "#,##0.00"
-        ws.cell(row=r, column=4, value=ch["side_b"]).number_format = "#,##0.00"
+        ws.cell(row=r, column=2, value=name)
+        ws.cell(row=r, column=3, value=side_a).number_format = "#,##0.00"
+        ws.cell(row=r, column=4, value=side_b).number_format = "#,##0.00"
         ws.cell(row=r, column=5, value=f"=C{r}-D{r}").number_format = "#,##0.00"
-        # Status text mirroring CF
-        ws.cell(row=r, column=6, value=(
-            f'=IF(ABS(E{r})<0.01,"TIES",IF(ABS(E{r})<=1,"Rounding","VARIANCE"))'
-        ))
+        status = f'IF(ABS(E{r})<0.01,"TIES",IF(ABS(E{r})<=1,"Rounding","VARIANCE"))'
+        if is_gl:
+            src = {5: gl_cost, 6: gl_ad, 7: gl_exp}[i + 1]
+            status = f'IF(LEN($D${src})=0,"ENTER GL BALANCE",{status})'
+        ws.cell(row=r, column=6, value="=" + status)
         for c_idx in range(2, 7):
             ws.cell(row=r, column=c_idx).border = BORDER_ALL
             ws.cell(row=r, column=c_idx).protection = LOCKED
 
-    # Conditional formatting on variance E column
-    cf_range = f"E{base}:E{base + len(checks) - 1}"
+    # FA-7: colour the Status column too (v1.0 coloured only the Variance column).
+    last = base + n_checks - 1
+    cf_range = f"E{base}:F{last}"
+    pending = f'$F{base}="ENTER GL BALANCE"'
     ws.conditional_formatting.add(cf_range, FormulaRule(
-        formula=[f"ABS(E{base})<0.01"], fill=GREEN_FILL,
+        formula=[pending], fill=YELLOW_FILL, stopIfTrue=True,
     ))
     ws.conditional_formatting.add(cf_range, FormulaRule(
-        formula=[f"AND(ABS(E{base})>=0.01,ABS(E{base})<=1)"], fill=YELLOW_FILL,
+        formula=[f"ABS($E{base})<0.01"], fill=GREEN_FILL,
     ))
     ws.conditional_formatting.add(cf_range, FormulaRule(
-        formula=[f"ABS(E{base})>1"], fill=RED_FILL,
+        formula=[f"AND(ABS($E{base})>=0.01,ABS($E{base})<=1)"], fill=YELLOW_FILL,
+    ))
+    ws.conditional_formatting.add(cf_range, FormulaRule(
+        formula=[f"ABS($E{base})>1"], fill=RED_FILL,
     ))
 
-    # Diagnostic sub-section
-    diag_r = base + len(checks) + 2
+    # GL balance inputs (FA-11)
+    ws.cell(row=gl_r0, column=2, value="GL balances at the Reporting Period (type from your trial balance)")
+    style_section(ws.cell(row=gl_r0, column=2))
+    gl_inputs = [
+        (gl_cost, "Fixed asset cost — total of your fixed asset accounts"),
+        (gl_ad, "Accumulated depreciation (enter as a positive number)"),
+        (gl_exp, "Depreciation expense — fiscal year to date"),
+    ]
+    for r, label in gl_inputs:
+        ws.cell(row=r, column=2, value=label).border = BORDER_ALL
+        c = ws.cell(row=r, column=4)
+        c.number_format = "#,##0.00"
+        style_input(c)
+
+    # Diagnostic sub-section (FA-12, FA-14: only claims the file can back up)
+    diag_r = gl_exp + 2
     ws.cell(row=diag_r, column=2, value="Diagnostic — likely causes when red")
     style_section(ws.cell(row=diag_r, column=2))
+    ws.cell(row=diag_r, column=4, value="Count").font = Font(bold=True)
 
+    disp_end = wb["Disposal Log"]._anchors["end_row"]
+    chk = wb["Asset Register"]._anchors["chk_letter"]
     diagnostics = [
-        ("Disposal logged but Register row not updated — check Status",
-         "'Asset Register'!A2", "Jump to Register first row"),
-        ("Asset acquired after Reporting Period close — check Acquisition Date",
-         "'Asset Register'!J2", "Jump to Register Acquisition Date"),
-        ("Opening Accum Depr entered without Opening Period — check S/T",
+        ("Disposal dated after the Reporting Period — it counts from its own month",
+         f"=COUNTIFS('Disposal Log'!B2:B{disp_end},\">\"&{rp_end})",
+         "'Disposal Log'!A2", "Jump to Disposal Log"),
+        ("Asset placed in service after the Reporting Period — check In-Service Date",
+         f'=COUNTIFS(Register_InServiceDate,">"&{rp_end})',
+         "'Asset Register'!K2", "Jump to Register In-Service Date"),
+        ("Opening Accum Depr entered without an Opening Period (Register S/T) — it would double count",
+         f"=COUNTIFS(Register_Opening_AD,\">0\",'Asset Register'!T2:T{reg_end},\"\")",
          "'Asset Register'!S2", "Jump to Register Opening Accum Depr"),
-        ("Useful Life or Method revised but no Change Log entry — verify ASC 250 trail",
+        ("Revised Useful Life entered with no Change Log entry for that asset (ASC 250 trail)",
+         f"=COUNTIF('Asset Register'!AJ2:AJ{reg_end},\"MISSING\")",
          "'Change Log'!A2", "Jump to Change Log"),
-        ("Edit detected in a Closed Period — review Setup Closed Periods table",
-         "Setup!A1", "Jump to Setup Closed Periods"),
-        ("New Category doesn't match a defined Policy row — review Policy table",
-         "Setup!A1", "Jump to Setup Policy"),
+        ("Leasehold Improvement with no valid Lease End Date (missing or before in-service; life falls back to the input life)",
+         f"=COUNTIF('Asset Register'!{chk}2:{chk}{reg_end},\"*Lease end*\")",
+         "'Asset Register'!V2", "Jump to Register Lease End Date"),
+        ("Closed periods are marked, not frozen — an input change recalculates them; compare to what you booked",
+         None, "Setup!A1", "Jump to Setup"),
+        ("Category without a Policy row, or life/method off policy — see Matches Policy?",
+         f"=COUNTIF('Asset Register'!AE2:AE{reg_end},\"N\")",
+         "'Asset Register'!AE2", "Jump to Matches Policy?"),
     ]
-    for i, (label, target, link_text) in enumerate(diagnostics):
+    for i, (label, count_f, target, link_text) in enumerate(diagnostics):
         r = diag_r + 1 + i
         ws.cell(row=r, column=2, value=f"{i + 1}. {label}")
+        ws.cell(row=r, column=2).alignment = Alignment(wrap_text=True, vertical="top")
         ws.cell(row=r, column=3, value=f'=HYPERLINK("#{target}","{link_text}")')
         ws.cell(row=r, column=3).font = Font(color="FF0563C1", underline="single")
-        ws.cell(row=r, column=2).border = BORDER_ALL
-        ws.cell(row=r, column=3).border = BORDER_ALL
+        if count_f:
+            ws.cell(row=r, column=4, value=count_f)
+        for c_idx in (2, 3, 4):
+            ws.cell(row=r, column=c_idx).border = BORDER_ALL
 
     ws.freeze_panes = "B4"
     ws.protection.set_password(SHEET_PW)
@@ -1818,40 +2028,56 @@ def build_audit_confirmation(wb: Workbook, variant: str):
     ws["B6"] = 25
     style_input(ws["B6"])
 
+    ws["A7"] = ("Paste or type the auditor's sample Asset IDs in the yellow column A; "
+                "every other column fills from the Register and Schedule.")
+    ws["A7"].font = SMALL_FONT
+
     # Header row
-    headers = ["Asset ID", "Description", "Category", "In-Service Date", "Cost",
-               "Useful Life (mo)", "Method", "Accum Depr @ RP", "NBV @ RP"]
+    headers = ["Asset ID (paste)", "Description", "Category", "In-Service Date", "Cost",
+               "Useful Life (mo)", "Method", "Accum Depr @ RP", "NBV @ RP", "Status @ RP"]
     for j, h in enumerate(headers, start=1):
         c = ws.cell(row=8, column=j, value=h)
         style_header(c)
     ws.row_dimensions[8].height = 32
+    ws.column_dimensions["J"].width = 16
 
+    # FA-5: column A is an unlocked input (v1.0 mirrored Register rows 2-26, so there was
+    # nowhere to paste a sample and assets 26-50 could never appear). Rows cover the whole
+    # Register; blank rows stay blank (v1.0 printed 0 and 1900-01-00).
     rp_end = "Setup!$B$4"
-    rows_n = 25 if variant == "paid" else 5
-    reg_end = wb["Asset Register"]._anchors["end_row"]
+    rows_n = MAX_ASSETS[variant]
+    sample_ids = ["FA-0001", "FA-0003", "FA-0005"]   # example sample (gray), clear before use
+
+    def look(rng, r):
+        return f'INDEX({rng},MATCH($A{r},Register_AssetID,0))'
+
     for i in range(rows_n):
         r = 9 + i
-        reg_row = 2 + i  # first N assets are the sample
-        ws.cell(row=r, column=1, value=f"='Asset Register'!A{reg_row}")
-        ws.cell(row=r, column=2, value=f"='Asset Register'!B{reg_row}")
-        ws.cell(row=r, column=3, value=f"='Asset Register'!C{reg_row}")
-        ws.cell(row=r, column=4, value=f"='Asset Register'!K{reg_row}").number_format = "yyyy-mm-dd"
-        ws.cell(row=r, column=5, value=f"='Asset Register'!L{reg_row}").number_format = "#,##0.00"
-        ws.cell(row=r, column=6, value=f"='Asset Register'!N{reg_row}")
-        ws.cell(row=r, column=7, value=f"='Asset Register'!O{reg_row}")
-        # Accum Depr @ RP = SUMIFS on Sched + Opening
+        a = ws.cell(row=r, column=1, value=sample_ids[i] if i < len(sample_ids) else None)
+        style_input(a)
+        if i < len(sample_ids):
+            a.fill = EXAMPLE_FILL
+        found = f'ISNUMBER(MATCH($A{r},Register_AssetID,0))'
+        blank = f'LEN($A{r})=0'
+        ws.cell(row=r, column=2, value=f'=IF({blank},"",IF({found},{look("Register_Description", r)},"Not on Register"))')
+        ws.cell(row=r, column=3, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_Category", r)})')
+        ws.cell(row=r, column=4, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_InServiceDate", r)})').number_format = "yyyy-mm-dd"
+        ws.cell(row=r, column=5, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_Cost", r)})').number_format = "#,##0.00"
+        ws.cell(row=r, column=6, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_EffLife", r)})')
+        ws.cell(row=r, column=7, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_Method", r)})')
         ws.cell(row=r, column=8, value=(
-            f'=IF(LEN(\'Asset Register\'!A{reg_row})=0,"",'
-            f'SUMIFS(Sched_DeprFinal,Sched_AssetID_Col,\'Asset Register\'!A{reg_row},'
-            f'Sched_Period_Col,"<="&{rp_end})+\'Asset Register\'!S{reg_row})'
+            f'=IF(OR({blank},NOT({found})),"",'
+            f'SUMIFS(Sched_DeprFinal,Sched_AssetID_Col,$A{r},Sched_Period_Col,"<="&{rp_end})'
+            f'+{look("Register_Opening_AD", r)})'
         )).number_format = "#,##0.00"
-        ws.cell(row=r, column=9, value=(
-            f'=IF(LEN(\'Asset Register\'!A{reg_row})=0,"",\'Asset Register\'!L{reg_row}-H{r})'
-        )).number_format = "#,##0.00"
-        for col_idx in range(1, 10):
+        # NBV @ RP = the Register's own NBV, so this tab can never disagree with it (FA-3)
+        ws.cell(row=r, column=9, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_NBV", r)})').number_format = "#,##0.00"
+        ws.cell(row=r, column=10, value=f'=IF(OR({blank},NOT({found})),"",{look("Register_Status", r)})')
+        for col_idx in range(1, 11):
             cell = ws.cell(row=r, column=col_idx)
             cell.border = BORDER_ALL
-            cell.protection = LOCKED
+            if col_idx > 1:
+                cell.protection = LOCKED
 
     sig_r = 9 + rows_n + 2
     ws.cell(row=sig_r, column=1, value="Management Representation").font = SECTION_FONT
@@ -1863,7 +2089,7 @@ def build_audit_confirmation(wb: Workbook, variant: str):
     ))
     ws.cell(row=sig_r + 1, column=1).alignment = Alignment(wrap_text=True, vertical="top")
     ws.row_dimensions[sig_r + 1].height = 60
-    ws.merge_cells(start_row=sig_r + 1, start_column=1, end_row=sig_r + 1, end_column=9)
+    ws.merge_cells(start_row=sig_r + 1, start_column=1, end_row=sig_r + 1, end_column=10)
 
     sig_r2 = sig_r + 3
     ws.cell(row=sig_r2, column=1, value="Prepared By:")
@@ -1892,7 +2118,7 @@ def build_audit_confirmation(wb: Workbook, variant: str):
     ws.oddFooter.center.text = "Confidential — for auditor use"
     ws.oddFooter.right.text = "Page &P of &N"
     ws.print_title_rows = "8:8"
-    ws.print_area = f"A1:I{sig_r2 + 2}"
+    ws.print_area = f"A1:J{sig_r2 + 2}"
 
     ws.protection.set_password(SHEET_PW)
     ws.protection.sheet = True
@@ -1961,8 +2187,6 @@ def add_named_ranges(wb: Workbook, variant: str):
     reg_end = reg._anchors["end_row"]
     sched = wb["Schedule"]
     sched_end = sched._anchors["end_row"]
-    disp = wb["Disposal Log"]
-    disp_end = disp._anchors["end_row"]
 
     def addn(name: str, ref: str):
         dn = DefinedName(name=name, attr_text=ref)
@@ -1979,7 +2203,7 @@ def add_named_ranges(wb: Workbook, variant: str):
     # GL codes
     for nm in ("GL_ComputerEq", "GL_Furniture", "GL_LHI", "GL_Machinery",
                "GL_Vehicles", "GL_Other", "GL_AccumDepr", "GL_DeprExpense",
-               "GL_DispGain", "GL_DispLoss"):
+               "GL_DispGain", "GL_DispLoss", "GL_Cash", "GL_CapCredit"):
         ref = s_anc[nm]
         addn(nm, f"Setup!${ref[:1]}${ref[1:]}")
 
@@ -2018,6 +2242,10 @@ def add_named_ranges(wb: Workbook, variant: str):
     addn("Register_InServiceDate", f"'Asset Register'!$K$2:$K${reg_end}")
     addn("Register_Opening_AD",    f"'Asset Register'!$S$2:$S${reg_end}")
     addn("Register_Status",        f"'Asset Register'!$AC$2:$AC${reg_end}")
+    addn("Register_Description",   f"'Asset Register'!$B$2:$B${reg_end}")
+    addn("Register_EffLife",       f"'Asset Register'!$X$2:$X${reg_end}")
+    addn("Register_NBV",           f"'Asset Register'!$AB$2:$AB${reg_end}")
+    addn("Register_Voided",        f"'Asset Register'!$AH$2:$AH${reg_end}")
 
     # Schedule columns
     addn("Sched_AssetID_Col", f"Schedule!$A$2:$A${sched_end}")
@@ -2029,7 +2257,13 @@ def add_named_ranges(wb: Workbook, variant: str):
     addn("Sched_AccumDepr",   f"Schedule!$I$2:$I${sched_end}")
     addn("Sched_CatKey",      f"Schedule!$L$2:$L${sched_end}")
 
+    if variant != "paid":
+        return  # the free file has no Disposal Log or Change Log
+
+    addn("ChangeLog_AssetID", f"'Change Log'!$A$2:$A${wb['Change Log']._anchors['end_row']}")
+
     # Disposal Log
+    disp_end = wb["Disposal Log"]._anchors["end_row"]
     addn("Disposal_AssetID", f"'Disposal Log'!$A$2:$A${disp_end}")
     addn("Disp_AssetID",     f"'Disposal Log'!$A$2:$A${disp_end}")
     addn("Disposal_Date",    f"'Disposal Log'!$B$2:$B${disp_end}")
@@ -2045,6 +2279,60 @@ def add_named_ranges(wb: Workbook, variant: str):
 # Orchestrator
 # ---------------------------------------------------------------------------
 
+def build_free_vs_full(wb: Workbook):
+    """First tab of the free file (ported from ~/kdeskaccountingtemplates/make_lean_free.py,
+    which produced the v1 free file). v1.1 copy fixes: no "audit-ready" (FA-19), no price
+    inside the workbook, no "4-minute" video claim."""
+    ws = wb.create_sheet("Free vs Full", 0)
+    ws.sheet_properties.tabColor = "FF538135"
+    ws.column_dimensions["A"].width = 3
+    ws.column_dimensions["B"].width = 110
+    navy, blue, yellow, green = "FF1F3864", "FF2E75B6", "FFFFF2CC", "FFE2EFDA"
+    rows = [
+        ("Fixed Asset Rollforward Workbook — FREE VERSION", dict(bold=True, size=16, color=navy)),
+        ("This free file is the inputs and the depreciation schedule. Journal entries, the rollforward, "
+         "disposals and the reconciliation are in the full version.", dict(italic=True, size=10, color="FF595959")),
+        ("", None),
+        ("WHAT'S IN THIS FREE FILE", dict(bold=True, size=11, color="FFFFFFFF", fill=blue)),
+        ("   ✓  README", dict(size=10)),
+        ("   ✓  Setup", dict(size=10)),
+        ("   ✓  Asset Register", dict(size=10)),
+        ("   ✓  Schedule", dict(size=10)),
+        ("   Capacity: 5 assets · 36-month schedule · three methods (SL, DDB, SYD)", dict(size=10, italic=True, color="FF595959")),
+        ("", None),
+        ("WHAT'S ONLY IN THE FULL VERSION (one-time purchase)", dict(bold=True, size=11, color="FFFFFFFF", fill=navy)),
+        ("   ✦  Units of Production — the fourth depreciation method", dict(size=10)),
+        ("   ✦  JE Generator — depreciation, capitalization and disposal entries; column headers relabel for QuickBooks / NetSuite / Sage Intacct / Xero", dict(size=10)),
+        ("   ✦  Rollforward — cost and accumulated depreciation by category, opening to closing", dict(size=10)),
+        ("   ✦  Disposal Log — sale, retirement, trade-in, write-off with gain/loss math", dict(size=10)),
+        ("   ✦  Change Log — ASC 250 useful-life and method revisions with an audit trail", dict(size=10)),
+        ("   ✦  Reconciliation — Schedule, JE Generator, Rollforward and Register tied to each other and to the GL balances you enter", dict(size=10)),
+        ("   ✦  Audit Confirmation — paste the auditor's sample IDs, print the PBC list", dict(size=10)),
+        ("   Capacity: 50 assets · 120-month schedule · four methods incl. Units of Production", dict(size=10, italic=True, color="FF595959")),
+        ("", None),
+        (f"GET THE FULL VERSION  →  {PAID_URL}", dict(bold=True, size=12, color=navy, fill=yellow, link=PAID_URL)),
+        (f"WATCH THE WALKTHROUGH  →  {WALKTHROUGH_URL}", dict(bold=True, size=11, color=navy, fill=green, link=WALKTHROUGH_URL)),
+        ("", None),
+        ("Pure Excel formulas, no macros. Works in Excel 2016+, Microsoft 365 and Excel for Mac. Questions: hello@kdeskaccounting.com", dict(size=9, color="FF595959")),
+        (f"KDesk Accounting · {PAGE_URL}", dict(size=9, color="FF595959")),
+    ]
+    for i, (text, st) in enumerate(rows, start=2):
+        c = ws.cell(i, 2, text or None)
+        ws.row_dimensions[i].height = 22 if (st and st.get("size", 10) >= 11) else 17
+        if st:
+            c.font = Font(name="Calibri", bold=st.get("bold", False), italic=st.get("italic", False),
+                          size=st.get("size", 10), color=st.get("color", "FF000000"))
+            if st.get("fill"):
+                c.fill = PatternFill("solid", start_color=st["fill"], end_color=st["fill"])
+            if st.get("link"):
+                c.hyperlink = st["link"]
+            c.alignment = Alignment(vertical="center", wrap_text=False)
+        c.protection = LOCKED
+    ws.sheet_view.showGridLines = False
+    ws.protection.set_password(SHEET_PW)
+    ws.protection.sheet = True
+
+
 def build_workbook(variant: str) -> pathlib.Path:
     assert variant in ("paid", "free"), variant
     wb = Workbook()
@@ -2053,53 +2341,51 @@ def build_workbook(variant: str) -> pathlib.Path:
     wb.remove(default)
 
     # Build in dependency order
-    build_readme(wb, variant)            # 0
-    build_setup(wb, variant)             # 1
-    build_register(wb, variant)          # 2
-    build_schedule(wb, variant)          # 3
-    build_disposal_log(wb, variant)      # need register anchors; built before JE/Roll/Recon/Audit
-    build_je_generator(wb, variant)      # 4
-    build_rollforward(wb, variant)       # 5
-    build_change_log(wb, variant)        # 7
-    build_reconciliation(wb, variant)    # 8
-    build_audit_confirmation(wb, variant) # 9
-    build_pivot(wb, variant)             # 10 hidden
+    build_readme(wb, variant)
+    build_setup(wb, variant)
+    build_register(wb, variant)
+    build_schedule(wb, variant)
+    if variant == "paid":
+        build_disposal_log(wb, variant)
+        build_je_generator(wb, variant)
+        build_rollforward(wb, variant)
+        build_change_log(wb, variant)
+        build_reconciliation(wb, variant)
+        build_audit_confirmation(wb, variant)
+        build_pivot(wb, variant)
+        desired = [
+            "README", "Setup", "Asset Register", "Schedule", "JE Generator",
+            "Rollforward", "Disposal Log", "Change Log", "Reconciliation",
+            "Audit Confirmation", "_Pivot",
+        ]
+    else:
+        # Lean free (v1.1): inputs + schedule only, Free vs Full first.
+        build_free_vs_full(wb)
+        desired = ["Free vs Full", "README", "Setup", "Asset Register", "Schedule"]
 
-    # Reorder sheets to spec order: README, Setup, Asset Register, Schedule,
-    # JE Generator, Rollforward, Disposal Log, Change Log, Reconciliation,
-    # Audit Confirmation, _Pivot
-    desired = [
-        "README", "Setup", "Asset Register", "Schedule", "JE Generator",
-        "Rollforward", "Disposal Log", "Change Log", "Reconciliation",
-        "Audit Confirmation", "_Pivot",
-    ]
-    if variant == "free":
-        # No _Pivot in free? Spec says free is "otherwise identical structure"; keep _Pivot.
-        pass
-    # openpyxl: sheets order via wb._sheets list
-    new_order = []
-    for name in desired:
-        if name in wb.sheetnames:
-            new_order.append(wb[name])
+    new_order = [wb[name] for name in desired if name in wb.sheetnames]
     other = [s for s in wb._sheets if s not in new_order]
     wb._sheets = new_order + other
+    wb.active = 0
 
     # Named ranges
     add_named_ranges(wb, variant)
 
-    # Workbook-level metadata
+    # Workbook-level metadata (FA-19: no "audit-ready")
     wb.properties.title = "KDesk Accounting — Fixed Asset Rollforward Workbook"
     wb.properties.creator = "KDesk Accounting"
     wb.properties.subject = "Fixed Asset Rollforward (ASC 360 book depreciation)"
-    wb.properties.keywords = "fixed assets, ASC 360, rollforward, depreciation, audit-ready"
+    wb.properties.keywords = "fixed assets, ASC 360, rollforward, depreciation"
     wb.properties.description = (
-        "Audit-ready fixed asset rollforward workbook with policy table, "
-        "change log, audit confirmation export, and 5-way reconciliation. "
-        "Built by KDesk Accounting — kdeskaccounting.com"
+        f"Fixed asset rollforward workbook v{VERSION}: register, depreciation schedule"
+        + (", JE generator, rollforward, change log, audit confirmation and reconciliation. "
+           if variant == "paid" else " (free 5-asset version). ")
+        + "Built by KDesk Accounting — kdeskaccounting.com"
     )
 
-    suffix = "v1" if variant == "paid" else "free-v1"
-    out_path = DIST / f"fixed-asset-rollforward-{suffix}.xlsx"
+    name = f"fixed-asset-rollforward-v{VERSION}.xlsx" if variant == "paid" \
+        else f"fixed-asset-rollforward-free-v{VERSION}.xlsx"
+    out_path = DIST / name
     DIST.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
     return out_path
