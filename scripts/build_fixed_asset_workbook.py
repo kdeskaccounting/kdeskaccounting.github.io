@@ -805,7 +805,7 @@ def build_register(wb: Workbook, variant: str):
             put(36, f'=IF(OR(LEN(A{r})=0,LEN(Y{r})=0),"",IF(COUNTIF(ChangeLog_AssetID,A{r})>0,"OK","MISSING"))')
         # Input Check (re-review R1, R4, R5)
         life_msg = ("Life runs past the 120-month schedule. " if variant == "paid"
-                    else "Schedule shows the first 36 months (full version: 120). ")
+                    else "Free version shows the first 36 months (full version: 120). ")
         put(chk_col, (
             f'=IF(LEN(A{r})=0,"",TRIM('
             f'IF(AND(C{r}="Leasehold Improvements",OR(NOT(ISNUMBER(V{r})),V{r}<K{r})),'
@@ -976,8 +976,16 @@ def build_register(wb: Workbook, variant: str):
         "Only for an asset loaded with Opening Accum Depr: the first month this workbook "
         "depreciates it (e.g. the first day of the fiscal year you started using the file). "
         "Type a date; it does not move when you change Setup.", "KDesk")
+    # Red only for real problems; the free file's 36-month window note is informational
+    # (grey italic), since the free DDB sample itself has an 84-month life.
+    c2 = f"${chk_letter}2"
+    real = (f'OR(ISNUMBER(SEARCH("Lease end",{c2})),ISNUMBER(SEARCH("Opening Period",{c2})),'
+            f'ISNUMBER(SEARCH("Life runs past",{c2})))')
     ws.conditional_formatting.add(f"{chk_letter}2:{chk_letter}{end_row}", FormulaRule(
-        formula=[f'LEN(${chk_letter}2)>0'], fill=RED_FILL,
+        formula=[real], fill=RED_FILL, stopIfTrue=True,
+    ))
+    ws.conditional_formatting.add(f"{chk_letter}2:{chk_letter}{end_row}", FormulaRule(
+        formula=[f'LEN({c2})>0'], font=Font(italic=True, color="FF7F7F7F"),
     ))
 
     # Freeze header
