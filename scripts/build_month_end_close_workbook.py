@@ -11,14 +11,29 @@ Build the KDesk Accounting Month-End Close Checklist + Tie-Out Workbook.
 Free lead-magnet companion to the paid Fixed Asset / ASC 606 / ASC 842 workbooks.
 
 Produces:
-- dist/templates/month-end-close-checklist-v1.xlsx
+- dist/templates/month-end-close-checklist-v1.1.xlsx
+
+v1.1 (2026-11-24 audit fixes, MEC-1..MEC-9):
+- README cross-sell names products and kdeskaccounting.com pages, no prices,
+  no "audit-ready"; row 29 is the Amortization Calculator (MEC-1, MEC-5).
+- "1 flag" / "N flags" (MEC-2).
+- Light sample data for a fictional company so every check is visible on open;
+  blank reconciliation rows show nothing instead of "OK" (MEC-3).
+- Conditional-format fills carry bgColor, which is what Excel renders (MEC-6).
+- Tie-out tolerance (default $1.00) replaces performance materiality as the
+  reconciliation threshold (MEC-7).
+- Close Calendar has 20 blank task rows and every range runs to row 200, so a
+  task typed below the list is counted (MEC-8).
+- Fiscal Year End and Reporting Currency feed the headers; each JE # is checked
+  for debit = credit on its own; file author is KDesk Accounting; the last tab is
+  "Sign-Off" (MEC-9).
 
 Five tabs:
-  1. README + Setup       Company config, materiality, quickstart, upsell
+  1. README + Setup       Company config, tie-out tolerance, quickstart, cross-sell
   2. Close Calendar       ~40 pre-populated tasks across 5 phases (Day 1-2 .. Day 5+)
   3. Reconciliations      18 standard subledger-to-GL ties with variance + flag
-  4. JE Tracker           Period JE log with debit=credit sanity check
-  5. Sign-Off             Printable certification page summarizing the close
+  4. JE Tracker           Period JE log with per-entry and total debit=credit checks
+  5. Sign-Off             Printable sign-off page summarizing the close
 
 Function library: Excel 2016/365/Mac safe set (no XLOOKUP, LET, LAMBDA, IFS,
 dynamic-array spills). All formulas tested via openpyxl re-load smoke test.
@@ -70,6 +85,15 @@ BORDER_ALL = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 FILL_HEADER = PatternFill("solid", fgColor=COLOR_NAVY)
 FILL_SECTION = PatternFill("solid", fgColor=COLOR_SECTION_BG)
 FILL_INPUT = PatternFill("solid", fgColor=COLOR_INPUT_BG)
+
+
+def cf_fill(color: str) -> PatternFill:
+    """Fill for a conditional-format (differential) style.
+
+    Excel renders a dxf solid fill from bgColor; fgColor alone is ignored (MEC-6).
+    Set both so Excel and LibreOffice agree.
+    """
+    return PatternFill(fill_type="solid", fgColor=color, bgColor=color)
 
 FONT_TITLE = Font(name="Calibri", size=20, bold=True, color=COLOR_NAVY)
 FONT_H2 = Font(name="Calibri", size=13, bold=True, color=COLOR_NAVY)
@@ -178,6 +202,69 @@ RECONCILIATIONS: list[tuple[str, str]] = [
 
 
 # ---------------------------------------------------------------------------
+# Sample data (MEC-3). A fictional company part-way through its May 2026 close,
+# light enough to clear in a minute. Every value sits in a yellow input cell.
+# ---------------------------------------------------------------------------
+
+# Business days after Period End Date that each phase is due (WORKDAY default).
+PHASE_DUE_OFFSET = {
+    "Day 1-2": 2,
+    "Day 2-3": 3,
+    "Day 3-4": 4,
+    "Day 4-5": 5,
+    "Day 5+": 6,
+}
+
+# Task number (1-based) -> (status, note). Unlisted tasks stay "Not Started".
+SAMPLE_TASK_STATUS: dict[int, tuple[str, str | None]] = {
+    **{n: ("Done", None) for n in range(1, 11)},
+    11: ("In Progress", "Wire fee from 5/30 still missing from the bank feed"),
+    12: ("Done", None),
+    13: ("Done", None),
+    14: ("Done", None),
+    15: ("Done", None),
+    16: ("Done", None),
+    17: ("In Progress", "See Reconciliations #11: AP variance"),
+    18: ("Blocked", "Waiting on statement from the largest vendor"),
+    36: ("N/A", "Single entity"),
+}
+
+# Reconciliation number (1-based) -> (GL balance, sub/schedule balance, status, note).
+# Unlisted reconciliations are left blank and "Not Started".
+SAMPLE_RECS: dict[int, tuple[float | None, float | None, str, str | None]] = {
+    1: (1842310.55, 1842310.55, "Done", None),
+    2: (2500000.00, 2500000.00, "Done", None),
+    3: (612480.00, 612480.00, "Done", None),
+    4: (18400.00, 18400.00, "Done", None),
+    5: (96250.00, 96250.00, "Done", None),
+    6: (241118.40, 241118.40, "Done", None),
+    7: (388920.00, 388920.00, "Done", None),
+    8: (142605.33, 142605.33, "Done", None),
+    9: (455300.12, 455300.12, "Done", None),
+    10: (None, None, "N/A", "No finance leases"),
+    11: (203775.10, 198275.10, "In Progress", "Invoice posted to GL after the AP aging was pulled"),
+}
+
+# JE lines: (date offset from period end in days, JE #, description, account, debit, credit, source, status)
+SAMPLE_JES: list[tuple[int, str, str, str, float | None, float | None, str, str]] = [
+    (0, "JE-0501", "May depreciation", "Depreciation Expense", 6482.00, None, "FA Workbook (KDesk)", "Posted"),
+    (0, "JE-0501", "May depreciation", "Accumulated Depreciation", None, 6482.00, "FA Workbook (KDesk)", "Posted"),
+    (0, "JE-0502", "May commission amortization", "Commission Expense", 14210.50, None, "ASC 606 Workbook (KDesk)", "Posted"),
+    (0, "JE-0502", "May commission amortization", "Deferred Commissions", None, 14210.50, "ASC 606 Workbook (KDesk)", "Posted"),
+    (0, "JE-0503", "May operating lease cost", "Lease Expense", 22000.00, None, "ASC 842 Workbook (KDesk)", "Posted"),
+    (0, "JE-0503", "May operating lease cost", "Lease Liability — Operating", None, 18140.25, "ASC 842 Workbook (KDesk)", "Posted"),
+    (0, "JE-0503", "May operating lease cost", "ROU Asset — Operating Leases", None, 3859.75, "ASC 842 Workbook (KDesk)", "Posted"),
+    (0, "JE-0504", "Accrue May legal fees", "Professional Fees", 9500.00, None, "Manual", "Pending"),
+    (0, "JE-0504", "Accrue May legal fees", "Accrued Liabilities", None, 9500.00, "Manual", "Pending"),
+]
+
+CALENDAR_SPARE_ROWS = 20      # blank, formatted task rows below the list
+CALENDAR_RANGE_END = 200      # every Calendar range / name runs to this row (MEC-8)
+
+CURRENCY_FMT = "$#,##0.00;[Red]($#,##0.00);\"–\""
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -233,7 +320,7 @@ def build_readme_setup(wb: Workbook) -> None:
     ws.row_dimensions[2].height = 42
 
     ws.merge_cells("B3:F3")
-    set_cell(ws, "B3", "by KDesk Accounting — free companion to our paid workbooks. v1.0",
+    set_cell(ws, "B3", "by KDesk Accounting — free companion to our paid workbooks. v1.1",
              font=FONT_NOTE, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[3].height = 20
 
@@ -241,16 +328,26 @@ def build_readme_setup(wb: Workbook) -> None:
     set_cell(ws, "B5", "Quickstart", font=FONT_H2)
     quickstart = [
         "1. Fill in your company info in the Setup table below (yellow cells).",
-        "2. Go to the Close Calendar tab. Review the 42 pre-populated tasks. Adjust Owner and Due Date for your team. Add or delete rows as needed.",
-        "3. Work through tasks during the close. Set Status as you go — conditional formatting flags Blocked items in red.",
-        "4. On Reconciliations, enter GL Balance and Subledger Balance for each account. The Variance and Flag columns auto-calculate against the Materiality threshold from Setup.",
-        "5. Log every JE posted on JE Tracker. The Debits = Credits sanity check at the bottom catches one-sided entries.",
+        f"2. Go to the Close Calendar tab. Review the {len(TASKS)} pre-populated tasks. Adjust Owner and Due Date for your team. Type extra tasks into the blank rows below the list; they are counted automatically.",
+        "3. Work through tasks during the close. Set Status as you go: Done turns green, In Progress yellow, Blocked red, N/A gray.",
+        "4. On Reconciliations, enter GL Balance and Subledger Balance for each account. Variance and the OK / FLAG column calculate against the Tie-Out Tolerance from Setup.",
+        "5. Log every JE line on JE Tracker. Entry Check confirms each JE # balances on its own; the check at the bottom confirms the whole log.",
         "6. Finish on Sign-Off. The summary metrics auto-populate. Have Preparer, Reviewer, and Controller sign off, lock the period in your GL, and distribute the close package.",
     ]
     for i, line in enumerate(quickstart):
         set_cell(ws, f"B{6+i}", line, font=FONT_BODY, align=ALIGN_LEFT_TOP)
         ws.merge_cells(f"B{6+i}:F{6+i}")
         ws.row_dimensions[6+i].height = 28
+
+    # Sample-data note (MEC-3)
+    note_row = 6 + len(quickstart)
+    set_cell(ws, f"B{note_row}",
+             "Sample data: the file opens part-way through a May 2026 close for a fictional company (Acme Corp.) so you can see every check working. "
+             "Before your first close: replace the Setup values, set every Status back to Not Started, and clear the yellow balance cells on "
+             "Reconciliations and the yellow rows on JE Tracker.",
+             font=Font(name="Calibri", size=11, bold=True, color=COLOR_YELLOW_FG), align=ALIGN_LEFT_TOP)
+    ws.merge_cells(f"B{note_row}:F{note_row}")
+    ws.row_dimensions[note_row].height = 46
 
     # Setup table
     setup_row = 14
@@ -260,14 +357,10 @@ def build_readme_setup(wb: Workbook) -> None:
         ("Fiscal Year End (MM-DD)", "12-31", "text"),
         ("Current Period (e.g., May 2026)", "May 2026", "text"),
         ("Period End Date", dt.date(2026, 5, 31), "date"),
-        ("Performance Materiality ($)", 50000, "currency"),
+        ("Tie-Out Tolerance ($)", 1, "currency"),
         ("Reporting Currency", "USD", "text"),
         ("Period Locked in GL?", "No", "yesno"),
     ]
-    write_table_header(ws, setup_row + 1, ["#", "Field", "Value"], start_col=2)
-    # Wait: write_table_header uses col widths starting at B (col 2). We want #, Field, Value across B, C, D.
-    # Actually let me redo this — use B (label) D (value) layout, simpler.
-    # Clear and redo:
     set_cell(ws, f"B{setup_row+1}", "Field", font=FONT_HEADER, fill=FILL_HEADER, align=ALIGN_CENTER, border=BORDER_ALL)
     set_cell(ws, f"C{setup_row+1}", "Value", font=FONT_HEADER, fill=FILL_HEADER, align=ALIGN_CENTER, border=BORDER_ALL)
     ws.merge_cells(f"C{setup_row+1}:D{setup_row+1}")
@@ -286,35 +379,57 @@ def build_readme_setup(wb: Workbook) -> None:
         value_cells[label] = f"C{r}"
         ws.row_dimensions[r].height = 22
 
+    # Tolerance note beside the field (MEC-7)
+    tol_ref = value_cells["Tie-Out Tolerance ($)"]
+    set_cell(ws, f"E{tol_ref[1:]}", "A subledger should agree to the GL to the cent. Raise this only for rounding.",
+             font=FONT_NOTE, align=ALIGN_LEFT)
+    ws.merge_cells(f"E{tol_ref[1:]}:F{tol_ref[1:]}")
+
     # Yes/No validation on Period Locked
     yn_dv = DataValidation(type="list", formula1=f'"{",".join(YES_NO)}"', allow_blank=False)
     yn_dv.add(value_cells["Period Locked in GL?"])
     ws.add_data_validation(yn_dv)
 
-    # Defined names — these are what the other sheets reference
-    add_defined_name(wb, "CompanyName", f"'README & Setup'!${value_cells['Company Name'][0]}${value_cells['Company Name'][1:]}")
-    add_defined_name(wb, "CurrentPeriod", f"'README & Setup'!${value_cells['Current Period (e.g., May 2026)'][0]}${value_cells['Current Period (e.g., May 2026)'][1:]}")
-    add_defined_name(wb, "PeriodEndDate", f"'README & Setup'!${value_cells['Period End Date'][0]}${value_cells['Period End Date'][1:]}")
-    add_defined_name(wb, "Materiality", f"'README & Setup'!${value_cells['Performance Materiality ($)'][0]}${value_cells['Performance Materiality ($)'][1:]}")
-    add_defined_name(wb, "PeriodLocked", f"'README & Setup'!${value_cells['Period Locked in GL?'][0]}${value_cells['Period Locked in GL?'][1:]}")
+    # Tolerance must be a non-negative number
+    tol_dv = DataValidation(type="decimal", operator="greaterThanOrEqual", formula1="0", allow_blank=False,
+                            showErrorMessage=True, errorTitle="Tie-Out Tolerance",
+                            error="Enter a dollar amount of 0 or more.")
+    tol_dv.add(tol_ref)
+    ws.add_data_validation(tol_dv)
 
-    # CTA / upsell
+    def absref(label: str) -> str:
+        ref = value_cells[label]
+        return f"'README & Setup'!${ref[0]}${ref[1:]}"
+
+    # Defined names — these are what the other sheets reference
+    add_defined_name(wb, "CompanyName", absref("Company Name"))
+    add_defined_name(wb, "FiscalYearEnd", absref("Fiscal Year End (MM-DD)"))
+    add_defined_name(wb, "CurrentPeriod", absref("Current Period (e.g., May 2026)"))
+    add_defined_name(wb, "PeriodEndDate", absref("Period End Date"))
+    add_defined_name(wb, "TieOutTolerance", absref("Tie-Out Tolerance ($)"))
+    add_defined_name(wb, "ReportingCurrency", absref("Reporting Currency"))
+    add_defined_name(wb, "PeriodLocked", absref("Period Locked in GL?"))
+
+    # Cross-sell (MEC-1, MEC-5): product names and kdeskaccounting.com, no prices.
     cta_row = setup_row + 2 + len(setup_fields) + 2
     set_cell(ws, f"B{cta_row}", "Need more depth?", font=FONT_H2)
+    set_cell(ws, f"C{cta_row}", "Our workbooks for the technical schedules. Details at kdeskaccounting.com.",
+             font=FONT_NOTE, align=ALIGN_LEFT)
+    ws.merge_cells(f"C{cta_row}:F{cta_row}")
     upsells = [
-        ("ASC 606 Commission Accrual Workbook", "50 deals, dynamic period selection, JE generator, rollforward — $79", "https://kdeskaccounting.gumroad.com/l/mwmwpe"),
-        ("ASC 842 Lease Accounting Workbook", "20 leases, six-category JE generator, ROU rollforward — $97", "https://kdeskaccounting.gumroad.com/l/phxigq"),
-        ("Fixed Asset Rollforward Workbook", "50 assets, four depreciation methods, audit-ready rollforward — $79", "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward"),
-        ("Runway Calculator (free, browser-based)", "ASC 606 + ASC 842 amortization estimates in seconds", "https://kdeskaccounting.com/calculator/"),
+        ("ASC 606 Commission Accrual Workbook", "Capitalize and amortize sales commissions: deal schedule, JE generator, rollforward", "https://kdeskaccounting.com/templates/asc606/"),
+        ("ASC 842 Lease Accounting Workbook", "Operating and finance leases: amortization schedule, JE generator, ROU rollforward", "https://kdeskaccounting.com/templates/asc842/"),
+        ("Fixed Asset Rollforward Workbook", "Asset register, depreciation schedule, JE generator, rollforward", "https://kdeskaccounting.com/templates/fixed-assets/"),
+        ("Amortization Calculator (free, in your browser)", "ASC 842 lease and ASC 606 commission amortization estimates in seconds", "https://kdeskaccounting.com/calculator/"),
     ]
     for i, (name, desc, url) in enumerate(upsells):
         r = cta_row + 1 + i
         set_cell(ws, f"B{r}", name, font=FONT_BODY_BOLD, align=ALIGN_LEFT)
-        cell = set_cell(ws, f"C{r}", desc, font=FONT_BODY, align=ALIGN_LEFT)
+        set_cell(ws, f"C{r}", desc, font=FONT_BODY, align=ALIGN_LEFT)
         ws.merge_cells(f"C{r}:E{r}")
         link_cell = set_cell(ws, f"F{r}", "Open →", font=FONT_LINK, align=ALIGN_CENTER)
         link_cell.hyperlink = url
-        ws.row_dimensions[r].height = 22
+        ws.row_dimensions[r].height = 30
 
     # Footer note
     footer_row = cta_row + 2 + len(upsells) + 1
@@ -326,7 +441,7 @@ def build_close_calendar(wb: Workbook) -> None:
     ws = wb.create_sheet("Close Calendar")
     set_col_widths(ws, {"A": 4, "B": 6, "C": 32, "D": 56, "E": 22, "F": 14, "G": 16, "H": 32})
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "B5"
+    ws.freeze_panes = "B6"
 
     # Title band
     ws.merge_cells("B2:H2")
@@ -335,217 +450,231 @@ def build_close_calendar(wb: Workbook) -> None:
     ws.row_dimensions[2].height = 36
 
     ws.merge_cells("B3:H3")
-    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  Company: ",CompanyName)',
+    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  Company: ",CompanyName,"  |  Due dates default to business days after Period End Date; overwrite any of them")',
              font=FONT_NOTE, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[3].height = 20
 
-    # Header row at 5
+    start_row = 6
+    task_end = start_row + len(TASKS) - 1
+    spare_end = task_end + CALENDAR_SPARE_ROWS
+    rng_end = CALENDAR_RANGE_END
+
+    # Summary sits ABOVE the table (row 4, frozen) so the list can grow downward (MEC-8)
+    set_cell(ws, "C4", "Totals", font=FONT_BODY_BOLD, align=ALIGN_RIGHT)
+    D = f"D{start_row}:D{rng_end}"
+    G = f"G{start_row}:G{rng_end}"
+    set_cell(ws, "D4", f'=CONCATENATE(COUNTA({D}), " tasks total  |  ", COUNTIF({G},"Done"), " done  |  ", COUNTIF({G},"In Progress"), " in progress  |  ", COUNTIF({G},"Blocked"), " blocked  |  ", COUNTIF({G},"N/A"), " N/A")',
+             font=FONT_BODY_BOLD, align=ALIGN_LEFT, fill=FILL_SECTION, border=BORDER_ALL)
+    ws.merge_cells("D4:H4")
+    ws.row_dimensions[4].height = 28
+
     headers = ["#", "Phase", "Task", "Owner", "Due Date", "Status", "Notes"]
     write_table_header(ws, 5, headers, start_col=2)
 
-    # Body rows
-    start_row = 6
     for i, (phase, task, owner) in enumerate(TASKS):
         r = start_row + i
+        offset = next(v for k, v in PHASE_DUE_OFFSET.items() if phase.startswith(k + " "))
+        status, note = SAMPLE_TASK_STATUS.get(i + 1, ("Not Started", None))
         set_cell(ws, f"B{r}", i + 1, font=FONT_BODY, align=ALIGN_CENTER, border=BORDER_ALL)
         set_cell(ws, f"C{r}", phase, font=FONT_BODY, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
         set_cell(ws, f"D{r}", task, font=FONT_BODY, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
         set_cell(ws, f"E{r}", owner, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"F{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL, number_format="yyyy-mm-dd")
-        set_cell(ws, f"G{r}", "Not Started", font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        set_cell(ws, f"H{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
+        set_cell(ws, f"F{r}", f"=WORKDAY(PeriodEndDate,{offset})", font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL, number_format="yyyy-mm-dd")
+        set_cell(ws, f"G{r}", status, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"H{r}", note, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
         ws.row_dimensions[r].height = 36
 
-    end_row = start_row + len(TASKS) - 1
+    # Blank rows for the team's own tasks (counted by every summary)
+    for r in range(task_end + 1, spare_end + 1):
+        set_cell(ws, f"B{r}", f'=IF(D{r}="","",ROW()-{start_row - 1})', font=FONT_BODY, align=ALIGN_CENTER, border=BORDER_ALL)
+        for col, align in (("C", ALIGN_LEFT_TOP), ("D", ALIGN_LEFT_TOP), ("E", ALIGN_LEFT), ("F", ALIGN_CENTER), ("G", ALIGN_CENTER), ("H", ALIGN_LEFT_TOP)):
+            set_cell(ws, f"{col}{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=align, border=BORDER_ALL,
+                     number_format="yyyy-mm-dd" if col == "F" else None)
+        ws.row_dimensions[r].height = 28
 
-    # Status dropdown
-    status_dv = DataValidation(type="list", formula1=f'"{",".join(STATUS_OPTIONS)}"', allow_blank=False)
-    status_dv.add(f"G{start_row}:G{end_row}")
+    status_range = f"G{start_row}:G{rng_end}"
+    status_dv = DataValidation(type="list", formula1=f'"{",".join(STATUS_OPTIONS)}"', allow_blank=True)
+    status_dv.add(status_range)
     ws.add_data_validation(status_dv)
 
-    # Conditional formatting on Status
-    status_range = f"G{start_row}:G{end_row}"
-    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"Done"'], fill=PatternFill("solid", fgColor=COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
-    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"In Progress"'], fill=PatternFill("solid", fgColor=COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
-    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"Blocked"'], fill=PatternFill("solid", fgColor=COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
-    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"N/A"'], fill=PatternFill("solid", fgColor=COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
+    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"Done"'], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"In Progress"'], fill=cf_fill(COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
+    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"Blocked"'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(status_range, CellIsRule(operator="equal", formula=['"N/A"'], fill=cf_fill(COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
 
-    # Defined name for the status column — used by Sign-Off summary
-    add_defined_name(wb, "TaskStatus", f"'Close Calendar'!$G${start_row}:$G${end_row}")
-    add_defined_name(wb, "TaskList", f"'Close Calendar'!$D${start_row}:$D${end_row}")
+    # Defined names used by Sign-Off — run to row 200 so added tasks count (MEC-8)
+    add_defined_name(wb, "TaskStatus", f"'Close Calendar'!$G${start_row}:$G${rng_end}")
+    add_defined_name(wb, "TaskList", f"'Close Calendar'!$D${start_row}:$D${rng_end}")
 
-    # Summary footer
-    sum_row = end_row + 2
-    set_cell(ws, f"C{sum_row}", "Totals", font=FONT_BODY_BOLD, align=ALIGN_RIGHT)
-    set_cell(ws, f"D{sum_row}", f'=CONCATENATE(COUNTA(D{start_row}:D{end_row}), " tasks total  |  ", COUNTIF(G{start_row}:G{end_row},"Done"), " done  |  ", COUNTIF(G{start_row}:G{end_row},"In Progress"), " in progress  |  ", COUNTIF(G{start_row}:G{end_row},"Blocked"), " blocked  |  ", COUNTIF(G{start_row}:G{end_row},"N/A"), " N/A")',
-             font=FONT_BODY_BOLD, align=ALIGN_LEFT, fill=FILL_SECTION, border=BORDER_ALL)
-    ws.merge_cells(f"D{sum_row}:H{sum_row}")
-    ws.row_dimensions[sum_row].height = 28
+    note_row = spare_end + 2
+    # Column C, not D: anything in D inside the range would be counted as a task
+    set_cell(ws, f"C{note_row}", f"Need more rows? Insert them anywhere above row {rng_end}; the totals above and Sign-Off count everything in rows {start_row}-{rng_end}.",
+             font=FONT_NOTE, align=Alignment(horizontal="left", vertical="center"))
 
 
 def build_reconciliations(wb: Workbook) -> None:
     ws = wb.create_sheet("Reconciliations")
-    set_col_widths(ws, {"A": 4, "B": 6, "C": 34, "D": 34, "E": 18, "F": 18, "G": 16, "H": 16, "I": 16, "J": 18, "K": 18, "L": 32})
+    set_col_widths(ws, {"A": 4, "B": 6, "C": 34, "D": 34, "E": 18, "F": 18, "G": 16, "H": 16, "I": 16, "J": 18, "K": 18, "L": 40})
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "B5"
+    ws.freeze_panes = "B6"
 
-    # Title band
     ws.merge_cells("B2:L2")
     set_cell(ws, "B2", "Reconciliations (Subledger → GL Tie-Out)", font=Font(name="Calibri", size=18, bold=True, color=COLOR_WHITE),
              fill=FILL_HEADER, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[2].height = 36
 
     ws.merge_cells("B3:L3")
-    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  Materiality threshold: $",TEXT(Materiality,"#,##0"))',
+    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  Currency: ",ReportingCurrency,"  |  Tie-out tolerance: ",TEXT(TieOutTolerance,"#,##0.00"),"  |  A row shows OK or FLAG once both balances are entered")',
              font=FONT_NOTE, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[3].height = 20
 
-    # Headers
     headers = ["#", "Account", "Source / Schedule", "GL Balance", "Sub/Schedule Balance",
-               "Variance", "Within Mat.?", "Status", "Preparer", "Reviewer", "Notes"]
+               "Variance", "Within Tolerance?", "Status", "Preparer", "Reviewer", "Notes"]
     write_table_header(ws, 5, headers, start_col=2)
 
     start_row = 6
     for i, (account, source) in enumerate(RECONCILIATIONS):
         r = start_row + i
+        gl, sub, status, note = SAMPLE_RECS.get(i + 1, (None, None, "Not Started", None))
+        done_by = ("Staff Acct.", "Controller") if status == "Done" else (("Staff Acct.", None) if status == "In Progress" else (None, None))
         set_cell(ws, f"B{r}", i + 1, font=FONT_BODY, align=ALIGN_CENTER, border=BORDER_ALL)
         set_cell(ws, f"C{r}", account, font=FONT_BODY, align=ALIGN_LEFT, border=BORDER_ALL)
         set_cell(ws, f"D{r}", source, font=FONT_BODY, align=ALIGN_LEFT, border=BORDER_ALL)
-        # GL Balance (input)
-        c = set_cell(ws, f"E{r}", 0, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL)
-        c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-        # Sub/Schedule Balance (input)
-        c = set_cell(ws, f"F{r}", 0, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL)
-        c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-        # Variance (formula)
-        c = set_cell(ws, f"G{r}", f"=E{r}-F{r}", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, border=BORDER_ALL)
-        c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-        # Within Materiality? (formula)
-        set_cell(ws, f"H{r}", f'=IF(ABS(G{r})<=Materiality,"OK","FLAG")', font=FONT_BODY_BOLD, align=ALIGN_CENTER, border=BORDER_ALL)
-        # Status dropdown
-        set_cell(ws, f"I{r}", "Not Started", font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        # Preparer / Reviewer / Notes
-        set_cell(ws, f"J{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"K{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"L{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
+        set_cell(ws, f"E{r}", gl, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL, number_format=CURRENCY_FMT)
+        set_cell(ws, f"F{r}", sub, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL, number_format=CURRENCY_FMT)
+        # Blank until both balances are entered, so an untouched row is not "OK" (MEC-3)
+        set_cell(ws, f"G{r}", f'=IF(COUNT(E{r}:F{r})<2,"",E{r}-F{r})', font=FONT_BODY_BOLD, align=ALIGN_RIGHT, border=BORDER_ALL, number_format=CURRENCY_FMT)
+        set_cell(ws, f"H{r}", f'=IF(COUNT(E{r}:F{r})<2,"",IF(ABS(G{r})<=TieOutTolerance,"OK","FLAG"))', font=FONT_BODY_BOLD, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"I{r}", status, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"J{r}", done_by[0], font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"K{r}", done_by[1], font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"L{r}", note, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT_TOP, border=BORDER_ALL)
         ws.row_dimensions[r].height = 26
 
     end_row = start_row + len(RECONCILIATIONS) - 1
 
-    # Status dropdown
     status_dv = DataValidation(type="list", formula1=f'"{",".join(STATUS_OPTIONS)}"', allow_blank=False)
     status_dv.add(f"I{start_row}:I{end_row}")
     ws.add_data_validation(status_dv)
 
-    # Conditional formatting on Within Materiality column
     flag_range = f"H{start_row}:H{end_row}"
-    ws.conditional_formatting.add(flag_range, CellIsRule(operator="equal", formula=['"OK"'], fill=PatternFill("solid", fgColor=COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
-    ws.conditional_formatting.add(flag_range, CellIsRule(operator="equal", formula=['"FLAG"'], fill=PatternFill("solid", fgColor=COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(flag_range, CellIsRule(operator="equal", formula=['"OK"'], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(flag_range, CellIsRule(operator="equal", formula=['"FLAG"'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
 
-    # Status CF
     rec_status_range = f"I{start_row}:I{end_row}"
-    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"Done"'], fill=PatternFill("solid", fgColor=COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
-    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"In Progress"'], fill=PatternFill("solid", fgColor=COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
-    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"Blocked"'], fill=PatternFill("solid", fgColor=COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"Done"'], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"In Progress"'], fill=cf_fill(COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
+    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"Blocked"'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(rec_status_range, CellIsRule(operator="equal", formula=['"N/A"'], fill=cf_fill(COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
 
-    # Defined name — used by Sign-Off
     add_defined_name(wb, "RecFlags", f"Reconciliations!$H${start_row}:$H${end_row}")
     add_defined_name(wb, "RecVariance", f"Reconciliations!$G${start_row}:$G${end_row}")
     add_defined_name(wb, "RecStatus", f"Reconciliations!$I${start_row}:$I${end_row}")
 
-    # Summary footer
     sum_row = end_row + 2
     set_cell(ws, f"C{sum_row}", "Totals", font=FONT_BODY_BOLD, align=ALIGN_RIGHT)
     set_cell(ws, f"D{sum_row}", "GL Total", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION)
-    c = set_cell(ws, f"E{sum_row}", f"=SUM(E{start_row}:E{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-    c = set_cell(ws, f"F{sum_row}", f"=SUM(F{start_row}:F{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-    c = set_cell(ws, f"G{sum_row}", f"=E{sum_row}-F{sum_row}", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-    set_cell(ws, f"H{sum_row}", f'=CONCATENATE(COUNTIF(H{start_row}:H{end_row},"FLAG")," flags")', font=FONT_BODY_BOLD, align=ALIGN_CENTER, fill=FILL_SECTION, border=BORDER_ALL)
+    set_cell(ws, f"E{sum_row}", f"=SUM(E{start_row}:E{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
+    set_cell(ws, f"F{sum_row}", f"=SUM(F{start_row}:F{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
+    set_cell(ws, f"G{sum_row}", f"=E{sum_row}-F{sum_row}", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
+    flags = f'COUNTIF(H{start_row}:H{end_row},"FLAG")'
+    set_cell(ws, f"H{sum_row}", f'={flags}&IF({flags}=1," flag"," flags")', font=FONT_BODY_BOLD, align=ALIGN_CENTER, fill=FILL_SECTION, border=BORDER_ALL)
     ws.row_dimensions[sum_row].height = 28
 
 
 def build_je_tracker(wb: Workbook) -> None:
     ws = wb.create_sheet("JE Tracker")
-    set_col_widths(ws, {"A": 4, "B": 6, "C": 14, "D": 12, "E": 38, "F": 22, "G": 16, "H": 16, "I": 24, "J": 18, "K": 18, "L": 16})
+    set_col_widths(ws, {"A": 4, "B": 6, "C": 14, "D": 12, "E": 32, "F": 30, "G": 16, "H": 16, "I": 24, "J": 16, "K": 16, "L": 14, "M": 18})
     ws.sheet_view.showGridLines = False
-    ws.freeze_panes = "B5"
+    ws.freeze_panes = "B6"
 
-    ws.merge_cells("B2:L2")
+    ws.merge_cells("B2:M2")
     set_cell(ws, "B2", "Journal Entry Tracker", font=Font(name="Calibri", size=18, bold=True, color=COLOR_WHITE),
              fill=FILL_HEADER, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[2].height = 36
 
-    ws.merge_cells("B3:L3")
-    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  Log every JE posted this period. Sanity check at the bottom catches one-sided entries.")',
+    ws.merge_cells("B3:M3")
+    set_cell(ws, "B3", '=CONCATENATE("Period: ",CurrentPeriod,"  |  One row per JE line; give every line of an entry the same JE #. Entry Check tests each JE # on its own.")',
              font=FONT_NOTE, align=Alignment(horizontal="left", vertical="center", indent=1))
     ws.row_dimensions[3].height = 20
 
-    headers = ["#", "Date", "JE #", "Description", "Account", "Debit", "Credit", "Source", "Preparer", "Reviewer", "Status"]
+    headers = ["#", "Date", "JE #", "Description", "Account", "Debit", "Credit", "Source", "Preparer", "Reviewer", "Status", "Entry Check"]
     write_table_header(ws, 5, headers, start_col=2)
 
     start_row = 6
     rows = 50
     end_row = start_row + rows - 1
+    D = f"$D${start_row}:$D${end_row}"
+    Gr = f"$G${start_row}:$G${end_row}"
+    Hr = f"$H${start_row}:$H${end_row}"
 
     for r in range(start_row, end_row + 1):
-        set_cell(ws, f"B{r}", r - start_row + 1, font=FONT_BODY, align=ALIGN_CENTER, border=BORDER_ALL)
-        c = set_cell(ws, f"C{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        c.number_format = "yyyy-mm-dd"
-        set_cell(ws, f"D{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        set_cell(ws, f"E{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"F{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        c = set_cell(ws, f"G{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL)
-        c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-        c = set_cell(ws, f"H{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL)
-        c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-        set_cell(ws, f"I{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        set_cell(ws, f"J{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"K{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        set_cell(ws, f"L{r}", "Pending", font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        k = r - start_row
+        sample = SAMPLE_JES[k] if k < len(SAMPLE_JES) else None
+        if sample:
+            off, je, desc, acct, dr, cr, src, st = sample
+            date = dt.date(2026, 5, 31) + dt.timedelta(days=off)
+            prep, rev = "Staff Acct.", ("Controller" if st == "Posted" else None)
+        else:
+            date = je = desc = acct = dr = cr = src = st = prep = rev = None
+        set_cell(ws, f"B{r}", k + 1, font=FONT_BODY, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"C{r}", date, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL, number_format="yyyy-mm-dd")
+        set_cell(ws, f"D{r}", je, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"E{r}", desc, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"F{r}", acct, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"G{r}", dr, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL, number_format=CURRENCY_FMT)
+        set_cell(ws, f"H{r}", cr, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_RIGHT, border=BORDER_ALL, number_format=CURRENCY_FMT)
+        set_cell(ws, f"I{r}", src, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        set_cell(ws, f"J{r}", prep, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"K{r}", rev, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
+        set_cell(ws, f"L{r}", st, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
+        # Per-entry debit = credit (MEC-9): two offsetting one-sided entries no longer pass
+        set_cell(ws, f"M{r}",
+                 f'=IF(AND(D{r}="",COUNT(G{r}:H{r})=0),"",IF(D{r}="","No JE #",'
+                 f'IF(ROUND(SUMIF({D},D{r},{Gr})-SUMIF({D},D{r},{Hr}),2)=0,"OK","Out of balance")))',
+                 font=FONT_BODY_BOLD, align=ALIGN_CENTER, border=BORDER_ALL)
         ws.row_dimensions[r].height = 22
 
-    # Source dropdown
     source_dv = DataValidation(type="list", formula1=f'"{",".join(JE_SOURCE_OPTIONS)}"', allow_blank=True)
     source_dv.add(f"I{start_row}:I{end_row}")
     ws.add_data_validation(source_dv)
 
-    # Status dropdown (JE-specific: Pending, Posted, Reversed)
     je_status_dv = DataValidation(type="list", formula1='"Pending,Posted,Reversed,Voided"', allow_blank=True)
     je_status_dv.add(f"L{start_row}:L{end_row}")
     ws.add_data_validation(je_status_dv)
 
-    # JE status CF
     je_status_range = f"L{start_row}:L{end_row}"
-    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Posted"'], fill=PatternFill("solid", fgColor=COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
-    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Pending"'], fill=PatternFill("solid", fgColor=COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
-    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Reversed"'], fill=PatternFill("solid", fgColor=COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
+    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Posted"'], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Pending"'], fill=cf_fill(COLOR_YELLOW), font=Font(color=COLOR_YELLOW_FG, bold=True)))
+    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Reversed"'], fill=cf_fill(COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
+    ws.conditional_formatting.add(je_status_range, CellIsRule(operator="equal", formula=['"Voided"'], fill=cf_fill(COLOR_GRAY), font=Font(color=COLOR_GRAY_FG, italic=True)))
 
-    # Sanity check footer
+    check_range = f"M{start_row}:M{end_row}"
+    ws.conditional_formatting.add(check_range, CellIsRule(operator="equal", formula=['"OK"'], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(check_range, CellIsRule(operator="equal", formula=['"Out of balance"'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(check_range, CellIsRule(operator="equal", formula=['"No JE #"'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+
     sum_row = end_row + 2
     set_cell(ws, f"E{sum_row}", "Sanity Check:", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
     set_cell(ws, f"F{sum_row}", "Sum of Debits / Credits / Difference", font=FONT_NOTE, align=ALIGN_LEFT, fill=FILL_SECTION, border=BORDER_ALL)
-    c = set_cell(ws, f"G{sum_row}", f"=SUM(G{start_row}:G{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-    c = set_cell(ws, f"H{sum_row}", f"=SUM(H{start_row}:H{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
-    c = set_cell(ws, f"I{sum_row}", f"=G{sum_row}-H{sum_row}", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
-    c.number_format = "$#,##0.00;[Red]($#,##0.00);\"–\""
+    set_cell(ws, f"G{sum_row}", f"=SUM(G{start_row}:G{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
+    set_cell(ws, f"H{sum_row}", f"=SUM(H{start_row}:H{end_row})", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
+    set_cell(ws, f"I{sum_row}", f"=G{sum_row}-H{sum_row}", font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL, number_format=CURRENCY_FMT)
 
     flag_row = sum_row + 1
+    bad = f'COUNTIF(M{start_row}:M{end_row},"Out of balance")+COUNTIF(M{start_row}:M{end_row},"No JE #")'
+    ok_expr = f'AND(ROUND(I{sum_row},2)=0,{bad}=0)'
     set_cell(ws, f"E{flag_row}", "Balanced?", font=FONT_BODY_BOLD, align=ALIGN_RIGHT)
-    c = set_cell(ws, f"F{flag_row}", f'=IF(ROUND(I{sum_row},2)=0,"✓ Debits = Credits","✗ OUT OF BALANCE")', font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
-    # Conditional format on the balance cell
+    set_cell(ws, f"F{flag_row}", f'=IF({ok_expr},"✓ Debits = Credits","✗ OUT OF BALANCE")', font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
     bal_cell = f"F{flag_row}"
-    ws.conditional_formatting.add(bal_cell, FormulaRule(formula=[f'ROUND(I{sum_row},2)=0'], fill=PatternFill("solid", fgColor=COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
-    ws.conditional_formatting.add(bal_cell, FormulaRule(formula=[f'ROUND(I{sum_row},2)<>0'], fill=PatternFill("solid", fgColor=COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
+    ws.conditional_formatting.add(bal_cell, FormulaRule(formula=[ok_expr], fill=cf_fill(COLOR_GREEN), font=Font(color=COLOR_GREEN_FG, bold=True)))
+    ws.conditional_formatting.add(bal_cell, FormulaRule(formula=[f'NOT({ok_expr})'], fill=cf_fill(COLOR_RED), font=Font(color=COLOR_RED_FG, bold=True)))
     ws.row_dimensions[sum_row].height = 28
     ws.row_dimensions[flag_row].height = 24
 
-    # Defined names for Sign-Off
     add_defined_name(wb, "JEStatus", f"'JE Tracker'!$L${start_row}:$L${end_row}")
+    add_defined_name(wb, "JECheck", f"'JE Tracker'!$M${start_row}:$M${end_row}")
+    add_defined_name(wb, "JEAmounts", f"'JE Tracker'!$G${start_row}:$H${end_row}")
     add_defined_name(wb, "JEDebitTotal", f"'JE Tracker'!$G${sum_row}")
     add_defined_name(wb, "JECreditTotal", f"'JE Tracker'!$H${sum_row}")
     add_defined_name(wb, "JEDifference", f"'JE Tracker'!$I${sum_row}")
@@ -561,18 +690,16 @@ def build_signoff(wb: Workbook) -> None:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.print_options.horizontalCentered = True
 
-    # Title band
     ws.merge_cells("B2:F2")
-    set_cell(ws, "B2", "Month-End Close Certification", font=Font(name="Calibri", size=20, bold=True, color=COLOR_WHITE),
+    set_cell(ws, "B2", "Month-End Close Sign-Off", font=Font(name="Calibri", size=20, bold=True, color=COLOR_WHITE),
              fill=FILL_HEADER, align=Alignment(horizontal="center", vertical="center"))
     ws.row_dimensions[2].height = 44
 
     ws.merge_cells("B3:F3")
-    set_cell(ws, "B3", '=CONCATENATE(CompanyName,"  |  Period: ",CurrentPeriod,"  |  Period End: ",TEXT(PeriodEndDate,"yyyy-mm-dd"))',
+    set_cell(ws, "B3", '=CONCATENATE(CompanyName,"  |  Period: ",CurrentPeriod,"  |  Period End: ",TEXT(PeriodEndDate,"yyyy-mm-dd"),"  |  FYE ",FiscalYearEnd,"  |  ",ReportingCurrency)',
              font=FONT_H2, align=ALIGN_CENTER)
     ws.row_dimensions[3].height = 28
 
-    # Close metrics section
     set_cell(ws, "B5", "Close Metrics", font=FONT_H2)
     metrics = [
         ("Tasks total",            "=COUNTA(TaskList)"),
@@ -583,20 +710,21 @@ def build_signoff(wb: Workbook) -> None:
         ("Reconciliation flags",   '=COUNTIF(RecFlags,"FLAG")'),
         ("Reconciliations done",   '=COUNTIF(RecStatus,"Done")'),
         ("JE entries posted",      '=COUNTIF(JEStatus,"Posted")'),
-        ("JE debit = credit?",     '=IF(ROUND(JEDifference,2)=0,"Yes","No — investigate")'),
+        ("JE lines failing Entry Check", '=COUNTIF(JECheck,"Out of balance")+COUNTIF(JECheck,"No JE #")'),
+        ("JE debit = credit?",     '=IF(COUNT(JEAmounts)=0,"No entries yet",IF(AND(ROUND(JEDifference,2)=0,COUNTIF(JECheck,"Out of balance")+COUNTIF(JECheck,"No JE #")=0),"Yes","No — investigate"))'),
     ]
     for i, (label, formula) in enumerate(metrics):
         r = 6 + i
         set_cell(ws, f"B{r}", label, font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
-        c = set_cell(ws, f"C{r}", formula, font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
+        set_cell(ws, f"C{r}", formula, font=FONT_BODY_BOLD, align=ALIGN_RIGHT, fill=FILL_SECTION, border=BORDER_ALL)
         ws.merge_cells(f"C{r}:D{r}")
         ws.row_dimensions[r].height = 22
 
-    # Close gate
     gate_row = 6 + len(metrics) + 1
     set_cell(ws, f"B{gate_row}", "Period Locked in GL?", font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
     set_cell(ws, f"C{gate_row}", "=PeriodLocked", font=FONT_BODY_BOLD, align=ALIGN_CENTER, fill=FILL_SECTION, border=BORDER_ALL)
     ws.merge_cells(f"C{gate_row}:D{gate_row}")
+    set_cell(ws, f"E{gate_row}", "Set on README & Setup", font=FONT_NOTE, align=ALIGN_LEFT)
 
     fs_row = gate_row + 1
     set_cell(ws, f"B{fs_row}", "Financial statements attached?", font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
@@ -613,7 +741,6 @@ def build_signoff(wb: Workbook) -> None:
     yn_dv.add(f"C{pkg_row}")
     ws.add_data_validation(yn_dv)
 
-    # Exception list
     excp_row = pkg_row + 2
     set_cell(ws, f"B{excp_row}", "Exception List (unresolved items, post-close follow-ups)", font=FONT_H2)
     for i in range(6):
@@ -623,25 +750,23 @@ def build_signoff(wb: Workbook) -> None:
         ws.merge_cells(f"C{r}:F{r}")
         ws.row_dimensions[r].height = 22
 
-    # Signatures
     sig_row = excp_row + 1 + 6 + 2
     set_cell(ws, f"B{sig_row}", "Signatures", font=FONT_H2)
 
     sig_header_row = sig_row + 1
     write_table_header(ws, sig_header_row, ["Role", "Name", "Date", "Signature"], start_col=2)
+    ws.merge_cells(f"E{sig_header_row}:F{sig_header_row}")
 
     sig_roles = ["Preparer", "Reviewer", "Controller / CFO"]
     for i, role in enumerate(sig_roles):
         r = sig_header_row + 1 + i
         set_cell(ws, f"B{r}", role, font=FONT_BODY_BOLD, align=ALIGN_LEFT, border=BORDER_ALL)
         set_cell(ws, f"C{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
-        c = set_cell(ws, f"D{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL)
-        c.number_format = "yyyy-mm-dd"
+        set_cell(ws, f"D{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_CENTER, border=BORDER_ALL, number_format="yyyy-mm-dd")
         set_cell(ws, f"E{r}", None, font=FONT_BODY, fill=FILL_INPUT, align=ALIGN_LEFT, border=BORDER_ALL)
         ws.merge_cells(f"E{r}:F{r}")
         ws.row_dimensions[r].height = 32
 
-    # Footer
     footer_row = sig_header_row + 1 + len(sig_roles) + 2
     set_cell(ws, f"B{footer_row}",
              "Not legal, tax, or audit advice. Use within your firm's policies and your auditor's expectations.  •  kdeskaccounting.com",
@@ -661,8 +786,15 @@ def build_workbook(out_path: pathlib.Path) -> None:
     build_je_tracker(wb)
     build_signoff(wb)
 
-    # Set active sheet to README on open
     wb.active = 0
+    # MEC-9: file metadata
+    wb.properties.creator = "KDesk Accounting"
+    wb.properties.lastModifiedBy = "KDesk Accounting"
+    wb.properties.title = "Month-End Close Checklist + Tie-Out Workbook v1.1"
+    wb.properties.created = dt.datetime(2026, 11, 24, 12, 0, 0)
+    wb.properties.modified = dt.datetime(2026, 11, 24, 12, 0, 0)
+    # Excel recalculates on open (LibreOffice too) — the file ships formulas without cached values
+    wb.calculation.fullCalcOnLoad = True
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out_path)
@@ -670,7 +802,7 @@ def build_workbook(out_path: pathlib.Path) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--output", default=str(DIST / "month-end-close-checklist-v1.xlsx"))
+    ap.add_argument("--output", default=str(DIST / "month-end-close-checklist-v1.1.xlsx"))
     args = ap.parse_args()
 
     out = pathlib.Path(args.output)
