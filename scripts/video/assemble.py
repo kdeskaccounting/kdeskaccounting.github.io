@@ -37,18 +37,23 @@ opt-in, documented key by key, with defaults and refusals, in scripts/video/long
           sfx: {events: {...}}}                            # make_short.audio_settings rules
   per media scene: in, beats: [{src, seconds, in?, fill?, focus?, motion?, crop?, credit?}],
                    chapter: {number, title, kicker?},
-                   callouts: [{type: sticker, src, when|at, anchor, size?, seconds?, label?,
-                               labels?, enter_from?, offset_ms?, sfx?}]
+                   callouts: make_short's own list -- sticker, badge, text, arrow, circle and
+                             hoot, every key callouts.py reads (+ `at`, `seconds`, `label`),
+                   fx: the Shorts verdict washes/grades (grammar.py)
+  landscape.chapter_sfx: {src: 'bundle:whoosh', gain_db: -16, lead: 0.2} (default) | null
 
   * beats cut the picture inside one scene (seconds rescaled to the real narration exactly as
     make_short.beat_spans does); `in:` starts a clip at an in-point (scene or beat);
   * a chapter card slides in at the scene's start, where the captions are not (lower-left and
     clear of the Earth Studio zone over Earth footage), and chapters.json records its start;
-  * sticker callouts land on their word (words.json), slide in from the nearest edge and never
-    cover an Earth Studio attribution zone;
+  * callouts land on their word (words.json) with the Shorts' eases, holds and sounds, drawn
+    with PIL at the Short's pixel sizes (scripts/video/longform_overlay.py); Hoot sits beside
+    the captions and climbs over them; nothing covers an Earth Studio attribution zone;
+  * `fx:` verdict washes tint the picture under the graphics, with on_verdict's buzzer/ding;
   * the bed is looped to the episode's length with crossfaded seams and mixed by
     make_short.audio_steps (gain from the row's measured lufs, sidechain duck, alimiter,
-    loudnorm to audio.master); callout `sfx:` rides the same mix.
+    loudnorm to audio.master); the one-shots (callout sfx via audio.sfx.events or on_tag,
+    verdict sounds, the chapter whoosh) are thinned and laid over it on one bus, un-ducked.
 
 Without `--spec`, or with no `landscape:` block, every byte of the old behaviour is unchanged.
 """
@@ -176,20 +181,30 @@ def wrap_caption(text: str, max_chars: int = CAPTION_MAX_CHARS) -> list:
     return best or [text]
 
 
-def caption_png(text: str, out: pathlib.Path, position: str = "lower-third",
-                w: int = W, h: int = H) -> pathlib.Path:
-    """A full-frame transparent PNG with the cue in a soft dark box (no drawtext here)."""
+def caption_layout(text: str, position: str = "lower-third", w: int = W, h: int = H) -> tuple:
+    """(lines, line widths, line height, box (x0, y0, x1, y1)) of one cue: caption_png's
+    geometry, and what a Hoot on a 16:9 scene is kept clear of."""
     from PIL import Image, ImageDraw, ImageFont
     font = ImageFont.truetype(str(CAPTION_FONT), CAPTION_PX)
     lines = wrap_caption(text)
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
+    d = ImageDraw.Draw(Image.new("RGBA", (8, 8)))
     line_h = int(CAPTION_PX * 1.22)
     widths = [d.textbbox((0, 0), ln, font=font, stroke_width=2)[2] for ln in lines]
     box_w, box_h = max(widths) + 56, line_h * len(lines) + 28
     x0 = (w - box_w) // 2
     y0 = int(h * CAPTION_MARGIN) if position == "top" else int(h * (1 - CAPTION_MARGIN)) - box_h
-    d.rounded_rectangle((x0, y0, x0 + box_w, y0 + box_h), radius=14, fill=(0, 0, 0, 150))
+    return lines, widths, line_h, (x0, y0, x0 + box_w, y0 + box_h)
+
+
+def caption_png(text: str, out: pathlib.Path, position: str = "lower-third",
+                w: int = W, h: int = H) -> pathlib.Path:
+    """A full-frame transparent PNG with the cue in a soft dark box (no drawtext here)."""
+    from PIL import Image, ImageDraw, ImageFont
+    font = ImageFont.truetype(str(CAPTION_FONT), CAPTION_PX)
+    lines, widths, line_h, (x0, y0, x1, y1) = caption_layout(text, position, w, h)
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle((x0, y0, x1, y1), radius=14, fill=(0, 0, 0, 150))
     for i, ln in enumerate(lines):
         lw = widths[i]
         d.text(((w - lw) // 2, y0 + 14 + i * line_h), ln, font=font, fill=(255, 255, 255, 255),
@@ -231,11 +246,14 @@ def picture_steps(src_label: str, out_label: str, motion: str, dur: float, size,
 
 def landscape_media_part(scene: dict, spec_path: str, wav: pathlib.Path, dur: float, out: pathlib.Path,
                          opts: dict, work: pathlib.Path, i: int, crf: int,
-                         spec_brand: dict | None = None, lf=None) -> list:
-    """One `kind: media` scene rendered from its source(s) at 1920x1080, with its beats, callouts,
-    chapter card and sentence captions. Returns the callouts' sounds, [{at, role}] scene-local."""
+                         spec_brand: dict | None = None, lf=None, spec: dict | None = None) -> list:
+    """One `kind: media` scene rendered from its source(s) at 1920x1080: beats, verdict washes,
+    callouts (longform_overlay: stickers, badges, stamps, arrows, circles, Hoot), chapter card,
+    sentence captions. Returns its sound events, [{at, role, kind}] on the scene clock, kind
+    callout (role = the sfx name) | verdict (role verdict_good|bad) | chapter."""
     import illustrate
     import longform
+    import longform_overlay
     import media
     lf = lf or longform.options({"landscape": opts})
     where = f"scene {i}"
@@ -287,28 +305,37 @@ def landscape_media_part(scene: dict, spec_path: str, wav: pathlib.Path, dur: fl
         return [z for (p0, p1, e, sz) in pictures if e and longform.windows_overlap(a, b, p0, p1)
                 for z in longform.earth_zones(sz)]
 
-    # Callouts: under the chapter card and the captions, over the picture.
-    events = []
-    for k, c in enumerate(longform.resolve_callouts(scene, spec_path, where)):
-        tag = f"{where} callouts[{k}]"
-        t0, t1 = longform.callout_window(c, illustrate.word_rows(words), dur, cuts,
-                                         lf.callout_s, tag)
-        png, sw, sh = longform.sticker_png(c, work / f"scene_{i:02d}_stk{k:02d}.png")
-        box = longform.sticker_box(c["anchor"], sw, sh)
-        if longform.overlaps_any(box, earth_zones_in(t0, t1)):
-            raise SystemExit(f"{tag}: the sticker would cover the Earth Studio attribution zone; "
-                             f"move its anchor up or left, or make it smaller")
-        args += ["-i", str(png)]
-        steps.append(f"[{stage}][{n_in}:v]{longform.sticker_overlay(box, c['enter_from'], t0, t1)}"
-                     f"[k{k}]")
-        stage = f"k{k}"
-        n_in += 1
-        if c["sfx"]:
-            events.append({"at": t0, "role": c["sfx"]})
     cues = caption_cues(words, dur) if lf.captions_on else []
 
     def cue_position(a: float, b: float) -> str:
         return "top" if earth_zones_in(a, b) else lf.caption_position
+
+    def captions_in(a: float, b: float) -> list:
+        return [caption_layout(t, cue_position(c0, c1))[3] for (t, c0, c1) in cues
+                if longform.windows_overlap(a, b, c0, c1)]
+
+    # The picture's own grade first: the verdict washes (fx:) and the blur behind a Hoot that
+    # asks for it (grammar.window_steps, as the Shorts lay them), under every graphic.
+    events = []
+    verdicts = longform_overlay.verdict_windows(scene, words, dur, where)
+    calls = longform_overlay.check(scene.get("callouts"), where, spec, spec_path)
+    layers = longform_overlay.build_layers(
+        calls, illustrate.word_rows(words), dur, cuts, lf.callout_s,
+        work / f"scene_{i:02d}_callouts", where, captions_in, earth_zones_in)
+    windows = [w for _v, w in verdicts] + longform_overlay.blur_windows(layers, dur)
+    if windows:
+        import grammar
+        w_steps, stage = grammar.window_steps(stage, windows)
+        steps.extend(w_steps)
+    events += [{"at": w.t0, "role": f"verdict_{v}", "kind": "verdict"} for v, w in verdicts]
+    # Callouts: under the chapter card and the captions, over the picture.
+    l_args, l_steps, stage, n_in = longform_overlay.layer_steps(layers, stage, n_in)
+    args += l_args
+    steps += l_steps
+    events += [{"at": L.t0, "role": L.sfx, "kind": "callout"} for L in layers if L.sfx]
+    if layers:
+        print(f"scene {i:02d}: callouts " + ", ".join(
+            f"{L.callout} {L.t0:.2f}-{L.t1:.2f}s" for L in layers), flush=True)
 
     chapter = longform.chapter_of(scene, where)
     if chapter:
@@ -328,6 +355,7 @@ def landscape_media_part(scene: dict, spec_path: str, wav: pathlib.Path, dur: fl
         steps.append(f"[{stage}][{n_in}:v]{longform.chapter_overlay(x, y, cw, 0.0, c1)}[ch]")
         stage = "ch"
         n_in += 1
+        events.append({"at": 0.0, "role": "chapter", "kind": "chapter"})
     for k, (text, a, b) in enumerate(cues):
         png = caption_png(text, work / f"scene_{i:02d}_cap{k:02d}.png", cue_position(a, b))
         args += ["-i", str(png)]
@@ -369,43 +397,61 @@ def probe_size(p):
 LANDSCAPE_AUDIO = ("-c:a", "aac", "-b:a", "192k", "-ar", "48000")
 
 
-def kept_events(mix, events) -> tuple:
-    """(events whose role `audio.sfx.events` has a file for, the roles it has not)."""
-    roles = {e.role for e in (mix.sfx.events if mix is not None and mix.sfx is not None else ())}
-    kept = [e for e in events if e["role"] in roles]
-    return kept, sorted({e["role"] for e in events} - roles)
-
-
 def landscape_final(lst: pathlib.Path, out: str, mix, events, runtime: float,
-                    work: pathlib.Path, lf) -> None:
+                    work: pathlib.Path, lf, spec: dict | None = None, spec_path=None) -> None:
     """Join the parts (video stream-copied) and finish the sound.
 
-    No `audio:` bed: the narration through the master loudnorm, as the old path did. With a
-    bed: the bed looped to `runtime` with crossfaded seams (longform.render_bed_loop), then
-    make_short.audio_steps -- the Shorts' own mix: gain target - lufs, fades, sidechain duck
-    under the voice, the callouts' `sfx:` events, alimiter, loudnorm to audio.master.
+    The one-shots (callout sfx, verdict sounds, the chapter whoosh) are placed and thinned by
+    longform_overlay.placements and rendered onto one bus WAV. With a bed: the bed looped to
+    `runtime` with crossfaded seams (longform.render_bed_loop), then make_short.audio_steps --
+    the Shorts' own mix: gain target - lufs, fades, sidechain duck under the voice, the bus laid
+    over it un-ducked as one event at 0 s, alimiter, loudnorm to audio.master. Without a bed:
+    voice + bus, alimiter, the master loudnorm (no bus: the narration alone, as before).
     """
+    import dataclasses as _dc
     import longform
+    import longform_overlay
     import make_short
+    snd = longform_overlay.chapter_sound((spec or {}).get("landscape"),
+                                         lambda src: longform_overlay.resolve_sound(src, spec_path))
+    rows, notes = longform_overlay.placements(
+        mix, [e for e in events if e.get("kind") == "callout"],
+        [e for e in events if e.get("kind") == "verdict"],
+        [e for e in events if e.get("kind") == "chapter"], snd)
+    for note in notes:
+        print(f"note: {note}", flush=True)
+    bus = longform_overlay.render_bus(rows, runtime, work / "sfx-bus.wav")
+    print(f"sfx: {len(rows)} one-shot(s) on the bus ("
+          + ", ".join(f"{r['role']} {r['at']:.2f}s" for r in rows) + ")", flush=True)
+    master = mix.master if mix is not None else make_short.Master()
     if mix is None or mix.bed is None:
-        master = mix.master if mix is not None else make_short.Master()
+        if bus is None:
+            run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
+                 "-c:v", "copy", "-af", make_short.loudnorm_filter(master), *LANDSCAPE_AUDIO,
+                 "-movflags", "+faststart", out])
+            return
+        fmt = "aformat=sample_rates=48000:channel_layouts=stereo"
         run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
-             "-c:v", "copy", "-af", make_short.loudnorm_filter(master), *LANDSCAPE_AUDIO,
+             "-i", str(bus), "-filter_complex",
+             f"[0:a]{fmt}[vox];[1:a]{fmt}[bus];[vox][bus]amix=inputs=2:normalize=0,"
+             f"alimiter=limit=0.97,{make_short.loudnorm_filter(master)}[aout]",
+             "-map", "0:v", "-map", "[aout]", "-c:v", "copy", *LANDSCAPE_AUDIO,
              "-movflags", "+faststart", out])
         return
     bed = longform.render_bed_loop(mix.bed.src, runtime, lf.bed_crossfade, work / "bed-loop.wav",
                                    lf.bed_loop_in)
-    kept, missing = kept_events(mix, events)
-    if missing:
-        print(f"note: callout sfx {', '.join(missing)} skipped: audio.sfx.events has no file for "
-              f"{'it' if len(missing) == 1 else 'them'}", flush=True)
-    ev_args, ev_indexes = make_short.event_inputs(mix, kept, 2)
-    steps = make_short.audio_steps(mix, runtime=runtime, cuts=[], bed_index=1, sfx_indexes=[],
-                                   events=kept, event_indexes=ev_indexes)
+    bus_events = []
+    mixed = mix
+    if bus is not None:
+        mixed = _dc.replace(mix, sfx=make_short.Sfx(
+            src="", events=(make_short.SfxEvent(role="bus", src=str(bus), gain_db=0.0),)))
+        bus_events = [{"at": 0.0, "role": "bus"}]
+    ev_args, ev_indexes = make_short.event_inputs(mixed, bus_events, 2)
+    steps = make_short.audio_steps(mixed, runtime=runtime, cuts=[], bed_index=1, sfx_indexes=[],
+                                   events=bus_events, event_indexes=ev_indexes)
     print(f"bed: {pathlib.Path(mix.bed.src).name} looped to {runtime:.1f}s "
           f"({lf.bed_crossfade:g}s crossfades), {make_short.bed_gain_db(mix.bed.target_lufs, mix.bed.lufs):+g} dB, "
-          f"ducked; {len(kept)} callout sound(s); master {make_short.loudnorm_filter(mix.master)}",
-          flush=True)
+          f"ducked; master {make_short.loudnorm_filter(mix.master)}", flush=True)
     run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst),
          "-i", str(bed), *ev_args, "-filter_complex", ";".join(steps), "-map", "0:v",
          "-map", "[aout]", "-c:v", "copy", *LANDSCAPE_AUDIO, "-movflags", "+faststart", out])
@@ -444,8 +490,8 @@ def main():
         scene = (spec or {}).get("scenes", [{}])[i] if spec else {}
         if opts is not None and (scene or {}).get("kind") == "media":
             sounds = landscape_media_part(scene, a.spec, wav, dur, out, opts, scenes_dir, i, a.crf,
-                                          spec_brand=(spec or {}).get("brand"), lf=lf)
-            events += [{"at": round(start + e["at"], 3), "role": e["role"]} for e in sounds]
+                                          spec_brand=(spec or {}).get("brand"), lf=lf, spec=spec)
+            events += [{**e, "at": round(start + e["at"], 3)} for e in sounds]
             chapter = longform.chapter_of(scene, f"scene {i}")
             if chapter:
                 marks.append({"scene": i, "start": start, **chapter})
@@ -476,7 +522,7 @@ def main():
         longform.write_chapters(b / "chapters.json", marks)
         for m in marks:
             print(f"chapter {longform.timestamp(m['start'])} {m['kicker']} {m['title']}".replace("  ", " "))
-        landscape_final(lst, a.out, mix, events, start, b, lf)
+        landscape_final(lst, a.out, mix, events, start, b, lf, spec, a.spec)
     else:
         run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy",
              "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", a.out])

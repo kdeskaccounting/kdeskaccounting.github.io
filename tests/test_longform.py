@@ -86,12 +86,15 @@ def test_normalise_gives_a_beats_scene_its_first_beats_src_and_credit():
 
 
 def test_shorts_only_render_keys_are_refused_on_a_landscape_media_scene():
-    for key in ("overlay", "scrim", "fx", "elements", "tail_s"):
+    for key in ("overlay", "scrim", "elements", "tail_s"):
         with pytest.raises(SystemExit, match=key):
             longform.check_scene_keys({"kind": "media", "src": "a.mp4", key: 1}, "scene 3")
     with pytest.raises(SystemExit, match="chapter"):
         longform.check_scene_keys({"kind": "card", "chapter": {"title": "x"}}, "scene 1")
-    longform.check_scene_keys({"kind": "media", "src": "a.mp4", "chapter": {"title": "x"}}, "s")
+    longform.check_scene_keys({"kind": "media", "src": "a.mp4", "chapter": {"title": "x"},
+                               "fx": {"verdict": "bad"}}, "s")
+    with pytest.raises(SystemExit, match="fx"):
+        longform.check_scene_keys({"kind": "card", "fx": {"verdict": "bad"}}, "scene 1")
 
 
 def _beats(*seconds, **extra):
@@ -236,32 +239,41 @@ def _callout(**kw):
     return base
 
 
-def test_check_callouts_normalises_a_sticker():
+def _without(c, key):
+    return {k: v for k, v in c.items() if k != key}
+
+
+def test_check_callouts_takes_the_shorts_schema_and_the_landscape_spellings():
     (c,) = longform.check_callouts({"callouts": [_callout(label="1971")]})
-    assert c["size"] == longform.STICKER_SIZE and c["seconds"] is None
-    assert c["enter_from"] == "right"                       # nearest edge of (0.8, 0.35)
-    assert c["labels"] == [{"text": "1971", "x": 0.5, "y": 0.8, "size": 0.14, "rotate": 0.0,
-                            "color": "#FFFFFF", "ink": "#111111"}]
-    timed = {k: v for k, v in _callout(at=4.0, seconds=2, enter_from="top", sfx="pop").items()
-             if k != "when"}
-    (d,) = longform.check_callouts({"callouts": [timed]})
-    assert (d["when"], d["seconds"], d["enter_from"], d["sfx"]) == (4.0, 2.0, "top", "pop")
+    assert c["labels"] == [{"text": "1971", "x": 0.5, "y": 0.8, "size": 0.14}]
+    (d,) = longform.check_callouts({"callouts": [_without(_callout(at=4.0, seconds=2,
+                                                                   enter_from="top", sfx="pop"),
+                                                          "when")]})
+    assert (d["when"], d["hold"], d["enter_from"], d["sfx"]) == (4.0, 2000.0, "top", "pop")
+    # a Shorts list, unchanged: badge, stamp, arrow, circle and hold/ease/out keys
+    shorts = [{"type": "badge", "text": "456 FT", "when": {"word": "456"}},
+              {"type": "text", "text": "NOT 18", "when": {"word": "take"},
+               "anchor": {"x": 0.5, "y": 0.7}, "hold": "scene"},
+              {"type": "arrow", "when": {"word": "back"}, "anchor": {"x": 0.2, "y": 0.3},
+               "hold": "next_cut", "sfx": None},
+              {"type": "circle", "when": 1.0, "anchor": {"x": 0.5, "y": 0.5}, "ease": "overshoot"},
+              _callout(hold=1600, ease="slide_in", out="snap", offset_ms=120)]
+    assert len(longform.check_callouts({"callouts": shorts})) == 5
 
 
 @pytest.mark.parametrize("callout, says", [
-    (_callout(type="badge", text="456 FT"), "Shorts-only"),
-    (_callout(type="hoot"), "Shorts-only"),
-    (_callout(type="gif"), "must be sticker"),
+    (_callout(type="gif"), "type"),
     (_callout(at=3.0), "exactly one"),
-    ({k: v for k, v in _callout().items() if k != "when"}, "exactly one"),
-    (_callout(anchor={"x": 1.4, "y": 0.2}), "anchor.x"),
+    (_without(_callout(), "when"), "when"),
     (_callout(anchor=[0.5, 0.5]), "anchor"),
     (_callout(size=2), "size"),
-    (_callout(hold="next_cut"), "unknown key"),
+    (_callout(zoom=2), "unknown key"),
     (_callout(sfx="boing"), "sfx"),
     (_callout(enter_from="corner"), "enter_from"),
-    (_callout(src=""), "src"),
-    (_callout(label={"text": "x", "font": "y"}), "unknown label key"),
+    (_callout(seconds=0.1), "seconds"),
+    (_callout(seconds=2, hold=500), "not both"),
+    (_callout(label={"text": "x", "font": "y"}), "unknown key"),
+    ({"type": "hoot", "when": 1.0, "say": "one two three four five six seven eight nine"}, "say"),
 ])
 def test_check_callouts_refuses_by_name(callout, says):
     with pytest.raises(SystemExit, match=says):
@@ -275,24 +287,29 @@ def _rows(text, step=0.4):
                                  for i, w in enumerate(text.split())])
 
 
-def test_callout_window_lands_on_its_word_and_leaves_at_the_next_cut_or_its_seconds():
+def test_callout_window_lands_on_its_word_and_leaves_at_the_next_cut_or_its_hold():
+    import longform_overlay as lo
     rows = _rows("And even a little kid's mask has to leave the eyes fully visible.")
     (c,) = longform.check_callouts({"callouts": [_callout()]})
-    assert longform.callout_window(c, rows, 8.0, [], 3.0, "t") == (2.08, 5.08)   # 2.0 + 80 ms
-    # the next picture cut 1 s or more after landing cuts the default hold short
-    assert longform.callout_window(c, rows, 8.0, [2.5, 4.0], 3.0, "t") == (2.08, 4.0)
-    # an explicit `seconds` wins, and nothing outlives the scene
-    (s,) = longform.check_callouts({"callouts": [_callout(seconds=5)]})
-    assert longform.callout_window(s, rows, 6.0, [4.0], 3.0, "t") == (2.08, 6.0)
-    (n,) = longform.check_callouts({"callouts": [{k: v for k, v in _callout(at=1.25).items()
-                                                  if k != "when"}]})
-    assert longform.callout_window(n, rows, 8.0, [], 3.0, "t")[0] == 1.25      # no offset
+    assert lo.window(c, rows, 8.0, [], 3.0, "t")[:2] == (2.08, 5.08)          # 2.0 + 80 ms
+    # the long-form default hold: cut short at the next picture cut 1 s or more after landing
+    assert lo.window(c, rows, 8.0, [2.5, 4.0], 3.0, "t")[:2] == (2.08, 4.0)
+    # the Shorts holds: next_cut, scene, ms after the entrance
+    (n,) = longform.check_callouts({"callouts": [_callout(hold="next_cut")]})
+    assert lo.window(n, rows, 8.0, [2.5, 4.0], 3.0, "t")[:2] == (2.08, 2.5)
+    (s,) = longform.check_callouts({"callouts": [_callout(hold="scene")]})
+    assert lo.window(s, rows, 6.0, [4.0], 3.0, "t")[:2] == (2.08, 6.0)
+    (m,) = longform.check_callouts({"callouts": [_callout(hold=1600)]})
+    t0, t1, in_s, ease = lo.window(m, rows, 8.0, [], 3.0, "t")
+    assert (ease, in_s, t1) == ("slide_in", 0.3, round(2.08 + 0.3 + 1.6, 3))
+    (at,) = longform.check_callouts({"callouts": [_without(_callout(at=1.25), "when")]})
+    assert lo.window(at, rows, 8.0, [], 3.0, "t")[0] == 1.25                  # no offset
     (late,) = longform.check_callouts({"callouts": [_callout(when=7.95)]})
     with pytest.raises(SystemExit, match="after its scene ends"):
-        longform.callout_window(late, rows, 8.0, [], 3.0, "t")
+        lo.window(late, rows, 8.0, [], 3.0, "t")
     (missing,) = longform.check_callouts({"callouts": [_callout(when={"word": "balloon"})]})
     with pytest.raises(SystemExit, match="balloon"):
-        longform.callout_window(missing, rows, 8.0, [], 3.0, "t")
+        lo.window(missing, rows, 8.0, [], 3.0, "t")
 
 
 @pytest.mark.parametrize("edge", ["bottom", "left", "right", "top"])
@@ -382,23 +399,26 @@ def test_audio_mix_is_make_shorts_settings_with_a_pool_bed(tmp_path):
 
 
 def test_audio_mix_refuses_shorts_only_sfx_and_an_unmeasured_bed(tmp_path):
-    with pytest.raises(SystemExit, match="Shorts-only"):
-        longform.audio_mix(_bed_spec(tmp_path, sfx={"on_cut": "w.wav"}), tmp_path / "s.yaml")
+    for key, value in (("on_cut", "w.wav"), ("on_cut", {"src": "w.wav"}), ("opening", {}),
+                       ("cues", []), ("on_move", {"src": "w.wav"}), ("beats", 3)):
+        with pytest.raises(SystemExit, match=f"audio.sfx.{key} is not mixed"):
+            longform.audio_mix(_bed_spec(tmp_path, sfx={key: value}), tmp_path / "s.yaml")
     spec = _bed_spec(tmp_path)
     del spec["bed_pool"][0]["lufs"]
     with pytest.raises(SystemExit, match="lufs"):
         longform.audio_mix(spec, tmp_path / "s.yaml")
 
 
-def test_kept_events_keeps_the_roles_it_has_a_file_for(tmp_path):
-    pop = tmp_path / "pop.wav"
-    pop.write_bytes(b"")
-    spec = _bed_spec(tmp_path, sfx={"events": {"pop": str(pop)}})
+def test_the_v6_template_sfx_block_reads_with_its_nulls(tmp_path):
+    pop = _touch(tmp_path, "pop.wav")
+    buzz = _touch(tmp_path, "buzz.wav")
+    spec = _bed_spec(tmp_path, sfx={"opening": None, "on_cut": None,
+                                    "events": {"pop": {"src": pop, "gain_db": -13}},
+                                    "on_tag": {"src": pop, "gain_db": -13},
+                                    "on_verdict": {"bad": {"src": buzz, "gain_db": -15}}})
     mix = longform.audio_mix(spec, tmp_path / "s.yaml")
-    kept, missing = assemble.kept_events(mix, [{"at": 3.0, "role": "pop"},
-                                               {"at": 9.0, "role": "whoosh"}])
-    assert kept == [{"at": 3.0, "role": "pop"}] and missing == ["whoosh"]
-    assert assemble.kept_events(None, [{"at": 1.0, "role": "pop"}]) == ([], ["pop"])
+    assert mix.sfx.grammar.bad.src == buzz and [e.role for e in mix.sfx.events] == ["pop"]
+    assert mix.sfx.opening is None and mix.sfx.src == ""
 
 
 # --- chapters.json ------------------------------------------------------------------------------
@@ -510,7 +530,8 @@ def test_a_landscape_scene_renders_beats_chapter_sticker_and_captions(tmp_path):
     events = assemble.landscape_media_part(scene, str(tmp_path / "s.yaml"), wav, 4.0, out, opts,
                                            tmp_path, 0, 30, spec_brand={"bg": "#343A46",
                                                                         "accent": "#1F6F3D"})
-    assert events == [{"at": 1.18, "role": "pop"}]           # "Masks" at 1.1 s + 80 ms
+    assert events == [{"at": 1.18, "role": "pop", "kind": "callout"},     # "Masks" + 80 ms
+                      {"at": 0.0, "role": "chapter", "kind": "chapter"}]
     assert _dur(out) == pytest.approx(4.0, abs=0.07)
     frame = tmp_path / "f.png"
 
