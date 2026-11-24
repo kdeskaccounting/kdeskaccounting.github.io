@@ -3,13 +3,22 @@
 Driver: scene spec (YAML) -> preset workbook -> LibreOffice recalc -> PNG frames -> Kokoro narration -> mp4.
 
   scripts/video/.venv-tts/bin/python scripts/video/build_video.py --spec marketing/video/asc842/scenes.yaml
-  options: --frames-only (no TTS/ffmpeg), --skip-recalc (reuse build/<slug>/recalc/src.xlsx), --scenes 3,7
+  options: --frames-only (no TTS/ffmpeg), --skip-recalc (reuse build/<slug>/recalc/src.xlsx), --scenes 3,7,
+           --cache-only (narrate.py --cache-only: a scene not in the narration cache is exit 2, never a
+           billed request)
+
+A spec with a top-level `landscape:` block (16:9 long-form, scripts/video/longform.py) is preflighted
+here in full before anything is narrated, and its `kind: media` scene stills are pulled with ffmpeg
+(the scene's first picture at its in-point) rather than composited in the headless browser:
+assemble.py renders those scenes from their sources, so the still is only the scene list and a
+review frame.
 """
 import argparse, json, pathlib, shutil, subprocess, sys, yaml, openpyxl
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 import render_sheets as R
+import longform
 import media
 import specload
 from short_variants import needs_workbook, safe_slug
@@ -33,10 +42,17 @@ def main():
     ap.add_argument("--frames-only", action="store_true")
     ap.add_argument("--skip-recalc", action="store_true")
     ap.add_argument("--scenes", help="comma-separated scene indexes to (re)render")
+    ap.add_argument("--cache-only", action="store_true",
+                    help="pass --cache-only to narrate.py: never synthesize (never bill); a miss exits 2")
     a = ap.parse_args()
     spec = specload.load(a.spec)   # resolves `extends:` (ParkSheet audit #5)
+    landscape = longform.options(spec) is not None
+    if landscape:
+        longform.normalise_spec(spec)     # a beats scene may omit `src`; beat 0 stands in
     # Preflight: every media scene is checked here, before a single frame is rendered.
     media.validate_spec(spec, a.spec)
+    if landscape:
+        longform.preflight(spec, a.spec)
     slug = safe_slug(spec["slug"])
     build = HERE / "build" / slug; frames = build / "frames"; frames.mkdir(parents=True, exist_ok=True)
     import cards
@@ -68,6 +84,8 @@ def main():
         if cards.is_card(sc):
             focus[str(i)] = R.render_card_scene(out, sc["template"], sc.get("data", {}),
                                                 spec.get("brand"))
+        elif media.is_media(sc) and landscape:
+            focus[str(i)] = longform.poster(out, sc, a.spec)
         elif media.is_media(sc):
             focus[str(i)] = R.render_media_scene(out, sc, a.spec, spec.get("brand"))
         elif kind in ("title", "outro"):
@@ -79,7 +97,8 @@ def main():
         print(f"scene {i:02d}: {kind:<6} {sc.get('template', sc.get('src', sc.get('sheet','')))} {sc.get('range','')} -> {out.name} focus={focus[str(i)]}", flush=True)
     json.dump(focus, open(fj, "w"), indent=1)
     if a.frames_only: return
-    subprocess.run([str(VENV_PY), str(HERE / "narrate.py"), "--spec", a.spec, "--out", str(build / "audio")], check=True)
+    subprocess.run([str(VENV_PY), str(HERE / "narrate.py"), "--spec", a.spec, "--out", str(build / "audio"),
+                    *(["--cache-only"] if a.cache_only else [])], check=True)
     final = build / f"{slug}.mp4"
     # --spec lets assemble render `kind: media` scenes from their sources when the spec opts in
     # with a top-level `landscape:` block; without that block assemble ignores it.
