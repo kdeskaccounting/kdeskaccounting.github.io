@@ -82,3 +82,23 @@ def test_caption_png_is_full_frame_transparent_with_ink_only_in_its_band(tmp_pat
     assert box[1] > assemble.H * 0.6                      # lower third
     top = assemble.caption_png("It's the rulebook.", tmp_path / "t.png", position="top")
     assert Image.open(top).getchannel("A").getbbox()[3] < assemble.H * 0.4
+
+
+def test_source_args_loop_a_clip_and_seek_to_its_in_point():
+    assert assemble.source_args("clip", 2.5, "/m/a.mp4") == [
+        "-stream_loop", "-1", "-ss", "2.500", "-i", "/m/a.mp4"]
+    assert assemble.source_args("hold", 1.0, "/m/a.mp4") == ["-ss", "1.000", "-i", "/m/a.mp4"]
+    assert assemble.source_args("kenburns", 0.0, "/m/b.jpg") == ["-i", "/m/b.jpg"]
+
+
+def test_picture_steps_show_earth_whole_on_the_brand_ground_and_blur_fill_a_portrait_clip():
+    (earth,) = assemble.picture_steps("2:v", "b2", "clip", 4.0, (1080, 1920), "crop", (0.5, 0.5),
+                                      None, True, "#343A46")
+    assert earth.startswith("[2:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=")
+    assert "color=#343A46" in earth and "boxblur" not in earth and earth.endswith("[b2]")
+    portrait = assemble.picture_steps("0:v", "m0", "clip", 4.0, (1080, 1920), None, (0.5, 0.5),
+                                      None, False, "#343A46")
+    assert any("boxblur" in s for s in portrait) and portrait[-1].endswith("[m0]")
+    cropped = assemble.picture_steps("1:v", "b1", "clip", 4.0, (1080, 1920), "crop", (0.5, 0.2),
+                                     None, False, "#343A46")
+    assert len(cropped) == 1 and "y=(ih-1080)*0.200" in cropped[0]
