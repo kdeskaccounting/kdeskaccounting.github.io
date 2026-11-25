@@ -1445,8 +1445,9 @@ def test_this_publisher_declares_that_its_dry_run_writes():
 
 def test_every_other_publisher_still_declares_a_dry_run_that_writes_nothing():
     from publishers import publish
+    # youtube_longform_web is the same Studio uploader (a subclass) with the same contract.
     for name, cls in publish.PUBLISHERS.items():
-        if name != "youtube_web":
+        if name not in ("youtube_web", "youtube_longform_web"):
             assert cls.dry_run_writes is False, name
 
 
