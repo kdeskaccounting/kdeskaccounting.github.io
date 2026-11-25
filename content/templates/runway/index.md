@@ -12,7 +12,7 @@ price: 49
 buy_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator"
 free_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator-free"
 free_label: "Try free 12-month version"
-video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/runway.mp4"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/runway.mp4"
 video_poster: "/images/products/runway-poster.png"
 youtube_url: "https://youtu.be/G0CbfPkmgTY"
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
@@ -25,7 +25,7 @@ compare:
     - ["Scenarios", "Base only", "Base, Optimistic, Pessimistic"]
     - ["Runway, cash-zero date and breakeven dashboard", "yes", "yes"]
     - ["Peak cash and total capital required", "yes", "yes"]
-    - ["4-minute walkthrough video", "yes", "yes"]
+    - ["5-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle variable payment schedules?"
     a: "Yes. Each expense, financing and CapEx line has a frequency dropdown (Monthly, Quarterly, Annual, One-Time) and an Occurrences field; leave Occurrences blank to run to the end of the forecast. Revenue lines have a frequency and an optional End Month. A quarterly expense only hits cash flow every 3 months; a one-time payment hits once and stops."

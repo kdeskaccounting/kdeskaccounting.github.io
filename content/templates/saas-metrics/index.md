@@ -12,7 +12,7 @@ price: 67
 buy_url: "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard"
 free_url: "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free"
 free_label: "Try free 6-month version"
-video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/saas-metrics.mp4"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/saas-metrics.mp4"
 video_poster: "/images/products/saas-metrics-poster.png"
 youtube_url: "https://youtu.be/janK2YXfmFU"
 tags: ["SaaS metrics", "ARR", "MRR", "Excel template", "net revenue retention", "churn", "CAC"]
@@ -25,7 +25,7 @@ compare:
     - ["Setup, Monthly Data and Metrics tabs", "yes", "yes"]
     - ["Dashboard: seven KPI cards + 24-month trend table", "no", "yes"]
     - ["Sample data", "6 months", "12 months"]
-    - ["4-minute walkthrough video", "yes", "yes"]
+    - ["5-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Can I add more than 24 months?"
     a: "The workbook supports 24 months out of the box. You can extend it by copying the formula pattern down; every calculation references the row above, so the chain continues cleanly. Enter the Month for each row: rows without a Month stay blank."

@@ -12,7 +12,7 @@ price: 249
 buy_url: "https://kdeskaccounting.gumroad.com/l/mwmwpe"
 free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
 free_label: "Try free 5-deal version"
-video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-09/asc606.mp4"
+video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/asc606.mp4"
 video_poster: "/images/products/asc606-poster.png"
 youtube_url: "https://youtu.be/qS52iaaD51U"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
@@ -29,7 +29,7 @@ compare:
     - ["Deferred commission rollforward", "no", "yes"]
     - ["Reconciliation that ties to $0", "no", "yes"]
     - ["Dashboard", "no", "yes"]
-    - ["4-minute walkthrough video", "yes", "yes"]
+    - ["5-minute walkthrough video", "yes", "yes"]
 faq:
   - q: "Does it handle variable commission rates?"
     a: "Yes. Each deal row has its own deal amount and commission rate, and the commission is deal amount × rate — there's no fixed rate applied across the portfolio. Enter the rate that produces the commission actually paid on that deal."

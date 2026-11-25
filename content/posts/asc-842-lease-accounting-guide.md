@@ -27,9 +27,9 @@ faq:
 
 ASC 842 is short to state and long to run. Nearly every lease longer than a year goes on the balance sheet as a right-of-use asset and a lease liability. The work is everything after that sentence: deciding what counts as a lease, classifying it, choosing a discount rate, measuring the two balances, building a schedule that survives a modification, producing entries every month, and disclosing a maturity table at year-end that ties to the general ledger.
 
-This guide walks the whole path in the order a controller meets it, with one worked lease carried through and links to the deeper guides where the math gets specific. If you would rather watch than read, the four-minute walkthrough below runs the same numbers through the workbook tab by tab.
+This guide walks the whole path in the order a controller meets it, with one worked lease carried through and links to the deeper guides where the math gets specific. If you would rather watch than read, the five-minute walkthrough below runs the same numbers through the workbook tab by tab.
 
-{{< youtube bfCMoceDcso >}}
+{{< youtube ZFIgf4MAS5Q >}}
 
 ## What ASC 842 Changed From ASC 840
 
@@ -246,7 +246,7 @@ The full 42-task calendar those steps sit inside, with the reconciliation rows f
 
 Purpose-built lease software earns its cost at 50 or more leases, or when leases live in several entities and currencies. Below that, the accounting is well within Excel, provided the file is built for the month-end use case rather than a one-time calculation: one register, one discount rate cell per lease, a period selector that drives every tab, a payment schedule you can override month by month, and a reconciliation that reads zero before anything is posted.
 
-That is the design of the [ASC 842 Lease Accounting Workbook](/templates/asc842/): 20 leases, operating and finance, 120-month schedules per lease, a JE Generator that uses your GL codes, a rollforward split current and non-current, the maturity analysis for the footnote, and a reconciliation tab that compares the entries to the register. Every number in this guide's worked example comes from its sample data, and the [walkthrough video](/templates/asc842/#walkthrough) runs through each tab in four minutes.
+That is the design of the [ASC 842 Lease Accounting Workbook](/templates/asc842/): 20 leases, operating and finance, 120-month schedules per lease, a JE Generator that uses your GL codes, a rollforward split current and non-current, the maturity analysis for the footnote, and a reconciliation tab that compares the entries to the register. Every number in this guide's worked example comes from its sample data, and the [walkthrough video](/templates/asc842/#walkthrough) runs through each tab in five minutes.
 
 **[Get the workbook — $249, one time, no subscription →](https://kdeskaccounting.gumroad.com/l/phxigq)**
 

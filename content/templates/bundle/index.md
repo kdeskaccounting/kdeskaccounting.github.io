@@ -44,7 +44,7 @@ If you run leases, commissions, fixed assets, SaaS metrics, and a cash forecast 
 | [Month-End Close Checklist + Tie-Out](/templates/month-end-close/) | 42-task close calendar, 18 reconciliations with a tie-out tolerance, JE tracker with a per-entry balance check, sign-off page — the scaffolding that holds the other five together | Free |
 | **Bundle** | | **$599** |
 
-Each product page has a four-minute walkthrough video of the workbook, tab by tab, on its real sample data.
+Each product page has a five-minute walkthrough video of the workbook, recorded in Excel, tab by tab, on its real sample data.
 
 ---
 
