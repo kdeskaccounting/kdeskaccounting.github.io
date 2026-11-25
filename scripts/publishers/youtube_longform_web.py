@@ -59,7 +59,7 @@ PLATFORM = "youtube_longform_web"
 # --- anchors, mapped live 2026-11-24 on a throwaway 16:9 draft (deleted after) -----------------
 UPLOADER = "ytcp-uploads-dialog"
 AB_TEST_BUTTON = f"{UPLOADER} #ab-test-button"                 # "A/B Testing" tile beside "Upload file"
-AB_DIALOG = "ytcp-dialog"                                      # filtered by AB_DIALOG_TEXT
+AB_DIALOG = "ytcp-creator-experiment-create-dialog"             # the A/B dialog's host (2026-11-24 dry run)
 AB_DIALOG_TEXT = "Test and compare your thumbnails and titles"
 AB_KIND_THUMBNAIL = "Thumbnail only"                           # chip; "Title only", "Title and thumbnail"
 AB_ADD_TEXT = "Add thumbnail"                                  # an EMPTY slot reads this
@@ -78,6 +78,7 @@ THUMB_MAX_BYTES = 2 * 1024 * 1024   # YouTube's custom-thumbnail limit
 THUMB_SUFFIXES = (".jpg", ".jpeg", ".png")
 LONGFORM_CHECKS_WAIT_MS = 45 * 60_000
 AB_LOAD_TIMEOUT_MS = 120_000
+VIEWPORT = {"width": 1400, "height": 1000}
 WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
 CATEGORIES = ("Autos & Vehicles", "Comedy", "Education", "Entertainment", "Film & Animation",
               "Gaming", "Howto & Style", "Music", "News & Politics", "Nonprofits & Activism",
@@ -160,6 +161,12 @@ def thumbnails_of(meta: dict) -> tuple[list[pathlib.Path], str]:
     return [], "none"
 
 
+def longform_plan(asset, meta: dict) -> list[str]:
+    """youtube_web's plan lines, worded for a long-form video (it reads both content tabs)."""
+    return [line.replace("a public Short", "a public long-form video")
+                .replace(S.CONTENT_SHORTS_URL, "either content tab") for line in plan_lines(asset, meta)]
+
+
 def check_longform_meta(meta: dict) -> None:
     """Refuse, before anything is touched, what this driver must never publish."""
     if meta.get("format") != "longform":
@@ -224,6 +231,13 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
     def upload(self, page, asset: pathlib.Path, meta: dict) -> None:
         """The parent's upload, plus thumbnails/A-B test, tags and category before Next."""
         title, desc = title_of(meta), yw.description_of(meta)
+        # The A/B dialog's footer ("Set test") is fixed to the dialog and falls below a short
+        # viewport, where no scroll reaches it (2026-11-24 dry run). The probe that mapped it ran
+        # at this size and saw the whole dialog.
+        try:
+            page.set_viewport_size(VIEWPORT)
+        except Exception:  # noqa: BLE001 — the click below has its own fallback
+            pass
         self.goto(page, S.UPLOAD_DIALOG_URL)
         self.open_uploader(page)
         page.locator(S.FILE_INPUT).first.wait_for(state="attached", timeout=S.ANCHOR_TIMEOUT_MS)
@@ -262,8 +276,12 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
         tile.wait_for(state="attached", timeout=S.ANCHOR_TIMEOUT_MS)
         tile.scroll_into_view_if_needed()
         tile.click()
-        dialog = page.locator(AB_DIALOG).filter(has_text=AB_DIALOG_TEXT).last
-        dialog.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
+        # The host element is a zero-size wrapper (Playwright calls it hidden while the dialog
+        # inside it is on screen), so visibility is judged on the dialog's own heading and the
+        # host is only the SCOPE for its chips, inputs and buttons (2026-11-24 dry run).
+        heading = page.get_by_text(AB_DIALOG_TEXT, exact=True).first
+        heading.wait_for(state="visible", timeout=S.ANCHOR_TIMEOUT_MS)
+        dialog = page.locator(AB_DIALOG).filter(has_text=AB_DIALOG_TEXT).first
         dialog.get_by_text(AB_KIND_THUMBNAIL, exact=True).first.click()
         inputs = dialog.locator("input[type=file]")
         try:
@@ -295,8 +313,14 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
                 f"the A/B Testing dialog did not reach {AB_READY_TEXT!r} with {len(files)} "
                 f"thumbnails within {AB_LOAD_TIMEOUT_MS // 1000}s; it reads "
                 f"{' / '.join(dialog.inner_text().split(chr(10)))[:300]!r}") from exc
-        dialog.get_by_role("button", name=AB_SET_TEST, exact=True).first.click()
-        dialog.wait_for(state="hidden", timeout=S.ANCHOR_TIMEOUT_MS)
+        set_test = dialog.get_by_role("button", name=AB_SET_TEST, exact=True).first
+        try:
+            set_test.click(timeout=S.BOX_CLICK_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001 — "outside of the viewport": dispatch instead
+            if not timed_out(exc):
+                raise
+            set_test.dispatch_event("click")
+        heading.wait_for(state="hidden", timeout=S.ANCHOR_TIMEOUT_MS)
         shown = ""
         try:
             shown = " / ".join(page.locator(THUMBNAIL_EDITOR).first.inner_text().split("\n"))[:160]
@@ -304,6 +328,26 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
             pass
         return (f"A/B test set, thumbnail only, slots: {', '.join(p.name for p in files)}"
                 + (f" (thumbnail block reads {shown!r})" if shown else ""))
+
+    def close_ab_dialog(self, page) -> None:
+        """Close an open A/B Testing dialog without setting it. Its backdrop swallows clicks on
+        the uploader underneath, close button included (2026-11-24: a dry run's clean-up could
+        not close the uploader while it was up). Absence is fine."""
+        heading = page.get_by_text(AB_DIALOG_TEXT, exact=True)
+        if not heading.count() or not heading.first.is_visible():
+            return
+        close = page.locator(AB_DIALOG).filter(has_text=AB_DIALOG_TEXT).first.get_by_role(
+            "button", name="Close", exact=True)
+        if close.count():
+            close.first.click()
+        else:
+            page.keyboard.press("Escape")
+        try:
+            heading.first.wait_for(state="hidden", timeout=S.ANCHOR_TIMEOUT_MS)
+        except Exception as exc:  # noqa: BLE001
+            if not timed_out(exc):
+                raise
+            page.keyboard.press("Escape")
 
     def open_advanced(self, page) -> None:
         toggle = page.locator(ADVANCED_TOGGLE).first
@@ -399,6 +443,10 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
         except Exception as exc:  # noqa: BLE001 — re-raised below, after the clean-up
             primary = exc
         try:
+            self.close_ab_dialog(page)
+        except Exception:  # noqa: BLE001 — discard_draft reports what is left
+            pass
+        try:
             reached.append(self.discard_draft(page, title, before))
         except Exception as cleanup:  # noqa: BLE001
             if primary is None:
@@ -409,7 +457,7 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
         if primary is not None:
             raise primary
         return PublishResult(platform=self.platform, ok=True, url=None, queued_path=None,
-                             detail="dry-run: " + "; ".join(plan_lines(asset, meta) + reached))
+                             detail="dry-run: " + "; ".join(longform_plan(asset, meta) + reached))
 
 
 def main(argv=None, *, repo: pathlib.Path | None = None) -> int:
