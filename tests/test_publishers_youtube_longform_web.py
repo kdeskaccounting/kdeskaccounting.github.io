@@ -157,3 +157,45 @@ def test_registered_in_publish_py():
     assert publish.PUBLISHERS["youtube_longform_web"] is lf.YouTubeLongformWebPublisher
     assert "youtube_longform_web" in publish.VIDEO_PLATFORMS
     assert lf.YouTubeLongformWebPublisher.dry_run_writes is True   # publish.py --dry-run refuses it
+
+
+class _Loc:
+    def __init__(self): self.calls = []
+    def set_input_files(self, path): self.calls.append(("set_input_files", path))
+    def evaluate(self, js): self.calls.append(("evaluate", js))
+
+
+class _Cdp:
+    def __init__(self): self.sent = []; self.detached = False
+    def send(self, method, params=None):
+        self.sent.append((method, params))
+        return {"result": {"objectId": "obj-1"}} if method == "Runtime.evaluate" else {}
+    def detach(self): self.detached = True
+
+
+class _Page:
+    def __init__(self):
+        self.cdp = _Cdp()
+        page = self
+        class _Ctx:
+            def new_cdp_session(self, p): assert p is page; return page.cdp
+        self.context = _Ctx()
+        self.evals = []
+    def evaluate(self, js): self.evals.append(js)
+
+
+def test_small_file_goes_through_playwright(tmp_path):
+    f = tmp_path / "small.mp4"; f.write_bytes(b"0" * 1000)
+    page, loc = _Page(), _Loc()
+    assert lf.set_local_file(page, loc, f) == "playwright"
+    assert loc.calls == [("set_input_files", str(f.resolve()))] and not page.cdp.sent
+
+
+def test_large_file_goes_by_path_over_cdp(tmp_path, monkeypatch):
+    monkeypatch.setattr(lf, "PLAYWRIGHT_FILE_LIMIT", 10)
+    f = tmp_path / "episode.mp4"; f.write_bytes(b"0" * 100)
+    page, loc = _Page(), _Loc()
+    assert lf.set_local_file(page, loc, f) == "cdp"
+    assert not any(c[0] == "set_input_files" for c in loc.calls)
+    assert ("DOM.setFileInputFiles", {"files": [str(f.resolve())], "objectId": "obj-1"}) in page.cdp.sent
+    assert page.cdp.detached

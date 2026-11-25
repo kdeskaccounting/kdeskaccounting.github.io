@@ -79,6 +79,11 @@ THUMB_SUFFIXES = (".jpg", ".jpeg", ".png")
 LONGFORM_CHECKS_WAIT_MS = 45 * 60_000
 AB_LOAD_TIMEOUT_MS = 120_000
 VIEWPORT = {"width": 1400, "height": 1000}
+# Playwright will not stream a file over 50 MB to a browser it attached to over CDP ("Cannot
+# transfer files larger than 50Mb to a browser not co-located with the server", 2026-11-24 on the
+# 310 MB episode). The debug Chrome IS on this Mac, so a bigger file is handed over by path with
+# CDP's own DOM.setFileInputFiles, which lets Chrome read it from disk.
+PLAYWRIGHT_FILE_LIMIT = 45 * 1024 * 1024
 WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
 CATEGORIES = ("Autos & Vehicles", "Comedy", "Education", "Entertainment", "Film & Animation",
               "Gaming", "Howto & Style", "Music", "News & Politics", "Nonprofits & Activism",
@@ -167,6 +172,30 @@ def longform_plan(asset, meta: dict) -> list[str]:
                 .replace(S.CONTENT_SHORTS_URL, "either content tab") for line in plan_lines(asset, meta)]
 
 
+def set_local_file(page, locator, path) -> str:
+    """Put a local file in a file input. Small files go through Playwright as before; a file over
+    PLAYWRIGHT_FILE_LIMIT goes by path through CDP. Returns which route was taken."""
+    path = pathlib.Path(path).resolve()
+    if path.stat().st_size <= PLAYWRIGHT_FILE_LIMIT:
+        locator.set_input_files(str(path))
+        return "playwright"
+    locator.evaluate("e => { window.__lfFileInput = e; }")
+    cdp = page.context.new_cdp_session(page)
+    try:
+        found = cdp.send("Runtime.evaluate", {"expression": "window.__lfFileInput"})
+        object_id = ((found or {}).get("result") or {}).get("objectId")
+        if not object_id:
+            raise FormFieldError("could not resolve the upload input over CDP for a large file")
+        cdp.send("DOM.setFileInputFiles", {"files": [str(path)], "objectId": object_id})
+    finally:
+        try:
+            page.evaluate("() => { delete window.__lfFileInput; }")
+        except Exception:  # noqa: BLE001 — cosmetic
+            pass
+        cdp.detach()
+    return "cdp"
+
+
 def check_longform_meta(meta: dict) -> None:
     """Refuse, before anything is touched, what this driver must never publish."""
     if meta.get("format") != "longform":
@@ -241,8 +270,9 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
         self.goto(page, S.UPLOAD_DIALOG_URL)
         self.open_uploader(page)
         page.locator(S.FILE_INPUT).first.wait_for(state="attached", timeout=S.ANCHOR_TIMEOUT_MS)
-        page.set_input_files(S.FILE_INPUT, str(pathlib.Path(asset).resolve()))
+        route = set_local_file(page, page.locator(S.FILE_INPUT).first, asset)
         self._uploaded = True
+        print(f"{self.platform}: file handed over ({route})", file=sys.stderr)
         page.locator(S.TITLE_BOX).first.wait_for(state="visible", timeout=S.UPLOAD_TIMEOUT_MS)
         self._video_id = video_id_from(page.locator(S.UPLOAD_DIALOG).first.inner_text())
         print(f"{self.platform}: file handed to Studio"
