@@ -52,6 +52,7 @@ from publishers import tiktok_web  # noqa: E402  (--schedule validation)
 from publishers.tiktok_web import TikTokWebPublisher  # noqa: E402
 from publishers.youtube import YouTubePublisher  # noqa: E402
 from publishers.youtube_web import YouTubeWebPublisher  # noqa: E402
+from publishers.youtube_longform_web import YouTubeLongformWebPublisher  # noqa: E402
 
 # `youtube` is the Upload-Post transport and stays exactly as it was; `youtube_web` is the
 # Chrome/Studio one added 2026-09-25, when the free Upload-Post quota stopped covering a daily
@@ -59,13 +60,14 @@ from publishers.youtube_web import YouTubeWebPublisher  # noqa: E402
 PUBLISHERS: dict[str, type] = {"youtube": YouTubePublisher, "tiktok": TikTokPublisher,
                                "tiktok_web": TikTokWebPublisher,
                                "youtube_web": YouTubeWebPublisher,
+                               "youtube_longform_web": YouTubeLongformWebPublisher,
                                "instagram": InstagramPublisher, "site": SitePublisher}
 # Platforms whose result url is a public permalink worth embedding in the site post.
 # tiktok_web is deliberately absent: it returns the TikTok Studio content URL (a scheduled
 # post has no public URL yet), and embedding that would put a 404 behind a reader's click.
 # youtube_web IS here for the mirror-image reason: it publishes immediately, so its url is a
 # real https://www.youtube.com/shorts/<id> the moment Publish lands.
-VIDEO_PLATFORMS = ("youtube", "youtube_web", "tiktok", "instagram")
+VIDEO_PLATFORMS = ("youtube", "youtube_web", "youtube_longform_web", "tiktok", "instagram")
 # The T2 decision that authorises auto-publishing at all: 2026-09-14, "marketing autonomy
 # loosened to T1 auto-publish for five surfaces", veto window 2026-09-16 12:00 PT — approved
 # early by entry 85 on 2026-09-15, which is what opens this gate today. Until a decision is
@@ -103,6 +105,9 @@ def load_meta(ap: argparse.ArgumentParser, path: pathlib.Path) -> dict:
         ap.error(f"--meta {path} could not be read: {exc}")
     if not isinstance(meta, dict):
         ap.error(f"--meta {path} must be a JSON object, got {type(meta).__name__}")
+    # Where the meta lives, for publishers that resolve files named relative to it
+    # (youtube_longform_web's thumbnails); youtube_web's own CLI sets the same key.
+    meta.setdefault("_meta_path", str(path.resolve()))
     return meta
 
 
@@ -172,8 +177,9 @@ def main(argv: list[str] | None = None, *, repo: pathlib.Path | None = None,
                   f"{', '.join(writes)} cannot honour that — its dry run really uploads the "
                   f"file and then deletes the draft YouTube saves. Rehearse it with its own "
                   f"CLI, where that is the documented contract:\n"
-                  f"  scripts/video/.venv-tts/bin/python scripts/publishers/youtube_web.py "
-                  f"--dry-run --asset <mp4> --meta <json>", file=sys.stderr)
+                  + "\n".join(f"  scripts/video/.venv-tts/bin/python scripts/publishers/{n}.py "
+                              f"--dry-run --asset <mp4> --meta <json>" for n in writes),
+                  file=sys.stderr)
             return 2
     # The gate comes before meta is even read: a refused run must not reach the work, and
     # its message must be the refusal, not a JSON parse error from a file it should not have

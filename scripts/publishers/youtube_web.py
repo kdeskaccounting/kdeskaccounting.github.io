@@ -1050,6 +1050,9 @@ class YouTubeWebPublisher(Publisher):
     # really uploads and then deletes the draft. publish.py reads this and refuses --dry-run
     # for this platform, because its own contract is that --dry-run writes nothing.
     dry_run_writes = True
+    # How long await_checks sits on the uploader before falling back. A subclass may raise it
+    # (youtube_longform_web: a 16-minute video's checks take longer than a Short's).
+    checks_wait_ms = S.CHECKS_WAIT_TIMEOUT_MS
 
     def __init__(self, *, repo: pathlib.Path | None = None, check_fn=None) -> None:
         super().__init__(repo=repo if repo is not None else REPO)
@@ -1340,7 +1343,7 @@ class YouTubeWebPublisher(Publisher):
                     f"{S.PUBLIC_VISIBILITY_TEXT}: {title}"
                     + f"; checks: {self._checks_mode or 'unknown'}"
                     + (f" (published BEFORE checks finished: footer read "
-                       f"{self._checks_last!r} after {S.CHECKS_WAIT_TIMEOUT_MS // 60_000} min)"
+                       f"{self._checks_last!r} after {self.checks_wait_ms // 60_000} min)"
                        if self._checks_mode == CHECKS_MODE_FALLBACK else "")
                     + (f" (answered {S.PUBLISH_ANYWAY_NAME!r} while checks ran)"
                        if self._published_through_prechecks else "")
@@ -1869,7 +1872,7 @@ class YouTubeWebPublisher(Publisher):
 
     def _poll_checks(self, page) -> str:
         """await_checks' loop, run with tracing paused."""
-        deadline = self._clock() + S.CHECKS_WAIT_TIMEOUT_MS / 1000
+        deadline = self._clock() + self.checks_wait_ms / 1000
         while True:
             probe = page.evaluate(checks_probe_js())
             probe = probe if isinstance(probe, dict) else {}
@@ -1885,7 +1888,7 @@ class YouTubeWebPublisher(Publisher):
             if decision == DECIDE_FALLBACK:
                 self._checks_mode = CHECKS_MODE_FALLBACK
                 print(f"{self.platform}: WARNING: YouTube's checks did not finish within "
-                      f"{S.CHECKS_WAIT_TIMEOUT_MS // 60_000} min (footer state {state!r}, "
+                      f"{self.checks_wait_ms // 60_000} min (footer state {state!r}, "
                       f"reads {self._checks_last!r}). Publishing BEFORE checks finished "
                       f"(fallback): Publish, then {S.PUBLISH_ANYWAY_NAME!r} if asked.",
                       file=sys.stderr)
