@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import time
 
@@ -379,6 +380,39 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
                 raise
             page.keyboard.press("Escape")
 
+    def read_claims(self, page, slug: str) -> str:
+        """After a check finds something: open the uploader's Initial-check step, read it and the
+        "See details" dialog, save both under scripts/browser/runs/<date>/, then go back to
+        Visibility. Returns a one-line summary. Read-only: nothing is disputed or edited
+        (Content ID claims are logged, not fought: ParkSheet iconography policy 2026-11-19)."""
+        out_dir = self.repo / "scripts" / "browser" / "runs" / time.strftime("%Y-%m-%d")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / f"claims-{slug}-{time.strftime('%H%M%S')}.txt"
+        parts = []
+        page.locator(S.STEP_BADGE.format(n=S.STEP_CHECKS)).first.click()
+        time.sleep(3)
+        parts.append("== Initial check step ==\n" + page.locator(UPLOADER).first.inner_text())
+        # "View details" under Copyright (2026-11-24, the ep 1 pre-flight); "See details" kept for safety.
+        details = page.locator(UPLOADER).get_by_text(re.compile(r"^(View|See) details$"))
+        for k in range(min(details.count(), 4)):
+            try:
+                details.nth(k).click()
+                time.sleep(3)
+                parts.append(f"== View details #{k + 1} ==\n" + page.evaluate(
+                    "() => [...document.querySelectorAll('tp-yt-paper-dialog, ytcp-dialog, [role=dialog]')]"
+                    ".filter(d => d.offsetParent !== null && !d.closest('ytcp-uploads-dialog'))"
+                    ".map(d => d.innerText).join('\\n---\\n')"))
+                page.keyboard.press("Escape")
+                time.sleep(1)
+            except Exception as exc:  # noqa: BLE001 — record and carry on
+                parts.append(f"== View details #{k + 1}: {type(exc).__name__}: {exc} ==")
+        out.write_text("\n\n".join(parts), encoding="utf-8")
+        page.locator(S.STEP_BADGE.format(n=S.STEP_VISIBILITY)).first.click()
+        time.sleep(2)
+        text = " / ".join(x.strip() for x in parts[0].split("\n") if x.strip())
+        i = text.lower().find("copyright")
+        return f"claims saved to {out}; Initial check reads {text[max(0, i - 20):i + 400]!r}"
+
     def open_advanced(self, page) -> None:
         toggle = page.locator(ADVANCED_TOGGLE).first
         toggle.wait_for(state="attached", timeout=S.ANCHOR_TIMEOUT_MS)
@@ -461,6 +495,11 @@ class YouTubeLongformWebPublisher(YouTubeWebPublisher):
                 decision = self.await_checks(page)
                 reached.append(f"checks: {decision} after {(time.monotonic() - started) / 60:.1f} min, "
                                f"footer {self._checks_last!r}")
+                if decision == yw.DECIDE_HOLD:
+                    try:
+                        reached.append(self.read_claims(page, str(meta.get("slug") or "longform")))
+                    except Exception as exc:  # noqa: BLE001 — the clean-up still runs
+                        reached.append(f"claim details NOT read: {type(exc).__name__}: {exc}"[:300])
             else:
                 probe = page.evaluate(checks_probe_js())
                 probe = probe if isinstance(probe, dict) else {}
