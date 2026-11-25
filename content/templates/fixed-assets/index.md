@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/fixed-asset-rollforward-free"
 free_label: "Try free 5-asset version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/fixed-assets.mp4"
 video_poster: "/images/products/fixed-assets-poster.png"
-youtube_url: "https://youtu.be/I-VAym73C-M"
+youtube_url: "https://youtu.be/Br1ORom2u9k"
 tags: ["fixed assets", "fixed asset register", "depreciation schedule", "ASC 360", "Excel template", "rollforward", "PP&E"]
 compare:
   free_name: "Free 5-asset version"

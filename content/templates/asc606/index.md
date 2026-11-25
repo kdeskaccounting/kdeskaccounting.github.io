@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/cjexre"
 free_label: "Try free 5-deal version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/asc606.mp4"
 video_poster: "/images/products/asc606-poster.png"
-youtube_url: "https://youtu.be/qS52iaaD51U"
+youtube_url: "https://youtu.be/wcwBcloj2s4"
 tags: ["ASC 606", "ASC 340-40", "commission accounting", "deferred commissions", "Excel template", "SaaS accounting"]
 compare:
   free_name: "Free 5-deal version"

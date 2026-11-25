@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/runway-calculator-free"
 free_label: "Try free 12-month version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/runway.mp4"
 video_poster: "/images/products/runway-poster.png"
-youtube_url: "https://youtu.be/G0CbfPkmgTY"
+youtube_url: "https://youtu.be/F17OLmUvl8M"
 tags: ["startup", "runway", "burn rate", "cash flow", "Excel template", "financial model", "founder"]
 compare:
   free_name: "Free 12-month version"

@@ -14,7 +14,7 @@ free_url: "https://kdeskaccounting.gumroad.com/l/saas-metrics-dashboard-free"
 free_label: "Try free 6-month version"
 video_url: "https://github.com/kdeskaccounting/kdeskaccounting.github.io/releases/download/media-2026-11/saas-metrics.mp4"
 video_poster: "/images/products/saas-metrics-poster.png"
-youtube_url: "https://youtu.be/janK2YXfmFU"
+youtube_url: "https://youtu.be/-n7RoFQOzkw"
 tags: ["SaaS metrics", "ARR", "MRR", "Excel template", "net revenue retention", "churn", "CAC"]
 compare:
   free_name: "Free 6-month version"
