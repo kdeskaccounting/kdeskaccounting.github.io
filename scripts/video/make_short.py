@@ -281,7 +281,10 @@ def scene_beats(scene: dict) -> list:
                     # to "" so a spec written before the keys existed falls back to the
                     # scene's `credit:`, which is what it has always meant.
                     "credit": str(beat.get("credit") or "").strip(),
-                    "credit_line": str(beat.get("credit_line") or "").strip()})
+                    "credit_line": str(beat.get("credit_line") or "").strip(),
+                    # This beat's own colour correction (parse_color); {} = none, and the
+                    # beat's chain is then the one it has always been.
+                    "color": parse_color(beat.get("color"), f"beats[{index}]")})
     return out
 
 
@@ -500,6 +503,7 @@ def media_overlay_preflight(scene, index: int, spec_path) -> None:
     """
     block = (scene or {}).get("overlay")
     media_grade(scene, index)
+    media_color(scene, index)
     where = f"scene {index} (kind: media)"
     callout_preflight(scene, where, spec_path)
     try:
@@ -694,6 +698,85 @@ def media_overlay(scene):
     if "sticker" in block:
         out["sticker"] = block["sticker"]
     return out
+
+
+#: `color:` (per media scene, or per beat): a gentle colour correction for footage that does not
+#: match its neighbours. Stephen, 2026-11-27, on cruise-yellow-lifeboats: "The vibrance of the first
+#: clip is dull. And the coloring doesn't match the other clips. This makes it feel disjointed." The
+#: opener was a flat-profile drone master (saturation 7 against the build's 13, a grey-green cast),
+#: and nothing in the pipeline could correct it: footage prep does no grade, and `scrim`/`blur` only
+#: darken or soften. key -> (low, high, neutral). The ranges are deliberately narrow: this is
+#: matching a clip to its neighbours, not a look.
+COLOR_KEYS = {
+    "saturation": (0.5, 2.0, 1.0),    # eq saturation: 1.0 unchanged, 1.4 = 40% more colour
+    "contrast": (0.7, 1.5, 1.0),      # eq contrast around mid-grey
+    "brightness": (-0.15, 0.15, 0.0),  # eq brightness, an additive offset: small on purpose
+    "gamma": (0.7, 1.4, 1.0),         # eq gamma: >1 lifts the midtones
+    "warmth": (-1.0, 1.0, 0.0),       # colorbalance: + toward red/yellow, - toward blue
+    "tint": (-1.0, 1.0, 0.0),         # colorbalance: + takes green OUT (toward magenta), - adds it
+}
+
+
+def parse_color(value, where: str) -> dict:
+    """A `color:` mapping, checked; only the keys that change something. Absent/None -> {}.
+
+    Out of range or an unknown key refuses the render rather than clamping or ignoring, for the
+    same reason `scrim` does: `saturation: 140` is somebody writing a percentage, and a typo'd
+    key silently doing nothing looks like the renderer ignoring the setting.
+    """
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise SystemExit(f"{where}: `color:` must be a mapping like {{saturation: 1.3, warmth: 0.2}}, "
+                         f"got {value!r}")
+    out = {}
+    for key, raw in value.items():
+        if key not in COLOR_KEYS:
+            raise SystemExit(f"{where}: `color: {{{key}: ...}}` is not a colour setting; use "
+                             f"{', '.join(COLOR_KEYS)}")
+        if not isinstance(raw, (int, float)) or isinstance(raw, bool):
+            raise SystemExit(f"{where}: `color.{key}` must be a number, got {raw!r}")
+        low, high, neutral = COLOR_KEYS[key]
+        if not (low <= float(raw) <= high):
+            raise SystemExit(f"{where}: `color.{key}: {raw}` is outside [{low:g}, {high:g}] "
+                             f"(neutral {neutral:g}). This is for matching a clip to its "
+                             f"neighbours, so the ranges are narrow.")
+        if float(raw) != neutral:
+            out[key] = float(raw)
+    return out
+
+
+def color_filter(color: dict) -> str:
+    """The ffmpeg chain for a parse_color() result: "" when there is nothing to change.
+
+    `eq` takes saturation/contrast/brightness/gamma directly. `warmth` and `tint` are
+    `colorbalance` shifts, weighted most in the midtones, where a cast reads; the
+    shadows and highlights get less. Warmth moves red and blue in opposite directions;
+    tint moves green alone. Both are kept small: at the ends of their range, a mid-grey moves
+    about 0.12 in the shifted channels.
+    """
+    if not color:
+        return ""
+    parts = []
+    eq = [f"{key}={color[key]:.3f}" for key in ("contrast", "brightness", "saturation", "gamma")
+          if key in color]
+    if eq:
+        parts.append("eq=" + ":".join(eq))
+    w, t = color.get("warmth", 0.0), color.get("tint", 0.0)
+    if w or t:
+        bal = []
+        for zone, weight in (("s", 0.08), ("m", 0.12), ("h", 0.06)):
+            if w:
+                bal += [f"r{zone}={w * weight:.3f}", f"b{zone}={-w * weight:.3f}"]
+            if t:
+                bal.append(f"g{zone}={-t * weight:.3f}")
+        parts.append("colorbalance=" + ":".join(bal))
+    return ",".join(parts)
+
+
+def media_color(scene, index: int = 0) -> dict:
+    """One media scene's `color:`, checked (parse_color). {} when it has none."""
+    return parse_color((scene or {}).get("color"), f"scene {index} (kind: media)")
 
 
 def media_grade(scene, index: int = 0) -> tuple:
@@ -1101,7 +1184,10 @@ def beat_steps(beats, dur: float, fill=None, focus=(0.5, 0.5)) -> list:
         # rather than trimming an already-trimmed stream a second time. Every beat therefore
         # ends the same way, whatever its motion and whatever its source.
         body = chains[-1].removesuffix(f"[b{index}]").removesuffix(trim).rstrip(",")
-        chains[-1] = f"{body},{BEAT_TAIL}{trim}[b{index}]"
+        # A beat's own `color:` goes on its chain, before the concat, so it corrects THAT clip
+        # and not the ones around it. No key -> no filter, and the chain is unchanged.
+        tint = color_filter(beat.get("color") or {})
+        chains[-1] = f"{body},{tint + ',' if tint else ''}{BEAT_TAIL}{trim}[b{index}]"
         steps += chains
     steps.append("".join(f"[b{i}]" for i in range(len(beats)))
                  + f"concat=n={len(beats)}:v=1:a=0[m0]")
@@ -1192,7 +1278,7 @@ def apply_open(part, cfg, work, crf):
 
 def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOIN,
                        fill=None, focus=(0.5, 0.5), beats=(), scrim=0.0, blur=0.0,
-                       overlay_frames=None, windows=()):
+                       overlay_frames=None, windows=(), color=None):
     """One media file — or several beat sources — + layer PNGs + one WAV -> an mp4.
 
     The composite is three things stacked: the footage or still, put through the motion's
@@ -1281,9 +1367,15 @@ def encode_media_scene(src, motion, layers, wav, dur, crf, out, join=DEFAULT_JOI
         args += ["-r", str(FPS),
                  "-i", str(pathlib.Path(overlay_frames) / ILLUSTRATION_FRAME_GLOB)]
     stage = "m0"
+    # The scene's `color:` (media_color) corrects the footage FIRST: before the scrim and blur
+    # grade it, and long before the plates, stickers and captions, which keep their own colours.
+    tint = color_filter(color or {})
+    if tint:
+        steps.append(f"[{stage}]{tint}[c0]")
+        stage = "c0"
     grade = footage_grade(scrim, blur)
     if grade:
-        steps.append(f"[m0]{grade}[g0]")
+        steps.append(f"[{stage}]{grade}[g0]")
         stage = "g0"
     # The grammar layer's verdict tint and overlay blur (grammar.py): on the FOOTAGE, before
     # the plates and the drawing, so the graphics stay sharp and keep their colours. No
@@ -2994,6 +3086,7 @@ def main():
             # backstop against a length nothing rendered).
             spans = beat_spans(beats, dur)
             scrim, blur = media_grade(sc, idx)
+            color = media_color(sc, idx)
             local, at = [], 0.0
             for span in spans[:-1]:
                 at += float(span); local.append(round(at, 3))
@@ -3077,7 +3170,7 @@ def main():
                                      work / f"scene_{k}.mp4", join=tr.join,
                                      fill=fill, focus=scene_focus, beats=beats,
                                      scrim=scrim, blur=blur, overlay_frames=overlay_frames,
-                                     windows=windows)
+                                     windows=windows, color=color)
             if open_cfg is not None and k == 0:
                 loop_source = out
                 out = apply_open(out, open_cfg, work, a.crf)
